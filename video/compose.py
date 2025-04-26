@@ -271,37 +271,36 @@ class VideoGenerator:
             # Combine everything
             logger.info(f"Combining video clips...")
             final_video = concatenate_videoclips(clips, method="compose")
-            final_video = final_video.set_audio(audio)
-            
+            final_video = final_video.with_audio(audio)
             # Add watermark
-            watermark = (
-                TextClip(
-                    "AI Research Summary", 
-                    fontsize=20, 
-                    color='white',
-                    bg_color="rgba(0,0,0,0.5)",
-                    font=self.font_path,
-                    size=(video_size[0], 30)
-                )
-                .set_position(("center", video_size[1] - 30))
-                .set_duration(final_video.duration)
-            )
+            # watermark = (
+            #     TextClip(
+            #         text="Pexels", 
+            #         font_size=20, 
+            #         color='white',
+            #         bg_color=(0,0,255,0.5),
+            #         size=(video_size[0], int(video_size[1]/10)),
+            #         font=self.font_path
+            #     )
+            #     .set_position(("center", int(video_size[1]/2)))
+            #     .with_duration(final_video.duration)
+            # )
             
-            final_video = CompositeVideoClip([final_video, watermark])
+            # final_video = CompositeVideoClip([final_video, watermark])
             
             # Export with appropriate settings for TikTok
             logger.info(f"Rendering final video to {output_file}...")
             final_video.write_videofile(
                 output_file,
-                fps=fps,
-                codec="libx264",
-                audio_codec="aac",
-                threads=4,
-                preset="fast",
-                ffmpeg_params=[
-                    "-movflags", "+faststart",  # Optimize for web streaming
-                    "-pix_fmt", "yuv420p"       # Compatible color format
-                ]
+                # fps=fps,
+                # codec="libx264",
+                # audio_codec="aac",
+                # threads=4,
+                # preset="fast",
+                # ffmpeg_params=[
+                #     "-movflags", "+faststart",  # Optimize for web streaming
+                #     "-pix_fmt", "yuv420p"       # Compatible color format
+                # ]
             )
             
             logger.info(f"Video generation complete!")

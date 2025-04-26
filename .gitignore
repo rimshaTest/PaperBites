@@ -1,0 +1,5 @@
+__pycache__/
+logs/
+paper/__pycache__/
+utils/__pycache__/
+video/__pycache__/
