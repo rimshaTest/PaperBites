@@ -1,0 +1,14 @@
+moviepy
+requests
+PyMuPDF
+scholarly
+pytesseract
+pdf2image
+nltk
+scikit-learn
+aiohttp
+transformers
+gtts
+Pillow
+tesseract
+ffmpeg
