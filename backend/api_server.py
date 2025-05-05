@@ -1,30 +1,19 @@
-from fastapi import FastAPI, HTTPException, Query, Depends
-from fastapi.middleware.cors import CORSMiddleware
+from starlette.applications import Starlette
+from starlette.responses import JSONResponse
+from starlette.routing import Route
+from starlette.middleware import Middleware
+from starlette.middleware.cors import CORSMiddleware
+import uvicorn
 import os
 import json
 import glob
 from typing import List, Dict, Optional
-import uvicorn
-import asyncio
-from paper.search import search_papers
-from paper.download import get_paper_by_id
-from pydantic import BaseModel
-
-app = FastAPI(title="PaperBites API", description="API for serving research paper videos")
-
-# Configure CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # For development - restrict this in production
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+from starlette.requests import Request
 
 # Directory where video metadata is stored
 VIDEOS_DIR = os.environ.get("PAPERBITES_VIDEOS_DIR", "videos")
 
-def get_all_videos() -> List[Dict]:
+def get_all_videos():
     """Get metadata for all videos."""
     videos = []
     
@@ -46,33 +35,15 @@ def get_all_videos() -> List[Dict]:
     
     return videos
 
-class PaperInfo(BaseModel):
-    """Model for paper information."""
-    id: Optional[str] = None
-    title: str
-    url: str
-    authors: List[str] = []
-    summary: Optional[str] = None
-    license: Optional[str] = None
-    can_display_publicly: bool = False
-
-@app.get("/api/videos", response_model=List[Dict])
-async def list_videos(
-    limit: int = Query(50, gt=0, le=100),
-    offset: int = Query(0, ge=0),
-    keyword: Optional[str] = None,
-    public_only: bool = Query(True, description="Only include videos that can be publicly displayed")
-):
-    """
-    Get a list of videos with optional filtering.
-    
-    Args:
-        limit: Maximum number of videos to return
-        offset: Pagination offset
-        keyword: Filter by keyword
-        public_only: Only include videos that can be publicly displayed
-    """
+async def list_videos(request):
+    """Get a list of videos with optional filtering."""
     videos = get_all_videos()
+    
+    # Get query parameters
+    limit = int(request.query_params.get("limit", "50"))
+    offset = int(request.query_params.get("offset", "0"))
+    keyword = request.query_params.get("keyword")
+    public_only = request.query_params.get("public_only", "True").lower() == "true"
     
     # Filter by public display permissions
     if public_only:
@@ -105,26 +76,20 @@ async def list_videos(
     # Apply pagination
     paginated_videos = videos[offset:offset + limit]
     
-    return paginated_videos
+    return JSONResponse(paginated_videos)
 
-@app.get("/api/videos/{video_id}", response_model=Dict)
-async def get_video(video_id: str):
-    """
-    Get metadata for a specific video.
-    
-    Args:
-        video_id: ID of the video
-    """
+async def get_video(request):
+    """Get metadata for a specific video."""
+    video_id = request.path_params["video_id"]
     videos = get_all_videos()
     
     for video in videos:
         if video.get("id") == video_id:
-            return video
+            return JSONResponse(video)
     
-    raise HTTPException(status_code=404, detail="Video not found")
+    return JSONResponse({"detail": "Video not found"}, status_code=404)
 
-@app.get("/api/topics", response_model=List[str])
-async def get_topics():
+async def get_topics(request):
     """Get a list of all topics/keywords across videos."""
     videos = get_all_videos()
     
@@ -140,67 +105,31 @@ async def get_topics():
     # Return keywords with at least 2 occurrences, sorted by frequency
     popular_keywords = [kw for kw, count in keyword_counts.most_common() if count >= 2]
     
-    return popular_keywords
+    return JSONResponse(popular_keywords)
 
-@app.get("/api/search", response_model=List[PaperInfo])
-async def search_api(
-    query: str,
-    max_results: int = Query(10, gt=0, le=50),
-    public_only: bool = Query(True, description="Only include papers that can be publicly displayed")
-):
-    """
-    Search for papers from various sources.
-    
-    Args:
-        query: Search query
-        max_results: Maximum number of results to return
-        public_only: Only include papers that can be publicly displayed
-    """
-    papers = await search_papers(
-        query=query,
-        max_papers=max_results,
-        open_access_only=True,
-        public_only=public_only
-    )
-    
-    # Convert to response model format
-    result = []
-    for paper in papers:
-        paper_info = PaperInfo(
-            id=paper.get("id", None),
-            title=paper.get("title", "Unknown Title"),
-            url=paper.get("url", ""),
-            authors=paper.get("authors", []),
-            summary=paper.get("summary", None),
-            license=paper.get("license", None),
-            can_display_publicly=paper.get("can_display_publicly", False)
-        )
-        result.append(paper_info)
-    
-    return result
+# Define routes
+routes = [
+    Route("/api/videos", list_videos),
+    Route("/api/videos/{video_id}", get_video),
+    Route("/api/topics", get_topics),
+]
 
-@app.get("/api/paper/{paper_id}", response_model=PaperInfo)
-async def get_paper(paper_id: str):
-    """
-    Get information about a specific paper.
-    
-    Args:
-        paper_id: ID of the paper (DOI, arXiv ID, etc.)
-    """
-    paper = await get_paper_by_id(paper_id)
-    
-    if not paper:
-        raise HTTPException(status_code=404, detail="Paper not found")
-    
-    return PaperInfo(
-        id=paper.get("id", None),
-        title=paper.get("title", "Unknown Title"),
-        url=paper.get("url", ""),
-        authors=paper.get("authors", []),
-        summary=paper.get("summary", None),
-        license=paper.get("license", None),
-        can_display_publicly=paper.get("can_display_publicly", False)
+# Set up middleware
+middleware = [
+    Middleware(CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
+]
+
+# Create app
+app = Starlette(
+    debug=True,
+    routes=routes,
+    middleware=middleware
+)
 
 if __name__ == "__main__":
     # Make sure the videos directory exists
