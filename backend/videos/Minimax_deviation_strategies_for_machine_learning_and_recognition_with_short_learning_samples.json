@@ -1,0 +1,31 @@
+{
+  "id": "556ce3d3-ae54-462f-8802-1b469cf7cc58",
+  "title": "Minimax deviation strategies for machine learning and recognition with short learning samples",
+  "videoUrl": "https://paper-bites.s3.amazonaws.com/videos/1bb353fb-8273-48d9-8ba2-bdbf5ded88ba_Minimax_deviation_strategies_for_machine_learning_and_recognition_with_short_learning_samples.mp4",
+  "summary": "The article is devoted to the problem of small learning samples in\nmachine learning. The \ufb02aws of maximum likelihood learning and min- The small learning sample problem has been around in machine learning\nunder di\ufb00erent names during its whole life. The learning sample is used to The paper analyzes the problem when for given object The paper analyzes the problem when for given object",
+  "keywords": [
+    "given object",
+    "maximum likelihood",
+    "learning",
+    "problem",
+    "small",
+    "machine",
+    "sample",
+    "analyzes"
+  ],
+  "hashtags": "#givenobject #maximumlikelihood #learning #problem #small #machine #sample #analyzes",
+  "key_insights": [
+    "The article is devoted to the problem of small learning samples in machine learning.",
+    "The \ufb02aws of maximum likelihood learning and min- The small learning sample problem has been around in machine learning under...",
+    "The learning sample is used to The paper analyzes the problem when for given object The paper analyzes the problem..."
+  ],
+  "paper_id": "1707.04849v1",
+  "url": "http://arxiv.org/pdf/1707.04849v1",
+  "license": "arXiv",
+  "authors": [
+    "Michail Schlesinger",
+    "Evgeniy Vodolazskiy"
+  ],
+  "timestamp": 1746648007,
+  "can_display_publicly": true
+}
