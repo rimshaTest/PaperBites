@@ -11,7 +11,7 @@ import re
 
 from config import Config
 from utils.logging import setup_logging
-from utils.s3_storage import S3Storage
+from utils.cloudinary_storage import CloudinaryStorage
 from paper.search import search_papers
 from paper.download import download_paper, get_paper_by_id
 from paper.extraction import extract_text_from_pdf, extract_paper_sections
@@ -19,9 +19,17 @@ from paper.summarize import summarize_paper
 from video.compose import VideoGenerator
 from video.visual import rate_limit
 
+cloudinary_storage = CloudinaryStorage()
+
+
+def sanitize_filename(title):
+    """Replace invalid filename characters with underscores."""
+    pattern = r'[^\w\-_]'
+    return re.sub(pattern, '_', title)
+
 async def process_paper(paper_info: Dict, output_dir: str, config: Config) -> Optional[Dict]:
     """
-    Process a paper and upload video to S3.
+    Process a paper and upload video to cloudinary.
     
     Args:
         paper_info: Information about the paper (title, url, etc.)
@@ -42,7 +50,7 @@ async def process_paper(paper_info: Dict, output_dir: str, config: Config) -> Op
     # Create filename from title
     pdf_filename = os.path.join(
         config.get("paths.temp_dir"),
-        f"{re.sub(r'[^\w\-_]', '_', paper_info['title'])}.pdf"
+        sanitize_filename(paper_info["title"]) + ".pdf",
     )
     
     # Download PDF
@@ -84,7 +92,7 @@ async def process_paper(paper_info: Dict, output_dir: str, config: Config) -> Op
     # Create output filename
     output_file = os.path.join(
         output_dir,
-        f"{re.sub(r'[^\w\-_]', '_', paper_info['title'])}.mp4"
+        sanitize_filename(paper_info["title"]) + ".mp4"
     )
     
     # Decide whether to use stock videos based on config
@@ -103,35 +111,21 @@ async def process_paper(paper_info: Dict, output_dir: str, config: Config) -> Op
             os.remove(pdf_filename)
         return None
     
-    # Upload video to S3
-    logger.info(f"Uploading video to S3...")
+    logger.info(f"Uploading video to Cloudinary...")
     try:
-        # Initialize S3 storage
-        s3_storage = S3Storage(
-            bucket_name=config.get("storage.s3.bucket_name", "paperbites-videos"),
-            region_name=config.get("storage.s3.region", "us-east-1"),
-            aws_access_key_id=config.get("storage.s3.access_key_id"),
-            aws_secret_access_key=config.get("storage.s3.secret_access_key")
-        )
-        
-        # Create a unique filename for S3
-        video_filename = f"{uuid.uuid4()}_{os.path.basename(video_path)}"
-        final_video_path = config.get("storage.s3.final_videos_prefix", "app-final-videos")
-        
-        # Upload the video
-        video_url = s3_storage.upload_video(
-            file_path=video_path,
-            object_key=video_filename
-        )
+        # Initialize cloudinary storage
+        video_url = cloudinary_storage.upload_video(video_path)
         
         if not video_url:
-            logger.error("Failed to upload video to S3")
+            logger.error("Failed to upload video to Cloudinary")
             # Continue with local file if upload fails
             video_url = f"file://{video_path}"
         
+        logger.info(f"Video uploaded to Cloudinary: {video_url}")
+            
     except Exception as e:
-        logger.error(f"Error setting up S3 storage: {e}")
-        # Continue with local file if S3 setup fails
+        logger.error(f"Error uploading to Cloudinary: {e}")
+        # Continue with local file if upload fails
         video_url = f"file://{video_path}"
     
     # Create video metadata
@@ -154,7 +148,7 @@ async def process_paper(paper_info: Dict, output_dir: str, config: Config) -> Op
     # Save metadata to a local JSON file
     metadata_file = os.path.join(
         output_dir,
-        f"{re.sub(r'[^\w\-_]', '_', paper_info['title'])}.json"
+        sanitize_filename(paper_info["title"]) + "_metadata.json"
     )
     
     with open(metadata_file, 'w') as f:
@@ -170,7 +164,7 @@ async def process_paper(paper_info: Dict, output_dir: str, config: Config) -> Op
 
 async def process_pdf(pdf_path: str, output_dir: str, config: Config) -> Optional[Dict]:
     """
-    Process a local PDF file and upload video to S3.
+    Process a local PDF file and upload video to cloudinary.
     
     Args:
         pdf_path: Path to PDF file
