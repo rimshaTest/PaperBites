@@ -98,11 +98,10 @@ Edit `config.json` to customize behavior:
     "fps": 30
   },
   "storage": {
-    "s3": {
-      "bucket_name": "paperbites-videos",
-      "region": "us-east-1",
-      "access_key_id": "YOUR_AWS_ACCESS_KEY",
-      "secret_access_key": "YOUR_AWS_SECRET_KEY"
+    "cloudinary": {
+      "cloud_name": "",
+      "api_key": "",
+      "api_secret": ""
     }
   },
   "paths": {

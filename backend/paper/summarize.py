@@ -14,15 +14,9 @@ from config import Config
 logger = logging.getLogger("paperbites.summarize")
 
 # Initialize NLTK resources
-try:
-    nltk.data.find('tokenizers/punkt')
-except LookupError:
-    nltk.download('punkt', quiet=True)
-    
-try:
-    nltk.data.find('corpora/stopwords')
-except LookupError:
-    nltk.download('stopwords', quiet=True)
+nltk.download('punkt', quiet=True)
+nltk.download('punkt_tab')  # Try to download the specific resource
+nltk.download('stopwords', quiet=True)
 
 # Load config
 config = Config()

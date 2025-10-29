@@ -1,0 +1,36 @@
+{
+  "api": {
+    "pexels_key": "zSWN3u3WhcoUUi6yIdyQoGZWbnkOfBKWNfqKa7jU74SVFPUEVzPgrTon",
+    "email": "novelleapps@outlook.com"
+  },
+  "video": {
+    "formats": {
+      "tiktok": {"width": 1080, "height": 1920},
+      "instagram": {"width": 1080, "height": 1080},
+      "youtube": {"width": 1920, "height": 1080}
+    },
+    "default_format": "tiktok",
+    "fps": 30
+  },
+  "paper_search": {
+    "sources": [
+      "arxiv",
+      "openalex",
+      "semantic_scholar"
+    ],
+    "max_papers": 3,
+    "open_access_only": true
+  },
+  "storage": {
+    "cloudinary": {
+      "cloud_name": "dd9tsotfz",
+      "api_key": "453877466769253",
+      "api_secret": "cibm0X3UMWkTdRaRzH5Xjz7i554"
+    }
+  },
+  "paths": {
+    "temp_dir": "temp_assets",
+    "output_dir": "videos",
+    "tesseract_cmd": "path/to/tesseract"
+  }
+}

@@ -38,6 +38,11 @@ class Config:
                 "region": "us-east-1",
                 "access_key_id": "",
                 "secret_access_key": ""
+            },
+            "cloudinary": {
+                "cloud_name": "dd9tsotfz",
+                "api_key": "453877466769253",
+                "api_secret": "cibm0X3UMWkTdRaRzH5Xjz7i554"
             }
         },
         "paths": {
@@ -75,19 +80,6 @@ class Config:
         # API keys
         if os.getenv("PEXELS_API_KEY"):
             self.set("api.pexels_key", os.getenv("PEXELS_API_KEY"))
-        
-        # AWS credentials
-        if os.getenv("AWS_ACCESS_KEY_ID"):
-            self.set("storage.s3.access_key_id", os.getenv("AWS_ACCESS_KEY_ID"))
-        
-        if os.getenv("AWS_SECRET_ACCESS_KEY"):
-            self.set("storage.s3.secret_access_key", os.getenv("AWS_SECRET_ACCESS_KEY"))
-        
-        if os.getenv("AWS_DEFAULT_REGION"):
-            self.set("storage.s3.region", os.getenv("AWS_DEFAULT_REGION"))
-        
-        if os.getenv("S3_BUCKET_NAME"):
-            self.set("storage.s3.bucket_name", os.getenv("S3_BUCKET_NAME"))
             
         # OCR configuration
         if os.getenv("TESSERACT_CMD"):

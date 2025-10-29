@@ -14,8 +14,11 @@ tesseract
 ffmpeg
 boto3
 fastapi
+starlette
 uvicorn
 python-multipart
 arxiv==2.2.0
 unpywall
 pydantic
+torch>=2.0.0
+pydub
