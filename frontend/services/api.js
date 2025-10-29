@@ -2,14 +2,22 @@ import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 
 // Use your actual IP address that's accessible from your physical device
-const YOUR_COMPUTER_IP = '192.168.0.14'; // Replace with your actual IP
+const COMPUTER_IP = '192.168.0.14'; // Replace with your actual IP
 
-// Determine API base URL based on platform and environment
-const API_BASE_URL = Platform.OS === 'web' 
-  ? 'http://localhost:8000/api' 
-  : `http://${YOUR_COMPUTER_IP}:8000/api`;
+const getApiBaseUrl = () => {
+  // Production: use environment variable
+  if (process.env.REACT_APP_API_URL) {
+    return `${process.env.REACT_APP_API_URL}/api`;
+  }
+  
+  // Development: use localhost or IP
+  return Platform.OS === 'web' 
+    ? 'http://localhost:8000/api' 
+    : `http://${COMPUTER_IP}:8000/api`;
+};
 
-// Add logging to debug connection issues
+const API_BASE_URL = getApiBaseUrl();
+
 console.log(`Using API base URL: ${API_BASE_URL}`);
 
 /**
