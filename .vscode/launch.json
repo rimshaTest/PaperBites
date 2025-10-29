@@ -1,0 +1,33 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug Expo",
+      "request": "launch",
+      "type": "reactnative",
+      "cwd": "${workspaceFolder}",
+      "platform": "exponent"
+    },
+    {
+      "name": "Debug Android",
+      "request": "launch", 
+      "type": "reactnative",
+      "cwd": "${workspaceFolder}",
+      "platform": "android"
+    },
+    {
+      "name": "Debug iOS",
+      "request": "launch",
+      "type": "reactnative",
+      "cwd": "${workspaceFolder}",
+      "platform": "ios"
+    },
+    {
+      "name": "Debug in Web Browser",
+      "type": "chrome",
+      "request": "launch",
+      "url": "http://localhost:19006", // Default Expo web port
+      "webRoot": "${workspaceFolder}"
+    }
+  ]
+}

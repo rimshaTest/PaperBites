@@ -14,6 +14,7 @@ tesseract
 ffmpeg
 boto3
 fastapi
+starlette
 uvicorn
 python-multipart
 arxiv==2.2.0
