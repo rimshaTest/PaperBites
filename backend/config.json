@@ -26,6 +26,10 @@
       "cloud_name": "dd9tsotfz",
       "api_key": "453877466769253",
       "api_secret": "cibm0X3UMWkTdRaRzH5Xjz7i554"
+    },
+    "mongodb": {
+      "connection_string": "mongodb+srv://novelleapps_db_user:dfwlHQ92cXrf5t9V@paperbitescluster.0pwisgu.mongodb.net/",
+      "database_name": "paperbites"
     }
   },
   "paths": {
