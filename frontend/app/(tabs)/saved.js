@@ -9,10 +9,10 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import VideoCard from '../components/VideoCard';
-import { useFavoriteVideos } from '../hooks/useStorage';
-import { useAuth } from '../hooks/useAuth';
-import Colors from '../constants/Colors';
+import VideoCard from '../../components/VideoCard';
+import { useFavoriteVideos } from '../../hooks/useStorage';
+import { useAuth } from '../../hooks/useAuth';
+import theme from '../../constants/theme';
 
 export default function SavedScreen() {
   const router = useRouter();
@@ -26,11 +26,7 @@ export default function SavedScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
-          <Ionicons name="arrow-back" size={24} color="#333" />
-        </TouchableOpacity>
         <Text style={styles.headerTitle}>Saved</Text>
-        <View style={styles.headerButton} />
       </View>
 
       {authLoading || loading ? (
@@ -39,7 +35,7 @@ export default function SavedScreen() {
         </View>
       ) : !user ? (
         <View style={styles.centerContainer}>
-          <Ionicons name="lock-closed-outline" size={40} color="#ccc" />
+          <Ionicons name="lock-closed-outline" size={40} color={theme.textMuted} />
           <Text style={styles.emptyText}>Log in to see your saved papers.</Text>
           <TouchableOpacity style={styles.loginButton} onPress={() => router.push('/login')}>
             <Text style={styles.loginButtonText}>Log In</Text>
@@ -47,7 +43,7 @@ export default function SavedScreen() {
         </View>
       ) : favorites.length === 0 ? (
         <View style={styles.centerContainer}>
-          <Ionicons name="bookmark-outline" size={40} color="#ccc" />
+          <Ionicons name="bookmark-outline" size={40} color={theme.textMuted} />
           <Text style={styles.emptyText}>
             Nothing saved yet. Tap the bookmark icon on any paper to keep it here.
           </Text>
@@ -75,26 +71,20 @@ export default function SavedScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f9f9f9',
+    backgroundColor: theme.background,
   },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 10,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-    backgroundColor: '#fff',
-  },
-  headerButton: {
-    width: 34,
-    padding: 5,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1.5,
+    borderBottomColor: theme.border,
+    backgroundColor: theme.surface,
   },
   headerTitle: {
-    fontSize: 18,
+    fontFamily: theme.serif,
+    fontSize: 22,
     fontWeight: 'bold',
-    color: '#333',
+    color: theme.text,
   },
   centerContainer: {
     flex: 1,
@@ -104,19 +94,21 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 15,
-    color: '#666',
+    color: theme.textMuted,
     textAlign: 'center',
     marginTop: 10,
   },
   loginButton: {
-    backgroundColor: '#4285F4',
-    borderRadius: 8,
+    backgroundColor: theme.accent,
+    borderWidth: 1.5,
+    borderColor: theme.border,
+    borderRadius: 10,
     paddingVertical: 10,
     paddingHorizontal: 30,
     marginTop: 16,
   },
   loginButtonText: {
-    color: '#fff',
+    color: theme.text,
     fontSize: 15,
     fontWeight: 'bold',
   },

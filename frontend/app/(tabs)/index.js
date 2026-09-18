@@ -11,13 +11,13 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import VideoCard from '../components/VideoCard';
-import LoadingIndicator from '../components/LoadingIndicator';
-import ErrorMessage from '../components/ErrorMessage';
-import { fetchVideos } from '../services/api';
-import { useFavoriteVideos } from '../hooks/useStorage';
-import { useAuth } from '../hooks/useAuth';
-import Colors from '../constants/Colors';
+import VideoCard from '../../components/VideoCard';
+import LoadingIndicator from '../../components/LoadingIndicator';
+import ErrorMessage from '../../components/ErrorMessage';
+import { fetchVideos } from '../../services/api';
+import { useFavoriteVideos } from '../../hooks/useStorage';
+import { useAuth } from '../../hooks/useAuth';
+import theme from '../../constants/theme';
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -100,7 +100,7 @@ export default function HomeScreen() {
   const renderEmptyComponent = () => (
     <View style={styles.emptyContainer}>
       {loading ? (
-        <ActivityIndicator size="large" color="#4285F4" />
+        <ActivityIndicator size="large" color={theme.accent} />
       ) : (
         <Text style={styles.emptyText}>
           {error || "No videos found. Pull down to refresh."}
@@ -114,7 +114,7 @@ export default function HomeScreen() {
     if (!loading || videos.length === 0) return null;
     return (
       <View style={styles.footerContainer}>
-        <ActivityIndicator size="small" color="#4285F4" />
+        <ActivityIndicator size="small" color={theme.accent} />
         <Text style={styles.footerText}>Loading more videos...</Text>
       </View>
     );
@@ -136,18 +136,13 @@ export default function HomeScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.headerSpacer}
-          onPress={() => router.push('/account')}
-        >
-          <Ionicons name="person-circle-outline" size={24} color="#333" />
-        </TouchableOpacity>
+        <View style={styles.headerSpacer} />
         <Text style={styles.title}>PaperBites</Text>
         <TouchableOpacity
-          style={styles.savedButton}
-          onPress={() => router.push('/saved')}
+          style={styles.searchButton}
+          onPress={() => router.push('/search')}
         >
-          <Ionicons name="bookmark-outline" size={22} color="#333" />
+          <Ionicons name="search-outline" size={22} color={theme.text} />
         </TouchableOpacity>
       </View>
 
@@ -170,7 +165,7 @@ export default function HomeScreen() {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={handleRefresh}
-            colors={['#4285F4']}
+            colors={[theme.accent]}
           />
         }
         showsVerticalScrollIndicator={false}
@@ -183,7 +178,7 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f9f9f9',
+    backgroundColor: theme.background,
   },
   header: {
     flexDirection: 'row',
@@ -191,22 +186,23 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 16,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    backgroundColor: theme.surface,
+    borderBottomWidth: 1.5,
+    borderBottomColor: theme.border,
   },
   headerSpacer: {
     width: 32,
   },
-  savedButton: {
+  searchButton: {
     width: 32,
     alignItems: 'flex-end',
   },
   title: {
     flex: 1,
+    fontFamily: theme.serif,
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#333',
+    color: theme.text,
     textAlign: 'center',
   },
   listContent: {
@@ -224,7 +220,7 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 16,
-    color: '#666',
+    color: theme.textMuted,
     textAlign: 'center',
   },
   footerContainer: {
@@ -235,7 +231,7 @@ const styles = StyleSheet.create({
   },
   footerText: {
     fontSize: 14,
-    color: '#666',
+    color: theme.textMuted,
     marginLeft: 8,
   },
 });
