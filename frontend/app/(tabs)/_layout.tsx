@@ -11,16 +11,13 @@ export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: theme.surface,
-        tabBarActiveBackgroundColor: theme.accent,
+        tabBarActiveTintColor: theme.text,
+        tabBarInactiveTintColor: theme.textMuted,
         headerShown: false,
         tabBarButton: HapticTab,
         tabBarBackground: TabBarBackground,
         tabBarStyle: Platform.select({
           ios: {
-            position: 'absolute',
-          },
-          android: {
             position: 'absolute',
           },
           default: {},
@@ -34,9 +31,9 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="interests"
+        name="saved"
         options={{
-          title: 'Interests',
+          title: 'Saved',
           tabBarIcon: ({ color }) => <IconSymbol size={26} name="bookmark.fill" color={color} />,
         }}
       />
@@ -47,6 +44,10 @@ export default function TabLayout() {
           tabBarIcon: ({ color }) => <IconSymbol size={26} name="person.fill" color={color} />,
         }}
       />
+      {/* Brought in from main's frontend rewrite; not wired up here since it calls
+          /api/categories, which doesn't exist in this branch's backend yet. Hidden
+          from the tab bar rather than deleted, since it's someone else's in-progress work. */}
+      <Tabs.Screen name="interests" options={{ href: null }} />
     </Tabs>
   );
 }

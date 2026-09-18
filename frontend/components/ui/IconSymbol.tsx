@@ -20,8 +20,6 @@ const MAPPING = {
   'person.fill': 'person',
   'chevron.left.forwardslash.chevron.right': 'code',
   'chevron.right': 'chevron-right',
-  'bookmark.fill': 'bookmark',
-  'person.fill': 'person',
 } as IconMapping;
 
 /**
