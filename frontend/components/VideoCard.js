@@ -1,31 +1,48 @@
 import React from 'react';
 import { View, Text, Image, StyleSheet, TouchableOpacity, Dimensions } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import Colors from '../constants/Colors';
 
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = width * 0.9;
 
-const VideoCard = ({ video, onPress }) => {
+const VideoCard = ({ video, onPress, isBookmarked = false, onToggleBookmark }) => {
   // Extract video thumbnail from the videoUrl
   // For this demo, we'll use a placeholder image
   const thumbnailUrl = video.thumbnailUrl || 'https://via.placeholder.com/400x600';
-  
+
   // Format paper details
   const formatDOI = (doi) => {
     return doi ? `DOI: ${doi}` : '';
   };
 
   return (
-    <TouchableOpacity 
-      style={styles.container} 
+    <TouchableOpacity
+      style={styles.container}
       activeOpacity={0.8}
       onPress={() => onPress(video)}
     >
-      <Image 
-        source={{ uri: thumbnailUrl }} 
+      <Image
+        source={{ uri: thumbnailUrl }}
         style={styles.thumbnail}
         resizeMode="cover"
       />
+      {onToggleBookmark && (
+        <TouchableOpacity
+          style={styles.bookmarkButton}
+          onPress={(e) => {
+            e.stopPropagation();
+            onToggleBookmark(video);
+          }}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <Ionicons
+            name={isBookmarked ? 'bookmark' : 'bookmark-outline'}
+            size={22}
+            color={isBookmarked ? '#4285F4' : '#fff'}
+          />
+        </TouchableOpacity>
+      )}
       <View style={styles.infoContainer}>
         <Text style={styles.title} numberOfLines={2}>{video.title}</Text>
         <Text style={styles.summary} numberOfLines={2}>{video.summary}</Text>
@@ -69,6 +86,17 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 200,
     backgroundColor: '#f0f0f0',
+  },
+  bookmarkButton: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   infoContainer: {
     padding: 12,

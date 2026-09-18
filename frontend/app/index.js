@@ -1,22 +1,26 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  View, 
-  Text, 
-  FlatList, 
-  StyleSheet, 
-  ActivityIndicator, 
+import {
+  View,
+  Text,
+  FlatList,
+  StyleSheet,
+  ActivityIndicator,
   RefreshControl,
+  TouchableOpacity,
   SafeAreaView
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import VideoCard from '../components/VideoCard';
 import LoadingIndicator from '../components/LoadingIndicator';
 import ErrorMessage from '../components/ErrorMessage';
 import { fetchVideos } from '../services/api';
+import { useFavoriteVideos } from '../hooks/useStorage';
 import Colors from '../constants/Colors';
 
 export default function HomeScreen() {
   const router = useRouter();
+  const { isFavorite, toggleFavorite } = useFavoriteVideos();
   const [videos, setVideos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -121,13 +125,25 @@ export default function HomeScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
+        <View style={styles.headerSpacer} />
         <Text style={styles.title}>PaperBites</Text>
+        <TouchableOpacity
+          style={styles.savedButton}
+          onPress={() => router.push('/saved')}
+        >
+          <Ionicons name="bookmark-outline" size={22} color="#333" />
+        </TouchableOpacity>
       </View>
-      
+
       <FlatList
         data={videos}
         renderItem={({ item }) => (
-          <VideoCard video={item} onPress={handleVideoPress} />
+          <VideoCard
+            video={item}
+            onPress={handleVideoPress}
+            isBookmarked={isFavorite(item.id)}
+            onToggleBookmark={toggleFavorite}
+          />
         )}
         keyExtractor={item => item.id}
         ListEmptyComponent={renderEmptyComponent}
@@ -154,12 +170,24 @@ const styles = StyleSheet.create({
     backgroundColor: '#f9f9f9',
   },
   header: {
-    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
     backgroundColor: '#fff',
     borderBottomWidth: 1,
     borderBottomColor: '#eee',
   },
+  headerSpacer: {
+    width: 32,
+  },
+  savedButton: {
+    width: 32,
+    alignItems: 'flex-end',
+  },
   title: {
+    flex: 1,
     fontSize: 20,
     fontWeight: 'bold',
     color: '#333',

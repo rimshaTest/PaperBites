@@ -9,17 +9,20 @@ import {
   Keyboard,
   SafeAreaView
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import VideoCard from '../components/VideoCard';
 import LoadingIndicator from '../components/LoadingIndicator';
 import { fetchVideos } from '../services/api';
 import { saveRecentSearches, getRecentSearches } from '../services/storage';
+import { useFavoriteVideos } from '../hooks/useStorage';
 import Colors from '../constants/Colors';
 
 export default function SearchScreen() {
   const router = useRouter();
-  const [searchQuery, setSearchQuery] = useState('');
+  const params = useLocalSearchParams();
+  const { isFavorite, toggleFavorite } = useFavoriteVideos();
+  const [searchQuery, setSearchQuery] = useState(params?.keyword || '');
   const [videos, setVideos] = useState([]);
   const [loading, setLoading] = useState(false);
   const [searchPerformed, setSearchPerformed] = useState(false);
@@ -31,28 +34,36 @@ export default function SearchScreen() {
       const searches = await getRecentSearches();
       setRecentSearches(searches);
     };
-    
+
     loadRecentSearches();
   }, []);
 
+  // If a keyword was passed in (e.g. tapping a topic chip elsewhere), search it right away
+  useEffect(() => {
+    if (params?.keyword) {
+      handleSearch(params.keyword);
+    }
+  }, [params?.keyword]);
+
   // Handle search submission
-  const handleSearch = async () => {
-    if (!searchQuery.trim()) return;
-    
+  const handleSearch = async (queryOverride) => {
+    const query = (typeof queryOverride === 'string' ? queryOverride : searchQuery).trim();
+    if (!query) return;
+
     Keyboard.dismiss();
     setLoading(true);
     setSearchPerformed(true);
-    
+
     try {
       const results = await fetchVideos({
-        keyword: searchQuery,
+        keyword: query,
         limit: 50,
       });
       setVideos(results);
-      
+
       // Add to recent searches if not already there
-      if (!recentSearches.includes(searchQuery)) {
-        const updatedSearches = [searchQuery, ...recentSearches].slice(0, 5);
+      if (!recentSearches.includes(query)) {
+        const updatedSearches = [query, ...recentSearches].slice(0, 5);
         setRecentSearches(updatedSearches);
         saveRecentSearches(updatedSearches);
       }
@@ -134,7 +145,12 @@ export default function SearchScreen() {
             <FlatList
               data={videos}
               renderItem={({ item }) => (
-                <VideoCard video={item} onPress={handleVideoPress} />
+                <VideoCard
+                  video={item}
+                  onPress={handleVideoPress}
+                  isBookmarked={isFavorite(item.id)}
+                  onToggleBookmark={toggleFavorite}
+                />
               )}
               keyExtractor={(item) => item.id}
               showsVerticalScrollIndicator={false}
@@ -146,14 +162,8 @@ export default function SearchScreen() {
                 No videos found for "{searchQuery}"
               </Text>
               <Text style={styles.suggestionsText}>
-                Try using different keywords or browse by topic
+                Try using different keywords
               </Text>
-              <TouchableOpacity
-                style={styles.browseButton}
-                onPress={() => router.push('/topics')}
-              >
-                <Text style={styles.browseButtonText}>Browse Topics</Text>
-              </TouchableOpacity>
             </View>
           )
         ) : (
@@ -242,16 +252,6 @@ const styles = StyleSheet.create({
     color: '#666',
     marginBottom: 20,
     textAlign: 'center',
-  },
-  browseButton: {
-    backgroundColor: '#4285F4',
-    paddingHorizontal: 15,
-    paddingVertical: 10,
-    borderRadius: 5,
-  },
-  browseButtonText: {
-    color: '#fff',
-    fontSize: 14,
   },
   videosList: {
     paddingVertical: 10,

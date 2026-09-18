@@ -106,10 +106,10 @@ export default function VideoDetailScreen() {
         
         <View style={styles.headerActions}>
           <TouchableOpacity onPress={toggleFavorite} style={styles.headerButton}>
-            <Ionicons 
-              name={isFavorite ? "heart" : "heart-outline"} 
-              size={24} 
-              color={isFavorite ? "#E53935" : "#333"} 
+            <Ionicons
+              name={isFavorite ? "bookmark" : "bookmark-outline"}
+              size={24}
+              color={isFavorite ? "#4285F4" : "#333"}
             />
           </TouchableOpacity>
           
@@ -163,11 +163,11 @@ export default function VideoDetailScreen() {
             <Text style={styles.sectionTitle}>Topics</Text>
             <View style={styles.keywordsContainer}>
               {video.keywords.map((keyword, index) => (
-                <TouchableOpacity 
-                  key={index} 
+                <TouchableOpacity
+                  key={index}
                   style={styles.keywordChip}
                   onPress={() => router.push({
-                    pathname: '/topics',
+                    pathname: '/search',
                     params: { keyword }
                   })}
                 >
