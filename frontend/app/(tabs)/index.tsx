@@ -1,13 +1,15 @@
 // app/index.tsx (or similar)
 import * as React from 'react';
-import { StyleSheet, SafeAreaView, StatusBar, Platform } from 'react-native';
-import VideoFeed from '../../components/VideoFeed'; // Adjust the path as needed
+import { StyleSheet, StatusBar } from 'react-native';
+import {SafeAreaView} from 'react-native-safe-area-context';
+import PaperFeed from '../../components/PaperFeed';
+import theme from '../../constants/theme';
 
 export default function HomeScreen() {
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
-      <VideoFeed />
+      <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
+      <PaperFeed />
     </SafeAreaView>
   );
 }
@@ -15,6 +17,6 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000',
+    backgroundColor: theme.background,
   },
 });
