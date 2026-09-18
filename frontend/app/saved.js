@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React from 'react';
 import {
   View,
   Text,
@@ -7,24 +7,17 @@ import {
   TouchableOpacity,
   SafeAreaView
 } from 'react-native';
-import { useRouter, useFocusEffect } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import VideoCard from '../components/VideoCard';
 import { useFavoriteVideos } from '../hooks/useStorage';
+import { useAuth } from '../hooks/useAuth';
 import Colors from '../constants/Colors';
 
 export default function SavedScreen() {
   const router = useRouter();
-  const { favorites, loading, isFavorite, toggleFavorite, removeFavorite } = useFavoriteVideos();
-
-  // Bookmarks are stored locally, so re-check them whenever this screen regains focus
-  // (e.g. after bookmarking something from the feed and coming back).
-  useFocusEffect(
-    useCallback(() => {
-      // useFavoriteVideos reloads from storage on mount; nothing else needed here yet,
-      // but this hook is the seam for a future server-backed refetch.
-    }, [])
-  );
+  const { user, token, loading: authLoading } = useAuth();
+  const { favorites, loading, isFavorite, removeFavorite } = useFavoriteVideos(token);
 
   const handleVideoPress = (video) => {
     router.push(`/video/${video.id}`);
@@ -40,9 +33,17 @@ export default function SavedScreen() {
         <View style={styles.headerButton} />
       </View>
 
-      {loading ? (
+      {authLoading || loading ? (
         <View style={styles.centerContainer}>
           <Text style={styles.emptyText}>Loading saved papers...</Text>
+        </View>
+      ) : !user ? (
+        <View style={styles.centerContainer}>
+          <Ionicons name="lock-closed-outline" size={40} color="#ccc" />
+          <Text style={styles.emptyText}>Log in to see your saved papers.</Text>
+          <TouchableOpacity style={styles.loginButton} onPress={() => router.push('/login')}>
+            <Text style={styles.loginButtonText}>Log In</Text>
+          </TouchableOpacity>
         </View>
       ) : favorites.length === 0 ? (
         <View style={styles.centerContainer}>
@@ -106,6 +107,18 @@ const styles = StyleSheet.create({
     color: '#666',
     textAlign: 'center',
     marginTop: 10,
+  },
+  loginButton: {
+    backgroundColor: '#4285F4',
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 30,
+    marginTop: 16,
+  },
+  loginButtonText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: 'bold',
   },
   videosList: {
     paddingVertical: 10,

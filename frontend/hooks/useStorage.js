@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getDeviceId } from '../services/storage';
 import { fetchBookmarks, addBookmark, removeBookmark } from '../services/api';
 
 // Constants for storage keys
@@ -88,31 +87,34 @@ export const useRecentSearches = () => {
 /**
  * Custom hook for managing bookmarked ("favorite") videos.
  *
- * Bookmarks are stored server-side (see backend/bookmarks.py), scoped by an
- * opaque per-device id rather than a real account, since there's no user
- * system yet. This hook fetches from the API on mount and keeps local state
- * in sync as the user toggles bookmarks.
+ * Bookmarks are stored server-side (see backend/bookmarks.py) and scoped to
+ * the signed-in account, so a session token (from useAuth()) is required.
+ * With no token, this hook simply reports an empty, non-loading list rather
+ * than calling the API - callers should route to /login if they want to let
+ * a signed-out user bookmark something.
  *
+ * @param {string|null} token - Session token from useAuth()
  * @returns {Object} - Favorite videos data and functions
  */
-export const useFavoriteVideos = () => {
+export const useFavoriteVideos = (token) => {
   const [favorites, setFavorites] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!!token);
   const [error, setError] = useState(null);
-  const [deviceId, setDeviceId] = useState(null);
 
-  // Load device id, then bookmarks, on mount
+  // (Re)load bookmarks whenever the session token changes (login/logout)
   useEffect(() => {
     let cancelled = false;
+
+    if (!token) {
+      setFavorites([]);
+      setLoading(false);
+      return;
+    }
 
     const load = async () => {
       try {
         setLoading(true);
-        const id = await getDeviceId();
-        if (cancelled) return;
-        setDeviceId(id);
-
-        const bookmarked = await fetchBookmarks(id);
+        const bookmarked = await fetchBookmarks(token);
         if (!cancelled) setFavorites(bookmarked);
       } catch (err) {
         console.error('Error loading favorites:', err);
@@ -124,7 +126,7 @@ export const useFavoriteVideos = () => {
 
     load();
     return () => { cancelled = true; };
-  }, []);
+  }, [token]);
 
   // Check if a video is in favorites
   const isFavorite = useCallback((videoId) => {
@@ -133,14 +135,14 @@ export const useFavoriteVideos = () => {
 
   // Add a video to favorites
   const addFavorite = useCallback(async (video) => {
-    if (!video || !video.id || !deviceId) return false;
+    if (!video || !video.id || !token) return false;
     if (isFavorite(video.id)) return true;
 
     // Optimistic update so the UI reacts immediately
     setFavorites(prev => [video, ...prev]);
 
     try {
-      await addBookmark(deviceId, video.id);
+      await addBookmark(token, video.id);
       return true;
     } catch (err) {
       console.error('Error adding favorite:', err);
@@ -148,17 +150,17 @@ export const useFavoriteVideos = () => {
       setFavorites(prev => prev.filter(v => v.id !== video.id));
       return false;
     }
-  }, [deviceId, isFavorite]);
+  }, [token, isFavorite]);
 
   // Remove a video from favorites
   const removeFavorite = useCallback(async (videoId) => {
-    if (!deviceId) return false;
+    if (!token) return false;
 
     const previous = favorites;
     setFavorites(prev => prev.filter(video => video.id !== videoId));
 
     try {
-      await removeBookmark(deviceId, videoId);
+      await removeBookmark(token, videoId);
       return true;
     } catch (err) {
       console.error('Error removing favorite:', err);
@@ -166,7 +168,7 @@ export const useFavoriteVideos = () => {
       setFavorites(previous);
       return false;
     }
-  }, [deviceId, favorites]);
+  }, [token, favorites]);
 
   // Toggle favorite status
   const toggleFavorite = useCallback(async (video) => {

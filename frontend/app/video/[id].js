@@ -16,12 +16,14 @@ import ErrorMessage from '../../components/ErrorMessage';
 import { fetchVideoById } from '../../services/api';
 import { addToWatchHistory } from '../../services/storage';
 import { useFavoriteVideos } from '../../hooks/useStorage';
+import { useAuth } from '../../hooks/useAuth';
 import Colors from '../../constants/Colors';
 
 export default function VideoDetailScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams();
-  const { isFavorite: isFavoriteFn, toggleFavorite: toggleFavoriteFn } = useFavoriteVideos();
+  const { user, token } = useAuth();
+  const { isFavorite: isFavoriteFn, toggleFavorite: toggleFavoriteFn } = useFavoriteVideos(token);
   const [video, setVideo] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -52,8 +54,12 @@ export default function VideoDetailScreen() {
 
   const isFavorite = isFavoriteFn(id);
 
-  // Toggle favorite status
+  // Toggle favorite status; bookmarking requires an account
   const toggleFavorite = async () => {
+    if (!user) {
+      router.push('/login');
+      return;
+    }
     if (video) {
       await toggleFavoriteFn(video);
     }

@@ -16,11 +16,13 @@ import LoadingIndicator from '../components/LoadingIndicator';
 import ErrorMessage from '../components/ErrorMessage';
 import { fetchVideos } from '../services/api';
 import { useFavoriteVideos } from '../hooks/useStorage';
+import { useAuth } from '../hooks/useAuth';
 import Colors from '../constants/Colors';
 
 export default function HomeScreen() {
   const router = useRouter();
-  const { isFavorite, toggleFavorite } = useFavoriteVideos();
+  const { user, token } = useAuth();
+  const { isFavorite, toggleFavorite } = useFavoriteVideos(token);
   const [videos, setVideos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -85,6 +87,15 @@ export default function HomeScreen() {
     router.push(`/video/${video.id}`);
   };
 
+  // Bookmarking requires an account; send signed-out users to log in instead
+  const handleToggleBookmark = (video) => {
+    if (!user) {
+      router.push('/login');
+      return;
+    }
+    toggleFavorite(video);
+  };
+
   // Empty component shown when no videos
   const renderEmptyComponent = () => (
     <View style={styles.emptyContainer}>
@@ -125,7 +136,12 @@ export default function HomeScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <View style={styles.headerSpacer} />
+        <TouchableOpacity
+          style={styles.headerSpacer}
+          onPress={() => router.push('/account')}
+        >
+          <Ionicons name="person-circle-outline" size={24} color="#333" />
+        </TouchableOpacity>
         <Text style={styles.title}>PaperBites</Text>
         <TouchableOpacity
           style={styles.savedButton}
@@ -142,7 +158,7 @@ export default function HomeScreen() {
             video={item}
             onPress={handleVideoPress}
             isBookmarked={isFavorite(item.id)}
-            onToggleBookmark={toggleFavorite}
+            onToggleBookmark={handleToggleBookmark}
           />
         )}
         keyExtractor={item => item.id}

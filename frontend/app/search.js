@@ -16,12 +16,14 @@ import LoadingIndicator from '../components/LoadingIndicator';
 import { fetchVideos } from '../services/api';
 import { saveRecentSearches, getRecentSearches } from '../services/storage';
 import { useFavoriteVideos } from '../hooks/useStorage';
+import { useAuth } from '../hooks/useAuth';
 import Colors from '../constants/Colors';
 
 export default function SearchScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const { isFavorite, toggleFavorite } = useFavoriteVideos();
+  const { user, token } = useAuth();
+  const { isFavorite, toggleFavorite } = useFavoriteVideos(token);
   const [searchQuery, setSearchQuery] = useState(params?.keyword || '');
   const [videos, setVideos] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -98,6 +100,15 @@ export default function SearchScreen() {
     router.push(`/video/${video.id}`);
   };
 
+  // Bookmarking requires an account; send signed-out users to log in instead
+  const handleToggleBookmark = (video) => {
+    if (!user) {
+      router.push('/login');
+      return;
+    }
+    toggleFavorite(video);
+  };
+
   // Render recent search item
   const renderRecentSearchItem = ({ item }) => (
     <TouchableOpacity 
@@ -149,7 +160,7 @@ export default function SearchScreen() {
                   video={item}
                   onPress={handleVideoPress}
                   isBookmarked={isFavorite(item.id)}
-                  onToggleBookmark={toggleFavorite}
+                  onToggleBookmark={handleToggleBookmark}
                 />
               )}
               keyExtractor={(item) => item.id}

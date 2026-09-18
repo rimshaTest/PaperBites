@@ -11,9 +11,19 @@ from typing import List, Dict, Optional
 from starlette.requests import Request
 
 import bookmarks as bookmarks_store
+import auth
 
 # Directory where video metadata is stored
 VIDEOS_DIR = os.environ.get("PAPERBITES_VIDEOS_DIR", "videos")
+
+
+def get_authenticated_user_id(request) -> Optional[str]:
+    """Resolve the requesting user from an 'Authorization: Bearer <token>' header."""
+    header = request.headers.get("authorization", "")
+    if not header.lower().startswith("bearer "):
+        return None
+    token = header[7:].strip()
+    return auth.get_user_id_for_token(token)
 
 def get_all_videos():
     """Get metadata for all videos."""
@@ -110,12 +120,12 @@ async def get_topics(request):
     return JSONResponse(popular_keywords)
 
 async def list_bookmarked_videos(request):
-    """Get full metadata for every video the given device has bookmarked."""
-    device_id = request.query_params.get("device_id")
-    if not device_id:
-        return JSONResponse({"detail": "device_id is required"}, status_code=400)
+    """Get full metadata for every video the current user has bookmarked."""
+    user_id = get_authenticated_user_id(request)
+    if not user_id:
+        return JSONResponse({"detail": "Authentication required"}, status_code=401)
 
-    entries = bookmarks_store.list_bookmarks(device_id)
+    entries = bookmarks_store.list_bookmarks(user_id)
     saved_at_by_id = {e["video_id"]: e["saved_at"] for e in entries}
 
     videos_by_id = {v["id"]: v for v in get_all_videos()}
@@ -126,33 +136,89 @@ async def list_bookmarked_videos(request):
 
 
 async def add_bookmark(request):
-    """Bookmark a video for the given device."""
+    """Bookmark a video for the current user."""
+    user_id = get_authenticated_user_id(request)
+    if not user_id:
+        return JSONResponse({"detail": "Authentication required"}, status_code=401)
+
     try:
         body = await request.json()
     except Exception:
         return JSONResponse({"detail": "Invalid JSON body"}, status_code=400)
 
-    device_id = body.get("device_id")
     video_id = body.get("video_id")
-    if not device_id or not video_id:
-        return JSONResponse({"detail": "device_id and video_id are required"}, status_code=400)
+    if not video_id:
+        return JSONResponse({"detail": "video_id is required"}, status_code=400)
 
     if not any(v.get("id") == video_id for v in get_all_videos()):
         return JSONResponse({"detail": "Video not found"}, status_code=404)
 
-    bookmarks_store.add_bookmark(device_id, video_id)
+    bookmarks_store.add_bookmark(user_id, video_id)
     return JSONResponse({"status": "ok", "bookmarked": True}, status_code=201)
 
 
 async def remove_bookmark(request):
-    """Remove a device's bookmark on a video."""
-    device_id = request.query_params.get("device_id")
-    video_id = request.path_params["video_id"]
-    if not device_id:
-        return JSONResponse({"detail": "device_id is required"}, status_code=400)
+    """Remove the current user's bookmark on a video."""
+    user_id = get_authenticated_user_id(request)
+    if not user_id:
+        return JSONResponse({"detail": "Authentication required"}, status_code=401)
 
-    bookmarks_store.remove_bookmark(device_id, video_id)
+    video_id = request.path_params["video_id"]
+    bookmarks_store.remove_bookmark(user_id, video_id)
     return JSONResponse({"status": "ok", "bookmarked": False})
+
+
+async def signup(request):
+    """Create a new account and return a session token."""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"detail": "Invalid JSON body"}, status_code=400)
+
+    try:
+        user = auth.create_user(body.get("email", ""), body.get("password", ""))
+    except auth.AuthError as e:
+        return JSONResponse({"detail": str(e)}, status_code=400)
+
+    token = auth.create_session(user["id"])
+    return JSONResponse({"token": token, "user": user}, status_code=201)
+
+
+async def login(request):
+    """Authenticate and return a session token."""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"detail": "Invalid JSON body"}, status_code=400)
+
+    try:
+        user = auth.authenticate(body.get("email", ""), body.get("password", ""))
+    except auth.AuthError as e:
+        return JSONResponse({"detail": str(e)}, status_code=401)
+
+    token = auth.create_session(user["id"])
+    return JSONResponse({"token": token, "user": user})
+
+
+async def logout(request):
+    """Invalidate the current session token."""
+    header = request.headers.get("authorization", "")
+    if header.lower().startswith("bearer "):
+        auth.delete_session(header[7:].strip())
+    return JSONResponse({"status": "ok"})
+
+
+async def get_me(request):
+    """Return the currently authenticated user, if any."""
+    user_id = get_authenticated_user_id(request)
+    if not user_id:
+        return JSONResponse({"detail": "Authentication required"}, status_code=401)
+
+    user = auth.get_user_by_id(user_id)
+    if not user:
+        return JSONResponse({"detail": "Authentication required"}, status_code=401)
+
+    return JSONResponse({"user": user})
 
 
 # Define routes
@@ -163,6 +229,10 @@ routes = [
     Route("/api/bookmarks", list_bookmarked_videos, methods=["GET"]),
     Route("/api/bookmarks", add_bookmark, methods=["POST"]),
     Route("/api/bookmarks/{video_id}", remove_bookmark, methods=["DELETE"]),
+    Route("/api/auth/signup", signup, methods=["POST"]),
+    Route("/api/auth/login", login, methods=["POST"]),
+    Route("/api/auth/logout", logout, methods=["POST"]),
+    Route("/api/auth/me", get_me, methods=["GET"]),
 ]
 
 # Set up middleware

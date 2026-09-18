@@ -5,27 +5,48 @@ const KEYS = {
   RECENT_SEARCHES: 'paperbites_recent_searches',
   WATCH_HISTORY: 'paperbites_watch_history',
   APP_SETTINGS: 'paperbites_app_settings',
-  DEVICE_ID: 'paperbites_device_id',
+  AUTH_TOKEN: 'paperbites_auth_token',
+  AUTH_USER: 'paperbites_auth_user',
 };
 
 /**
- * Get this device's opaque id, generating and persisting one on first use.
- * Used to scope server-side bookmarks without a real account system.
- *
- * @returns {Promise<string>} Device id
+ * Persist the current session (token + user) after signup/login.
  */
-export const getDeviceId = async () => {
+export const saveAuthSession = async (token, user) => {
   try {
-    const existing = await AsyncStorage.getItem(KEYS.DEVICE_ID);
-    if (existing) return existing;
-
-    const generated = `dev-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
-    await AsyncStorage.setItem(KEYS.DEVICE_ID, generated);
-    return generated;
+    await AsyncStorage.setItem(KEYS.AUTH_TOKEN, token);
+    await AsyncStorage.setItem(KEYS.AUTH_USER, JSON.stringify(user));
   } catch (error) {
-    console.error('Error getting device id:', error);
-    // Fall back to a per-call id rather than crashing; bookmarks just won't persist.
-    return `dev-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+    console.error('Error saving auth session:', error);
+  }
+};
+
+/**
+ * Read the persisted session, if any.
+ * @returns {Promise<{token: string|null, user: Object|null}>}
+ */
+export const getAuthSession = async () => {
+  try {
+    const token = await AsyncStorage.getItem(KEYS.AUTH_TOKEN);
+    const userJson = await AsyncStorage.getItem(KEYS.AUTH_USER);
+    return {
+      token: token || null,
+      user: userJson ? JSON.parse(userJson) : null,
+    };
+  } catch (error) {
+    console.error('Error loading auth session:', error);
+    return { token: null, user: null };
+  }
+};
+
+/**
+ * Clear the persisted session (logout, or an invalid/expired token).
+ */
+export const clearAuthSession = async () => {
+  try {
+    await AsyncStorage.multiRemove([KEYS.AUTH_TOKEN, KEYS.AUTH_USER]);
+  } catch (error) {
+    console.error('Error clearing auth session:', error);
   }
 };
 

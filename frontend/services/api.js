@@ -16,7 +16,7 @@ const getApiBaseUrl = () => {
     : `http://${COMPUTER_IP}:8000/api`;
 };
 
-const API_BASE_URL = getApiBaseUrl();
+export const API_BASE_URL = getApiBaseUrl();
 
 console.log(`Using API base URL: ${API_BASE_URL}`);
 
@@ -92,13 +92,15 @@ export const fetchTopics = async () => {
 };
 
 /**
- * Fetch full video metadata for everything a device has bookmarked
- * @param {string} deviceId - Opaque per-device id
+ * Fetch full video metadata for everything the signed-in user has bookmarked
+ * @param {string} token - Session token from login/signup
  * @returns {Promise<Array>} - Promise that resolves to an array of bookmarked videos, newest first
  */
-export const fetchBookmarks = async (deviceId) => {
+export const fetchBookmarks = async (token) => {
   try {
-    const response = await fetch(`${API_BASE_URL}/bookmarks?device_id=${encodeURIComponent(deviceId)}`);
+    const response = await fetch(`${API_BASE_URL}/bookmarks`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
 
     if (!response.ok) {
       throw new Error(`API error: ${response.status}`);
@@ -112,16 +114,19 @@ export const fetchBookmarks = async (deviceId) => {
 };
 
 /**
- * Bookmark a video for a device
- * @param {string} deviceId - Opaque per-device id
+ * Bookmark a video for the signed-in user
+ * @param {string} token - Session token from login/signup
  * @param {string} videoId - ID of the video to bookmark
  * @returns {Promise<Object>}
  */
-export const addBookmark = async (deviceId, videoId) => {
+export const addBookmark = async (token, videoId) => {
   const response = await fetch(`${API_BASE_URL}/bookmarks`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ device_id: deviceId, video_id: videoId }),
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ video_id: videoId }),
   });
 
   if (!response.ok) {
@@ -132,15 +137,18 @@ export const addBookmark = async (deviceId, videoId) => {
 };
 
 /**
- * Remove a device's bookmark on a video
- * @param {string} deviceId - Opaque per-device id
+ * Remove the signed-in user's bookmark on a video
+ * @param {string} token - Session token from login/signup
  * @param {string} videoId - ID of the video to un-bookmark
  * @returns {Promise<Object>}
  */
-export const removeBookmark = async (deviceId, videoId) => {
+export const removeBookmark = async (token, videoId) => {
   const response = await fetch(
-    `${API_BASE_URL}/bookmarks/${encodeURIComponent(videoId)}?device_id=${encodeURIComponent(deviceId)}`,
-    { method: 'DELETE' }
+    `${API_BASE_URL}/bookmarks/${encodeURIComponent(videoId)}`,
+    {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    }
   );
 
   if (!response.ok) {
