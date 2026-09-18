@@ -11,10 +11,10 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import VideoCard from '../../components/VideoCard';
+import PaperCard from '../../components/PaperCard';
 import LoadingIndicator from '../../components/LoadingIndicator';
 import ErrorMessage from '../../components/ErrorMessage';
-import { fetchVideos } from '../../services/api';
+import { fetchPapers } from '../../services/api';
 import { useFavoriteVideos } from '../../hooks/useStorage';
 import { useAuth } from '../../hooks/useAuth';
 import theme from '../../constants/theme';
@@ -23,7 +23,7 @@ export default function HomeScreen() {
   const router = useRouter();
   const { user, token } = useAuth();
   const { isFavorite, toggleFavorite } = useFavoriteVideos(token);
-  const [videos, setVideos] = useState([]);
+  const [papers, setPapers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
@@ -31,13 +31,14 @@ export default function HomeScreen() {
   const [hasMore, setHasMore] = useState(true);
   const PAGE_SIZE = 10;
 
-  // Load initial videos
+  // Load initial papers
   useEffect(() => {
-    loadVideos();
+    loadPapers();
   }, []);
 
-  // Function to load videos
-  const loadVideos = async (refresh = false) => {
+  // Function to load papers - the feed is papers fetched via the free-API pipeline
+  // (Semantic Scholar/OpenAlex), not videos; video generation is a backburner feature.
+  const loadPapers = async (refresh = false) => {
     try {
       if (refresh) {
         setPage(0);
@@ -50,19 +51,19 @@ export default function HomeScreen() {
       setLoading(true);
       setError(null);
 
-      const fetchedVideos = await fetchVideos({
+      const fetchedPapers = await fetchPapers({
         limit: PAGE_SIZE,
         offset: pageToLoad * PAGE_SIZE,
       });
 
-      if (fetchedVideos.length < PAGE_SIZE) {
+      if (fetchedPapers.length < PAGE_SIZE) {
         setHasMore(false);
       }
 
-      setVideos(prev => refresh ? fetchedVideos : [...prev, ...fetchedVideos]);
+      setPapers(prev => refresh ? fetchedPapers : [...prev, ...fetchedPapers]);
       setPage(pageToLoad + 1);
     } catch (err) {
-      setError(`Failed to load videos: ${err.message}`);
+      setError(`Failed to load papers: ${err.message}`);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -72,38 +73,38 @@ export default function HomeScreen() {
   // Handle pull-to-refresh
   const handleRefresh = () => {
     setRefreshing(true);
-    loadVideos(true);
+    loadPapers(true);
   };
 
   // Handle reaching end of list (load more)
   const handleEndReached = () => {
     if (!loading && hasMore) {
-      loadVideos();
+      loadPapers();
     }
   };
 
-  // Handle video card press
-  const handleVideoPress = (video) => {
-    router.push(`/video/${video.id}`);
+  // Handle paper card press
+  const handlePaperPress = (paper) => {
+    router.push(`/paper/${paper.id}`);
   };
 
   // Bookmarking requires an account; send signed-out users to log in instead
-  const handleToggleBookmark = (video) => {
+  const handleToggleBookmark = (paper) => {
     if (!user) {
       router.push('/login');
       return;
     }
-    toggleFavorite(video);
+    toggleFavorite(paper);
   };
 
-  // Empty component shown when no videos
+  // Empty component shown when no papers
   const renderEmptyComponent = () => (
     <View style={styles.emptyContainer}>
       {loading ? (
         <ActivityIndicator size="large" color={theme.accent} />
       ) : (
         <Text style={styles.emptyText}>
-          {error || "No videos found. Pull down to refresh."}
+          {error || "No papers found. Pull down to refresh."}
         </Text>
       )}
     </View>
@@ -111,24 +112,24 @@ export default function HomeScreen() {
 
   // Footer component shown when loading more
   const renderFooter = () => {
-    if (!loading || videos.length === 0) return null;
+    if (!loading || papers.length === 0) return null;
     return (
       <View style={styles.footerContainer}>
         <ActivityIndicator size="small" color={theme.accent} />
-        <Text style={styles.footerText}>Loading more videos...</Text>
+        <Text style={styles.footerText}>Loading more papers...</Text>
       </View>
     );
   };
 
-  if (loading && videos.length === 0) {
-    return <LoadingIndicator message="Loading research videos..." />;
+  if (loading && papers.length === 0) {
+    return <LoadingIndicator message="Loading research papers..." />;
   }
 
-  if (error && videos.length === 0) {
+  if (error && papers.length === 0) {
     return (
       <ErrorMessage
         message={error}
-        onRetry={() => loadVideos(true)}
+        onRetry={() => loadPapers(true)}
       />
     );
   }
@@ -147,11 +148,11 @@ export default function HomeScreen() {
       </View>
 
       <FlatList
-        data={videos}
+        data={papers}
         renderItem={({ item }) => (
-          <VideoCard
-            video={item}
-            onPress={handleVideoPress}
+          <PaperCard
+            paper={item}
+            onPress={handlePaperPress}
             isBookmarked={isFavorite(item.id)}
             onToggleBookmark={handleToggleBookmark}
           />
@@ -169,7 +170,7 @@ export default function HomeScreen() {
           />
         }
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={videos.length === 0 ? styles.listContentEmpty : styles.listContent}
+        contentContainerStyle={papers.length === 0 ? styles.listContentEmpty : styles.listContent}
       />
     </SafeAreaView>
   );

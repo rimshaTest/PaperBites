@@ -9,6 +9,7 @@ export default function Layout() {
         <Stack.Screen name="login" />
         <Stack.Screen name="signup" />
         <Stack.Screen name="search" />
+        <Stack.Screen name="paper/[id]" />
         <Stack.Screen name="video/[id]" />
       </Stack>
     </AuthProvider>

@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import VideoCard from '../../components/VideoCard';
+import PaperCard from '../../components/PaperCard';
 import { useFavoriteVideos } from '../../hooks/useStorage';
 import { useAuth } from '../../hooks/useAuth';
 import theme from '../../constants/theme';
@@ -19,8 +19,8 @@ export default function SavedScreen() {
   const { user, token, loading: authLoading } = useAuth();
   const { favorites, loading, isFavorite, removeFavorite } = useFavoriteVideos(token);
 
-  const handleVideoPress = (video) => {
-    router.push(`/video/${video.id}`);
+  const handlePaperPress = (paper) => {
+    router.push(`/paper/${paper.id}`);
   };
 
   return (
@@ -52,9 +52,9 @@ export default function SavedScreen() {
         <FlatList
           data={favorites}
           renderItem={({ item }) => (
-            <VideoCard
-              video={item}
-              onPress={handleVideoPress}
+            <PaperCard
+              paper={item}
+              onPress={handlePaperPress}
               isBookmarked={isFavorite(item.id)}
               onToggleBookmark={() => removeFavorite(item.id)}
             />

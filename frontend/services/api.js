@@ -103,6 +103,77 @@ export const fetchTopics = async () => {
 };
 
 /**
+ * Fetch the paper feed - fetched via the backend's `fetch-latest` pipeline (Semantic
+ * Scholar/OpenAlex, no video generation involved). This is the primary feed now that video
+ * generation is a backburner feature.
+ * @param {Object} options - Filter options
+ * @param {number} options.limit - Maximum number of papers to fetch
+ * @param {number} options.offset - Offset for pagination
+ * @param {string} options.category - Category to filter by
+ * @returns {Promise<Array>} - Promise that resolves to an array of papers, newest first
+ */
+export const fetchPapers = async (options = {}) => {
+  const { limit = 50, offset = 0, category } = options;
+
+  let queryParams = `?limit=${limit}&offset=${offset}`;
+  if (category) {
+    queryParams += `&category=${encodeURIComponent(category)}`;
+  }
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/papers${queryParams}`);
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+
+    return response.json();
+  } catch (error) {
+    console.error('Error fetching papers:', error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch a single paper by ID
+ * @param {string} paperId - ID of the paper to fetch
+ * @returns {Promise<Object>} - Promise that resolves to paper metadata
+ */
+export const fetchPaperById = async (paperId) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/papers/${paperId}`);
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+
+    return response.json();
+  } catch (error) {
+    console.error(`Error fetching paper ${paperId}:`, error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch the fixed list of paper categories
+ * @returns {Promise<Array<string>>} - Promise that resolves to an array of category names
+ */
+export const fetchCategories = async () => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/categories`);
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+
+    return response.json();
+  } catch (error) {
+    console.error('Error fetching categories:', error);
+    throw error;
+  }
+};
+
+/**
  * Fetch full video metadata for everything the signed-in user has bookmarked
  * @param {string} token - Session token from login/signup
  * @returns {Promise<Array>} - Promise that resolves to an array of bookmarked videos, newest first
