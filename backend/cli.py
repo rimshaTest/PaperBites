@@ -11,15 +11,12 @@ import re
 
 from config import Config
 from utils.logging import setup_logging
-from utils.cloudinary_storage import CloudinaryStorage
-from paper.search import search_papers
-from paper.download import download_paper, get_paper_by_id
-from paper.extraction import extract_text_from_pdf, extract_paper_sections
-from paper.summarize import summarize_paper
-from video.compose import VideoGenerator
-from video.visual import rate_limit
+from paper.latest import get_latest_papers, CATEGORIES
+from db import upsert_papers
 
-cloudinary_storage = CloudinaryStorage()
+# The video-generation pipeline (PyMuPDF, pytesseract, moviepy, cloudinary, arxiv, scholarly)
+# pulls in heavy/optional dependencies that aren't needed for the fetch-latest command, so
+# those modules are imported lazily inside the functions that actually use them.
 
 
 def sanitize_filename(title):
@@ -39,20 +36,27 @@ async def process_paper(paper_info: Dict, output_dir: str, config: Config) -> Op
     Returns:
         dict: Video metadata or None if failed
     """
+    from paper.download import download_paper
+    from paper.extraction import extract_text_from_pdf, extract_paper_sections
+    from paper.summarize import summarize_paper
+    from video.compose import VideoGenerator
+    from video.visual import rate_limit
+    from utils.cloudinary_storage import CloudinaryStorage
+
     logger = logging.getLogger("paperbites.cli")
     logger.info(f"Processing paper: {paper_info['title']}")
-    
+
     # Check if API rate limit is exceeded
     if rate_limit.check():
         logger.error("Skipping paper due to API rate limit")
         return None
-    
+
     # Create filename from title
     pdf_filename = os.path.join(
         config.get("paths.temp_dir"),
         sanitize_filename(paper_info["title"]) + ".pdf",
     )
-    
+
     # Download PDF
     pdf_path = await download_paper(paper_info, pdf_filename)
     
@@ -114,7 +118,7 @@ async def process_paper(paper_info: Dict, output_dir: str, config: Config) -> Op
     logger.info(f"Uploading video to Cloudinary...")
     try:
         # Initialize cloudinary storage
-        video_url = cloudinary_storage.upload_video(video_path)
+        video_url = CloudinaryStorage().upload_video(video_path)
         
         if not video_url:
             logger.error("Failed to upload video to Cloudinary")
@@ -206,9 +210,12 @@ async def process_query(query: str, num_papers: int, output_dir: str, config: Co
     Returns:
         List[Dict]: List of video metadata
     """
+    from paper.search import search_papers
+    from video.visual import rate_limit
+
     logger = logging.getLogger("paperbites.cli")
     logger.info(f"Searching for papers: {query}")
-    
+
     # Search for papers
     papers = await search_papers(
         query,
@@ -258,9 +265,11 @@ async def process_id(paper_id: str, output_dir: str, config: Config) -> Optional
     Returns:
         dict: Video metadata or None if failed
     """
+    from paper.download import get_paper_by_id
+
     logger = logging.getLogger("paperbites.cli")
     logger.info(f"Processing paper with ID: {paper_id}")
-    
+
     # Get paper information
     paper_info = await get_paper_by_id(paper_id)
     
@@ -269,6 +278,21 @@ async def process_id(paper_id: str, output_dir: str, config: Config) -> Optional
         return None
     
     return await process_paper(paper_info, output_dir, config)
+
+async def fetch_latest_command(category: Optional[str], days: int, limit: int, sort_by: str = "date") -> int:
+    """Fetch papers for one or all known categories and upsert them into MongoDB."""
+    logger = logging.getLogger("paperbites.cli")
+    categories = [category] if category else CATEGORIES
+    total = 0
+
+    for cat in categories:
+        papers = await get_latest_papers(cat, days_back=days, limit=limit, sort_by=sort_by)
+        written = upsert_papers(papers)
+        total += written
+        logger.info(f"'{cat}': fetched {len(papers)} papers, upserted {written}")
+
+    return total
+
 
 def main():
     """Main entry point for the CLI application."""
@@ -299,6 +323,17 @@ def main():
     pdf_parser.add_argument("--no-stock-videos", help="Don't use stock videos, only gradients", 
                           action="store_true", default=False)
     
+    # Fetch-latest command
+    fetch_parser = subparsers.add_parser("fetch-latest", help="Fetch latest papers from free APIs into MongoDB")
+    fetch_parser.add_argument("--category", help="Single category to fetch (default: all known categories)", default=None)
+    fetch_parser.add_argument("--days", help="How many days back to look", type=int, default=7)
+    fetch_parser.add_argument("--limit", help="Max papers per category per source", type=int, default=20)
+    fetch_parser.add_argument(
+        "--sort-by", help="'date' for the latest papers, 'citations' for the most-cited in the window",
+        choices=["date", "citations"], default="date",
+    )
+    fetch_parser.add_argument("--config", "-c", help="Path to config file", default="config.json")
+
     # Common arguments
     for subparser in [search_parser, id_parser, pdf_parser]:
         subparser.add_argument("--config", "-c", help="Path to config file", default="config.json")
@@ -312,9 +347,10 @@ def main():
     logger = setup_logging()
     config = Config(args.config)
     
-    # Create necessary directories
-    os.makedirs(config.get("paths.temp_dir"), exist_ok=True)
-    os.makedirs(args.output_dir, exist_ok=True)
+    # Create necessary directories (not used by every command, e.g. fetch-latest)
+    if hasattr(args, "output_dir"):
+        os.makedirs(config.get("paths.temp_dir"), exist_ok=True)
+        os.makedirs(args.output_dir, exist_ok=True)
     
     # Update config for stock videos
     if hasattr(args, 'no_stock_videos') and args.no_stock_videos:
@@ -348,6 +384,9 @@ def main():
                 logger.info(f"Generated video: {metadata['videoUrl']}")
             else:
                 logger.error("Failed to generate video")
+        elif args.command == "fetch-latest":
+            total = await fetch_latest_command(args.category, args.days, args.limit, sort_by=args.sort_by)
+            logger.info(f"Upserted {total} papers total")
         else:
             parser.print_help()
     

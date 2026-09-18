@@ -1,154 +1,116 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, Dimensions } from 'react-native';
-import { Video } from 'expo-video';
+import { useVideoPlayer, VideoView } from 'expo-video';
+import { useEvent } from 'expo';
 import { Ionicons } from '@expo/vector-icons';
-import Colors from '../constants/Colors';
 
-const { width, height } = Dimensions.get('window');
+const { width } = Dimensions.get('window');
 
 const VideoPlayer = ({ videoUrl, title, autoplay = false }) => {
-  const videoRef = useRef(null);
-  const [status, setStatus] = useState({});
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  // Handle video loading and playback
-  useEffect(() => {
-    // Reset states when video URL changes
-    setIsLoading(true);
-    setError(null);
-    
-    // Handle autoplay if needed
-    if (autoplay && videoRef.current) {
-      videoRef.current.playAsync();
+  const player = useVideoPlayer(videoUrl, (player) => {
+    player.loop = false;
+    if (autoplay) {
+      player.play();
     }
-    
-    return () => {
-      // Cleanup: unload video when component unmounts
-      if (videoRef.current) {
-        videoRef.current.unloadAsync();
-      }
-    };
-  }, [videoUrl, autoplay]);
+  });
 
-  // Handle playback status updates
-  const handlePlaybackStatusUpdate = (playbackStatus) => {
-    if (playbackStatus.isLoaded) {
-      setIsLoading(false);
-      setStatus(playbackStatus);
-    } else if (playbackStatus.error) {
-      setIsLoading(false);
-      setError(`Error loading video: ${playbackStatus.error}`);
+  const { isPlaying } = useEvent(player, 'playingChange', { isPlaying: player.playing });
+  const { status, error: statusError } = useEvent(player, 'statusChange', { status: player.status });
+  const { currentTime } = useEvent(player, 'timeUpdate', { currentTime: player.currentTime });
+
+  const isLoading = status === 'loading';
+  const playerError = statusError ? `Failed to load video: ${statusError.message}` : null;
+
+  const togglePlayPause = () => {
+    if (isPlaying) {
+      player.pause();
+    } else {
+      player.play();
     }
-  };
-
-  // Toggle play/pause
-  const togglePlayPause = async () => {
-    if (videoRef.current) {
-      if (status.isPlaying) {
-        await videoRef.current.pauseAsync();
-      } else {
-        await videoRef.current.playAsync();
-      }
-    }
-  };
-
-  // Handle video loading error
-  const handleVideoError = (error) => {
-    setIsLoading(false);
-    setError(`Failed to load video: ${error}`);
   };
 
   return (
     <View style={styles.container}>
       {/* Video title */}
       {title && <Text style={styles.title}>{title}</Text>}
-      
+
       {/* Video player */}
-      <TouchableOpacity 
-        style={styles.videoContainer} 
-        activeOpacity={0.9} 
+      <TouchableOpacity
+        style={styles.videoContainer}
+        activeOpacity={0.9}
         onPress={togglePlayPause}
       >
-        <Video
-          ref={videoRef}
-          source={{ uri: videoUrl }}
-          rate={1.0}
-          volume={1.0}
-          isMuted={false}
-          resizeMode="contain"
-          shouldPlay={autoplay}
-          onPlaybackStatusUpdate={handlePlaybackStatusUpdate}
-          onError={handleVideoError}
+        <VideoView
+          player={player}
           style={styles.video}
+          contentFit="contain"
+          nativeControls={false}
         />
-        
+
         {/* Loading indicator */}
         {isLoading && (
           <View style={styles.overlayContainer}>
             <ActivityIndicator size="large" color="#fff" />
           </View>
         )}
-        
+
         {/* Error message */}
-        {error && (
+        {playerError && (
           <View style={styles.overlayContainer}>
-            <Text style={styles.errorText}>{error}</Text>
+            <Text style={styles.errorText}>{playerError}</Text>
           </View>
         )}
-        
+
         {/* Play/Pause button */}
-        {!isLoading && !error && (
+        {!isLoading && !playerError && (
           <View style={[
-            styles.overlayContainer, 
-            { backgroundColor: status.isPlaying ? 'transparent' : 'rgba(0, 0, 0, 0.3)' }
+            styles.overlayContainer,
+            { backgroundColor: isPlaying ? 'transparent' : 'rgba(0, 0, 0, 0.3)' }
           ]}>
-            {!status.isPlaying && (
+            {!isPlaying && (
               <Ionicons name="play" size={60} color="#fff" />
             )}
           </View>
         )}
       </TouchableOpacity>
-      
+
       {/* Video controls */}
       <View style={styles.controlsContainer}>
         <TouchableOpacity onPress={togglePlayPause} style={styles.controlButton}>
-          <Ionicons 
-            name={status.isPlaying ? "pause" : "play"} 
-            size={24} 
-            color="#333" 
+          <Ionicons
+            name={isPlaying ? "pause" : "play"}
+            size={24}
+            color="#333"
           />
         </TouchableOpacity>
-        
+
         {/* Progress indicator */}
         <View style={styles.progressContainer}>
-          <View 
+          <View
             style={[
-              styles.progressBar, 
-              { 
-                width: `${status.positionMillis && status.durationMillis 
-                  ? (status.positionMillis / status.durationMillis) * 100 
-                  : 0}%` 
+              styles.progressBar,
+              {
+                width: `${player.duration ? (currentTime / player.duration) * 100 : 0}%`
               }
-            ]} 
+            ]}
           />
         </View>
-        
+
         {/* Duration */}
         <Text style={styles.durationText}>
-          {formatDuration(status.positionMillis || 0)}/{formatDuration(status.durationMillis || 0)}
+          {formatDuration(currentTime)}/{formatDuration(player.duration || 0)}
         </Text>
       </View>
     </View>
   );
 };
 
-// Helper function to format duration
-const formatDuration = (milliseconds) => {
-  const totalSeconds = Math.floor(milliseconds / 1000);
+// Helper function to format duration (expo-video reports time in seconds)
+const formatDuration = (seconds) => {
+  const totalSeconds = Math.floor(seconds);
   const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+  const remainingSeconds = totalSeconds % 60;
+  return `${minutes}:${remainingSeconds < 10 ? '0' : ''}${remainingSeconds}`;
 };
 
 const styles = StyleSheet.create({

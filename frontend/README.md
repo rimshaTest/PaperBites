@@ -59,7 +59,7 @@ Make sure all required dependencies are installed:
 
 ```bash
 npm install @react-navigation/native @react-navigation/bottom-tabs @react-navigation/native-stack
-npm install @react-native-async-storage/async-storage expo-av
+npm install @react-native-async-storage/async-storage expo-video
 npm install expo-status-bar react-native-safe-area-context
 npm install react-native-screens
 ```

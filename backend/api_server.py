@@ -9,6 +9,13 @@ import json
 import glob
 from typing import List, Dict, Optional
 from starlette.requests import Request
+from bson import ObjectId
+from bson.errors import InvalidId
+
+from db import get_db
+from paper.latest import CATEGORIES
+from paper.chat import ask_about_paper
+from paper.resolve import resolve_paper
 
 # Directory where video metadata is stored
 VIDEOS_DIR = os.environ.get("PAPERBITES_VIDEOS_DIR", "videos")
@@ -107,11 +114,199 @@ async def get_topics(request):
     
     return JSONResponse(popular_keywords)
 
+def serialize_paper(paper: Dict) -> Dict:
+    """Shape a stored paper document into the card format the frontend expects.
+
+    Description is a <=200 word Gemini-generated plain-English summary of the paper (see
+    paper/summarize.py), not the raw abstract - academic abstracts are dense and, for survey
+    papers especially, long enough to feel cramped even with unlimited scroll room. Falls back to
+    the raw abstract if summarization wasn't available when the paper was fetched.
+    `relevance` is always "N/A" for now: there is no account system or profile-attribute
+    collection built yet, so there is no real user info to personalize against.
+    """
+    categories = paper.get("categories") or []
+    description = (paper.get("description") or paper.get("abstract") or "").strip()
+    if not description:
+        description = "No description available yet."
+
+    return {
+        "id": str(paper["_id"]),
+        "title": paper.get("title", "Untitled"),
+        "authors": paper.get("authors", []),
+        "description": description,
+        "citation_count": paper.get("citation_count", 0),
+        "published_date": paper.get("published_date"),
+        "journal": paper.get("journal"),
+        "publication_type": paper.get("publication_type"),
+        "is_open_access": paper.get("is_open_access"),
+        "language": paper.get("language", "en"),
+        "image_url": paper.get("image_url"),
+        "url": paper.get("url"),
+        "doi": paper.get("doi"),
+        "category": categories[0] if categories else None,
+        "relevance": "N/A",
+    }
+
+
+async def get_categories(request):
+    """Get the fixed list of categories papers are fetched for."""
+    return JSONResponse(CATEGORIES)
+
+
+async def list_papers(request):
+    """Get a list of latest papers, newest first, optionally filtered by category."""
+    limit = int(request.query_params.get("limit", "20"))
+    offset = int(request.query_params.get("offset", "0"))
+    category = request.query_params.get("category")
+
+    db = get_db()
+    query = {"categories": category} if category else {}
+    cursor = db.papers.find(query).sort("published_date", -1).skip(offset).limit(limit)
+
+    papers =  JSONResponse([serialize_paper(paper) for paper in cursor])
+    return papers
+
+async def resolve_saved_paper(request):
+    """Resolve a citation string or paper link/DOI into a full paper record and upsert it.
+
+    Backs the "Saved" tab's add-by-citation-or-link flow. Returns the same serialized shape as
+    GET /api/papers/{id} so the frontend can save its id locally right away. Route must be
+    registered before /api/papers/{paper_id} - otherwise Starlette would match "resolve" as a
+    paper_id there instead.
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"detail": "Invalid JSON body"}, status_code=400)
+
+    query = (body.get("query") or "").strip()
+    if not query:
+        return JSONResponse({"detail": "'query' is required"}, status_code=400)
+
+    paper = await resolve_paper(query)
+    if not paper:
+        return JSONResponse(
+            {"detail": "Could not find a paper matching that citation or link"}, status_code=404
+        )
+
+    db = get_db()
+    db.papers.update_one(
+        {"source": paper["source"], "source_id": paper["source_id"]},
+        {"$set": paper},
+        upsert=True,
+    )
+    stored = db.papers.find_one({"source": paper["source"], "source_id": paper["source_id"]})
+    return JSONResponse(serialize_paper(stored))
+
+
+async def get_paper(request):
+    """Get a single paper by id."""
+    paper_id = request.path_params["paper_id"]
+
+    try:
+        object_id = ObjectId(paper_id)
+    except InvalidId:
+        return JSONResponse({"detail": "Paper not found"}, status_code=404)
+
+    db = get_db()
+    paper = db.papers.find_one({"_id": object_id})
+
+    if not paper:
+        return JSONResponse({"detail": "Paper not found"}, status_code=404)
+
+    return JSONResponse(serialize_paper(paper))
+
+
+async def chat_about_paper(request):
+    """Answer a question about a specific paper using the Gemini-backed chat agent.
+
+    Body: {"question": str, "history": [{"role": "user"|"assistant", "content": str}, ...]}.
+    History is optional and is entirely client-supplied - there is no server-side conversation
+    state, so the client must resend prior turns to keep context across a multi-turn chat.
+    """
+    paper_id = request.path_params["paper_id"]
+
+    try:
+        object_id = ObjectId(paper_id)
+    except InvalidId:
+        return JSONResponse({"detail": "Paper not found"}, status_code=404)
+
+    db = get_db()
+    paper = db.papers.find_one({"_id": object_id})
+    if not paper:
+        return JSONResponse({"detail": "Paper not found"}, status_code=404)
+
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"detail": "Invalid JSON body"}, status_code=400)
+
+    question = (body.get("question") or "").strip()
+    if not question:
+        return JSONResponse({"detail": "'question' is required"}, status_code=400)
+    history = body.get("history") or []
+
+    answer = await ask_about_paper(paper, history, question)
+    if answer is None:
+        return JSONResponse({"detail": "Chat is not available right now"}, status_code=503)
+
+    return JSONResponse({"answer": answer})
+
+
+async def get_author(request):
+    """Get an author's name and all of their papers currently in the database."""
+    author_id = request.path_params["author_id"]
+
+    db = get_db()
+    papers = list(db.papers.find({"authors.id": author_id}).sort("published_date", -1))
+
+    if not papers:
+        return JSONResponse({"detail": "Author not found"}, status_code=404)
+
+    name = None
+    for paper in papers:
+        for author in paper.get("authors", []):
+            if author.get("id") == author_id:
+                name = author.get("name")
+                break
+        if name:
+            break
+
+    return JSONResponse({
+        "id": author_id,
+        "name": name,
+        "papers": [serialize_paper(paper) for paper in papers],
+    })
+
+
+async def get_journal(request):
+    """Get all papers published in a given journal/conference (matched by exact name)."""
+    journal_name = request.path_params["journal_name"]
+
+    db = get_db()
+    papers = list(db.papers.find({"journal": journal_name}).sort("published_date", -1))
+
+    if not papers:
+        return JSONResponse({"detail": "Journal not found"}, status_code=404)
+
+    return JSONResponse({
+        "name": journal_name,
+        "papers": [serialize_paper(paper) for paper in papers],
+    })
+
+
 # Define routes
 routes = [
     Route("/api/videos", list_videos),
     Route("/api/videos/{video_id}", get_video),
     Route("/api/topics", get_topics),
+    Route("/api/categories", get_categories),
+    Route("/api/papers", list_papers),
+    Route("/api/papers/resolve", resolve_saved_paper, methods=["POST"]),
+    Route("/api/papers/{paper_id}", get_paper),
+    Route("/api/papers/{paper_id}/chat", chat_about_paper, methods=["POST"]),
+    Route("/api/authors/{author_id}", get_author),
+    Route("/api/journals/{journal_name}", get_journal),
 ]
 
 # Set up middleware
