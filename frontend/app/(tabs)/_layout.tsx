@@ -11,13 +11,16 @@ export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: theme.text,
-        tabBarInactiveTintColor: theme.textMuted,
+        tabBarActiveTintColor: theme.surface,
+        tabBarActiveBackgroundColor: theme.accent,
         headerShown: false,
         tabBarButton: HapticTab,
         tabBarBackground: TabBarBackground,
         tabBarStyle: Platform.select({
           ios: {
+            position: 'absolute',
+          },
+          android: {
             position: 'absolute',
           },
           default: {},
@@ -31,9 +34,9 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="saved"
+        name="interests"
         options={{
-          title: 'Saved',
+          title: 'Interests',
           tabBarIcon: ({ color }) => <IconSymbol size={26} name="bookmark.fill" color={color} />,
         }}
       />

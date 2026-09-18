@@ -1,19 +1,28 @@
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 
-// Use your actual IP address that's accessible from your physical device
-const COMPUTER_IP = '192.168.0.14'; // Replace with your actual IP
+// Only used as a fallback on networks that allow direct device-to-device LAN connections
+// (many public/shared WiFi networks block this via AP/client isolation, in which case a
+// physical device can't reach this IP no matter how correct it is).
+const COMPUTER_IP = '10.212.104.176'; // Replace with your actual IP
+
+// Cloudflare quick tunnel to the backend (localhost:8000) - needed on networks with client
+// isolation, where the phone can't reach the laptop directly by LAN IP. Quick tunnel URLs are
+// ephemeral (a new one is generated each time `cloudflared tunnel --url http://localhost:8000`
+// is started), so update this when it changes.
+const TUNNEL_URL = 'https://altered-possibility-far-finals.trycloudflare.com';
 
 const getApiBaseUrl = () => {
   // Production: use environment variable
   if (process.env.REACT_APP_API_URL) {
     return `${process.env.REACT_APP_API_URL}/api`;
   }
-  
-  // Development: use localhost or IP
-  return Platform.OS === 'web' 
-    ? 'http://localhost:8000/api' 
-    : `http://${COMPUTER_IP}:8000/api`;
+
+  if (Platform.OS === 'web') {
+    return 'http://localhost:8000/api';
+  }
+
+  return TUNNEL_URL ? `${TUNNEL_URL}/api` : `http://${COMPUTER_IP}:8000/api`;
 };
 
 export const API_BASE_URL = getApiBaseUrl();
@@ -80,9 +89,11 @@ export const fetchTopics = async () => {
   try {
     const response = await fetch(`${API_BASE_URL}/topics`);
 
+
     if (!response.ok) {
       throw new Error(`API error: ${response.status}`);
     }
+
 
     return response.json();
   } catch (error) {

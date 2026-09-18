@@ -1,0 +1,10 @@
+mongodbCredentials.csv
+frontend/package-lock.json
+
+venv
+.dev
+
+.claude
+.vscode
+
+

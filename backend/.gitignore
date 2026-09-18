@@ -1,8 +1,11 @@
 __pycache__/
 logs/
+.env
 paper/__pycache__/
 utils/__pycache__/
 video/__pycache__/
 paperbites_clean/
 temp_assets/
 videos/
+.claude
+.vscode

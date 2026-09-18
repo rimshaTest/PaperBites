@@ -5,12 +5,16 @@ import {
   FlatList, 
   Dimensions, 
   StyleSheet, 
-  Text, 
-  ActivityIndicator, 
-  Platform 
+  Text,
+  ActivityIndicator,
+  Platform,
+  TouchableOpacity
 } from 'react-native';
-import { Video, ResizeMode } from 'expo-av';
-import { fetchCloudinaryVideos } from '../services/cloudinaryService';
+import { useVideoPlayer, VideoView } from 'expo-video';
+import { useRouter, useFocusEffect } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { fetchVideos } from '../services/api';
+import { getInterests } from '../services/storage';
 
 const { width, height } = Dimensions.get('window');
 
@@ -19,33 +23,81 @@ interface VideoItem {
   title: string;
   videoUrl: string;
   thumbnail?: string;
+  keywords?: string[];
 }
 
+// A dedicated component per list item so each gets its own expo-video player instance
+// (useVideoPlayer is a hook and can't be called directly inside FlatList's renderItem).
+const NativeVideoCard: React.FC<{ item: VideoItem; isActive: boolean; onInfoPress: () => void }> = ({
+  item,
+  isActive,
+  onInfoPress,
+}) => {
+  const player = useVideoPlayer(item.videoUrl, (player) => {
+    player.loop = true;
+  });
+
+  React.useEffect(() => {
+    if (isActive) {
+      player.muted = false;
+      player.play();
+    } else {
+      player.pause();
+      player.muted = true;
+    }
+  }, [isActive, player]);
+
+  return (
+    <View style={styles.videoContainer}>
+      <View style={styles.videoWrapper}>
+        <VideoView player={player} style={styles.video} nativeControls contentFit="contain" />
+      </View>
+      <View style={styles.videoInfo}>
+        <Text style={styles.videoTitle}>{item.title}</Text>
+      </View>
+      <TouchableOpacity style={styles.infoButton} onPress={onInfoPress}>
+        <Ionicons name="information-circle-outline" size={32} color="#fff" />
+      </TouchableOpacity>
+    </View>
+  );
+};
+
 const VideoFeed: React.FC = () => {
+  const router = useRouter();
   const [videos, setVideos] = React.useState<VideoItem[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [activeVideoIndex, setActiveVideoIndex] = React.useState(0);
-  
+
   const flatListRef = React.useRef<FlatList>(null);
   
-  // Fetch videos from Cloudinary
-  React.useEffect(() => {
-    const loadVideos = async () => {
-      try {
-        setLoading(true);
-        const videosData = await fetchCloudinaryVideos();
-        setVideos(videosData ?? []);
-      } catch (err) {
-        setError('Failed to load videos');
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    
-    loadVideos();
-  }, []);
+  // Fetch videos from the backend API, filtered by the user's selected interests (if any)
+  useFocusEffect(
+    React.useCallback(() => {
+      const loadVideos = async () => {
+        try {
+          setLoading(true);
+          const [videosData, interests] = await Promise.all([fetchVideos(), getInterests()]);
+          const allVideos: VideoItem[] = videosData ?? [];
+          const filtered =
+            interests && interests.length > 0
+              ? allVideos.filter((video) =>
+                  (video.keywords ?? []).some((kw) => interests.includes(kw))
+                )
+              : allVideos;
+          setVideos(filtered);
+          setError(null);
+        } catch (err) {
+          setError('Failed to load videos');
+          console.error(err);
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      loadVideos();
+    }, [])
+  );
   
   // Track which video is currently visible for playback
   const onViewableItemsChanged = React.useRef(
@@ -87,28 +139,23 @@ const VideoFeed: React.FC = () => {
           <View style={styles.videoInfo}>
             <Text style={styles.videoTitle}>{item.title}</Text>
           </View>
+          <TouchableOpacity
+            style={styles.infoButton}
+            onPress={() => router.push(`/video/${item.id}`)}
+          >
+            <Ionicons name="information-circle-outline" size={32} color="#fff" />
+          </TouchableOpacity>
         </View>
       );
     }
-    
-    // For native platforms, use expo-av
+
+    // For native platforms, use expo-video
     return (
-      <View style={styles.videoContainer}>
-        <View style={styles.videoWrapper}>
-          <Video
-            source={{ uri: item.videoUrl }}
-            style={styles.video}
-            useNativeControls
-            resizeMode={ResizeMode.CONTAIN}
-            shouldPlay={isActive}
-            isLooping
-            isMuted={!isActive}
-          />
-        </View>
-        <View style={styles.videoInfo}>
-          <Text style={styles.videoTitle}>{item.title}</Text>
-        </View>
-      </View>
+      <NativeVideoCard
+        item={item}
+        isActive={isActive}
+        onInfoPress={() => router.push(`/video/${item.id}`)}
+      />
     );
   };
   
@@ -185,6 +232,11 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 18,
     fontWeight: 'bold'
+  },
+  infoButton: {
+    position: 'absolute',
+    bottom: 90,
+    right: 16,
   },
   centerContainer: {
     flex: 1,
