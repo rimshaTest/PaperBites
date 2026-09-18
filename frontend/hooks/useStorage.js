@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getDeviceId } from '../services/storage';
+import { fetchBookmarks, addBookmark, removeBookmark } from '../services/api';
 
 // Constants for storage keys
 const STORAGE_KEYS = {
   RECENT_SEARCHES: 'paperbites_recent_searches',
-  FAVORITE_VIDEOS: 'paperbites_favorite_videos',
   WATCH_HISTORY: 'paperbites_watch_history',
   APP_SETTINGS: 'paperbites_app_settings',
 };
@@ -85,32 +86,44 @@ export const useRecentSearches = () => {
 };
 
 /**
- * Custom hook for managing favorite videos
- * 
+ * Custom hook for managing bookmarked ("favorite") videos.
+ *
+ * Bookmarks are stored server-side (see backend/bookmarks.py), scoped by an
+ * opaque per-device id rather than a real account, since there's no user
+ * system yet. This hook fetches from the API on mount and keeps local state
+ * in sync as the user toggles bookmarks.
+ *
  * @returns {Object} - Favorite videos data and functions
  */
 export const useFavoriteVideos = () => {
   const [favorites, setFavorites] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [deviceId, setDeviceId] = useState(null);
 
-  // Load favorites on mount
+  // Load device id, then bookmarks, on mount
   useEffect(() => {
-    const loadFavorites = async () => {
+    let cancelled = false;
+
+    const load = async () => {
       try {
         setLoading(true);
-        const jsonValue = await AsyncStorage.getItem(STORAGE_KEYS.FAVORITE_VIDEOS);
-        const favs = jsonValue != null ? JSON.parse(jsonValue) : [];
-        setFavorites(favs);
+        const id = await getDeviceId();
+        if (cancelled) return;
+        setDeviceId(id);
+
+        const bookmarked = await fetchBookmarks(id);
+        if (!cancelled) setFavorites(bookmarked);
       } catch (err) {
         console.error('Error loading favorites:', err);
-        setError('Failed to load favorite videos');
+        if (!cancelled) setError('Failed to load favorite videos');
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
 
-    loadFavorites();
+    load();
+    return () => { cancelled = true; };
   }, []);
 
   // Check if a video is in favorites
@@ -120,44 +133,40 @@ export const useFavoriteVideos = () => {
 
   // Add a video to favorites
   const addFavorite = useCallback(async (video) => {
-    if (!video || !video.id) return false;
-    
+    if (!video || !video.id || !deviceId) return false;
+    if (isFavorite(video.id)) return true;
+
+    // Optimistic update so the UI reacts immediately
+    setFavorites(prev => [video, ...prev]);
+
     try {
-      // Check if already favorited
-      if (isFavorite(video.id)) return true;
-      
-      // Add to favorites
-      const updatedFavorites = [video, ...favorites];
-      setFavorites(updatedFavorites);
-      
-      // Save to storage
-      const jsonValue = JSON.stringify(updatedFavorites);
-      await AsyncStorage.setItem(STORAGE_KEYS.FAVORITE_VIDEOS, jsonValue);
-      
+      await addBookmark(deviceId, video.id);
       return true;
     } catch (err) {
       console.error('Error adding favorite:', err);
+      // Roll back on failure
+      setFavorites(prev => prev.filter(v => v.id !== video.id));
       return false;
     }
-  }, [favorites, isFavorite]);
+  }, [deviceId, isFavorite]);
 
   // Remove a video from favorites
   const removeFavorite = useCallback(async (videoId) => {
+    if (!deviceId) return false;
+
+    const previous = favorites;
+    setFavorites(prev => prev.filter(video => video.id !== videoId));
+
     try {
-      // Filter out the video to remove
-      const updatedFavorites = favorites.filter(video => video.id !== videoId);
-      setFavorites(updatedFavorites);
-      
-      // Save to storage
-      const jsonValue = JSON.stringify(updatedFavorites);
-      await AsyncStorage.setItem(STORAGE_KEYS.FAVORITE_VIDEOS, jsonValue);
-      
+      await removeBookmark(deviceId, videoId);
       return true;
     } catch (err) {
       console.error('Error removing favorite:', err);
+      // Roll back on failure
+      setFavorites(previous);
       return false;
     }
-  }, [favorites]);
+  }, [deviceId, favorites]);
 
   // Toggle favorite status
   const toggleFavorite = useCallback(async (video) => {

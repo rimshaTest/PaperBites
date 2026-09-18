@@ -79,14 +79,73 @@ export const fetchVideoById = async (videoId) => {
 export const fetchTopics = async () => {
   try {
     const response = await fetch(`${API_BASE_URL}/topics`);
-    
+
     if (!response.ok) {
       throw new Error(`API error: ${response.status}`);
     }
-    
+
     return response.json();
   } catch (error) {
     console.error('Error fetching topics:', error);
     throw error;
   }
+};
+
+/**
+ * Fetch full video metadata for everything a device has bookmarked
+ * @param {string} deviceId - Opaque per-device id
+ * @returns {Promise<Array>} - Promise that resolves to an array of bookmarked videos, newest first
+ */
+export const fetchBookmarks = async (deviceId) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/bookmarks?device_id=${encodeURIComponent(deviceId)}`);
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+
+    return response.json();
+  } catch (error) {
+    console.error('Error fetching bookmarks:', error);
+    throw error;
+  }
+};
+
+/**
+ * Bookmark a video for a device
+ * @param {string} deviceId - Opaque per-device id
+ * @param {string} videoId - ID of the video to bookmark
+ * @returns {Promise<Object>}
+ */
+export const addBookmark = async (deviceId, videoId) => {
+  const response = await fetch(`${API_BASE_URL}/bookmarks`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ device_id: deviceId, video_id: videoId }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`API error: ${response.status}`);
+  }
+
+  return response.json();
+};
+
+/**
+ * Remove a device's bookmark on a video
+ * @param {string} deviceId - Opaque per-device id
+ * @param {string} videoId - ID of the video to un-bookmark
+ * @returns {Promise<Object>}
+ */
+export const removeBookmark = async (deviceId, videoId) => {
+  const response = await fetch(
+    `${API_BASE_URL}/bookmarks/${encodeURIComponent(videoId)}?device_id=${encodeURIComponent(deviceId)}`,
+    { method: 'DELETE' }
+  );
+
+  if (!response.ok) {
+    throw new Error(`API error: ${response.status}`);
+  }
+
+  return response.json();
 };

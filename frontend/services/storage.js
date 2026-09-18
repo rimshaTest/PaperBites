@@ -3,9 +3,30 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 // Storage keys
 const KEYS = {
   RECENT_SEARCHES: 'paperbites_recent_searches',
-  FAVORITE_VIDEOS: 'paperbites_favorite_videos',
   WATCH_HISTORY: 'paperbites_watch_history',
   APP_SETTINGS: 'paperbites_app_settings',
+  DEVICE_ID: 'paperbites_device_id',
+};
+
+/**
+ * Get this device's opaque id, generating and persisting one on first use.
+ * Used to scope server-side bookmarks without a real account system.
+ *
+ * @returns {Promise<string>} Device id
+ */
+export const getDeviceId = async () => {
+  try {
+    const existing = await AsyncStorage.getItem(KEYS.DEVICE_ID);
+    if (existing) return existing;
+
+    const generated = `dev-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+    await AsyncStorage.setItem(KEYS.DEVICE_ID, generated);
+    return generated;
+  } catch (error) {
+    console.error('Error getting device id:', error);
+    // Fall back to a per-call id rather than crashing; bookmarks just won't persist.
+    return `dev-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  }
 };
 
 /**
@@ -35,80 +56,6 @@ export const getRecentSearches = async () => {
   } catch (error) {
     console.error('Error loading recent searches:', error);
     return [];
-  }
-};
-
-/**
- * Add a video to favorites
- * 
- * @param {Object} video - Video object
- * @returns {Promise<void>}
- */
-export const addFavoriteVideo = async (video) => {
-  try {
-    // Get current favorites
-    const currentFavorites = await getFavoriteVideos();
-    
-    // Check if already favorited
-    if (!currentFavorites.some(fav => fav.id === video.id)) {
-      // Add to favorites
-      const updatedFavorites = [video, ...currentFavorites];
-      const jsonValue = JSON.stringify(updatedFavorites);
-      await AsyncStorage.setItem(KEYS.FAVORITE_VIDEOS, jsonValue);
-    }
-  } catch (error) {
-    console.error('Error adding favorite video:', error);
-  }
-};
-
-/**
- * Remove a video from favorites
- * 
- * @param {string} videoId - ID of video to remove
- * @returns {Promise<void>}
- */
-export const removeFavoriteVideo = async (videoId) => {
-  try {
-    // Get current favorites
-    const currentFavorites = await getFavoriteVideos();
-    
-    // Filter out the video to remove
-    const updatedFavorites = currentFavorites.filter(video => video.id !== videoId);
-    const jsonValue = JSON.stringify(updatedFavorites);
-    await AsyncStorage.setItem(KEYS.FAVORITE_VIDEOS, jsonValue);
-  } catch (error) {
-    console.error('Error removing favorite video:', error);
-  }
-};
-
-/**
- * Get all favorite videos
- * 
- * @returns {Promise<Array>} Array of video objects
- */
-export const getFavoriteVideos = async () => {
-  try {
-    const jsonValue = await AsyncStorage.getItem(KEYS.FAVORITE_VIDEOS);
-    return jsonValue != null ? JSON.parse(jsonValue) : [];
-  } catch (error) {
-    console.error('Error loading favorite videos:', error);
-    return [];
-  }
-};
-
-/**
- * Check if a video is in favorites
- * 
- * @param {string} videoId - ID of video to check
- * @returns {Promise<boolean>} True if video is favorited
- */
-export const isVideoFavorited = async (videoId) => {
-  try {
-    const favorites = await getFavoriteVideos();
-    return favorites.some(video => video.id === videoId);
-  } catch (error) {
-    console.error('Error checking if video is favorited:', error);
-    return false;
   }
 };
 

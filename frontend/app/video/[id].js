@@ -14,16 +14,17 @@ import VideoPlayer from '../../components/VideoPlayer';
 import LoadingIndicator from '../../components/LoadingIndicator';
 import ErrorMessage from '../../components/ErrorMessage';
 import { fetchVideoById } from '../../services/api';
-import { addToWatchHistory, isVideoFavorited, addFavoriteVideo, removeFavoriteVideo } from '../../services/storage';
+import { addToWatchHistory } from '../../services/storage';
+import { useFavoriteVideos } from '../../hooks/useStorage';
 import Colors from '../../constants/Colors';
 
 export default function VideoDetailScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams();
+  const { isFavorite: isFavoriteFn, toggleFavorite: toggleFavoriteFn } = useFavoriteVideos();
   const [video, setVideo] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [isFavorite, setIsFavorite] = useState(false);
 
   // Load video data
   useEffect(() => {
@@ -32,15 +33,11 @@ export default function VideoDetailScreen() {
         setLoading(true);
         const data = await fetchVideoById(id);
         setVideo(data);
-        
+
         // Add to watch history
         if (data) {
           addToWatchHistory(data);
         }
-        
-        // Check if video is favorited
-        const favorited = await isVideoFavorited(id);
-        setIsFavorite(favorited);
       } catch (err) {
         setError(`Failed to load video: ${err.message}`);
       } finally {
@@ -53,16 +50,13 @@ export default function VideoDetailScreen() {
     }
   }, [id]);
 
+  const isFavorite = isFavoriteFn(id);
+
   // Toggle favorite status
   const toggleFavorite = async () => {
-    if (isFavorite) {
-      await removeFavoriteVideo(id);
-    } else {
-      if (video) {
-        await addFavoriteVideo(video);
-      }
+    if (video) {
+      await toggleFavoriteFn(video);
     }
-    setIsFavorite(!isFavorite);
   };
 
   // Share video
