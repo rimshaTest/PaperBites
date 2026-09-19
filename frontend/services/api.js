@@ -82,6 +82,46 @@ export const fetchPaperById = async (paperId) => {
 };
 
 /**
+ * Fetch an author's name and every paper of theirs in PaperBites
+ * @param {string} authorId - ID of the author (e.g. "semantic_scholar:12345")
+ * @returns {Promise<Object>} - Promise that resolves to {id, name, papers}
+ */
+export const fetchAuthor = async (authorId) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/authors/${encodeURIComponent(authorId)}`);
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+
+    return response.json();
+  } catch (error) {
+    console.error(`Error fetching author ${authorId}:`, error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch every paper published in a given journal/venue
+ * @param {string} journalName - Name of the journal
+ * @returns {Promise<Object>} - Promise that resolves to {name, papers}
+ */
+export const fetchJournal = async (journalName) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/journals/${encodeURIComponent(journalName)}`);
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+
+    return response.json();
+  } catch (error) {
+    console.error(`Error fetching journal ${journalName}:`, error);
+    throw error;
+  }
+};
+
+/**
  * Fetch the fixed list of paper categories
  * @returns {Promise<Array<string>>} - Promise that resolves to an array of category names
  */

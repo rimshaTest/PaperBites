@@ -43,6 +43,38 @@ def get_paper_by_id(paper_id: str) -> Optional[Dict]:
         return None
 
 
+def get_papers_by_author(author_id: str) -> Optional[Dict]:
+    """All papers by an author id (e.g. 'semantic_scholar:12345'), newest first."""
+    try:
+        import db
+        cursor = db.get_db().papers.find({"authors.id": author_id}).sort("published_date", -1)
+        papers = [_serialize_paper(doc) for doc in cursor]
+        if not papers:
+            return None
+        name = next(
+            (a["name"] for p in papers for a in p.get("authors", []) if a.get("id") == author_id),
+            author_id,
+        )
+        return {"id": author_id, "name": name, "papers": papers}
+    except Exception as e:
+        print(f"Error reading author {author_id} from MongoDB: {e}")
+        return None
+
+
+def get_papers_by_journal(journal_name: str) -> Optional[Dict]:
+    """All papers published in a given journal/venue, newest first."""
+    try:
+        import db
+        cursor = db.get_db().papers.find({"journal": journal_name}).sort("published_date", -1)
+        papers = [_serialize_paper(doc) for doc in cursor]
+        if not papers:
+            return None
+        return {"name": journal_name, "papers": papers}
+    except Exception as e:
+        print(f"Error reading journal '{journal_name}' from MongoDB: {e}")
+        return None
+
+
 def get_authenticated_user_id(request) -> Optional[str]:
     """Resolve the requesting user from an 'Authorization: Bearer <token>' header."""
     header = request.headers.get("authorization", "")
@@ -68,6 +100,22 @@ async def get_paper(request):
     if not paper:
         return JSONResponse({"detail": "Paper not found"}, status_code=404)
     return JSONResponse(paper)
+
+
+async def get_author(request):
+    """Get an author's name and every paper of theirs in PaperBites."""
+    result = get_papers_by_author(request.path_params["author_id"])
+    if not result:
+        return JSONResponse({"detail": "Author not found"}, status_code=404)
+    return JSONResponse(result)
+
+
+async def get_journal(request):
+    """Get every paper published in a given journal/venue."""
+    result = get_papers_by_journal(request.path_params["journal_name"])
+    if not result:
+        return JSONResponse({"detail": "Journal not found"}, status_code=404)
+    return JSONResponse(result)
 
 
 # Mirrors paper.latest.CATEGORIES. Importing that module pulls in its heavy fetch-pipeline
@@ -198,6 +246,8 @@ async def get_me(request):
 routes = [
     Route("/api/papers", list_papers),
     Route("/api/papers/{paper_id}", get_paper),
+    Route("/api/authors/{author_id}", get_author),
+    Route("/api/journals/{journal_name}", get_journal),
     Route("/api/categories", get_categories),
     Route("/api/bookmarks", list_bookmarked_videos, methods=["GET"]),
     Route("/api/bookmarks", add_bookmark, methods=["POST"]),

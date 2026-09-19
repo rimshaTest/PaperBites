@@ -95,6 +95,14 @@ export default function HomeScreen() {
     toggleFavorite(paper);
   };
 
+  const handleAuthorPress = (author) => {
+    router.push(`/author/${encodeURIComponent(author.id)}`);
+  };
+
+  const handleJournalPress = (journal) => {
+    router.push(`/journal/${encodeURIComponent(journal)}`);
+  };
+
   // Empty component shown when no papers
   const renderEmptyComponent = () => (
     <View style={styles.emptyContainer}>
@@ -148,6 +156,8 @@ export default function HomeScreen() {
             onPress={handlePaperPress}
             isBookmarked={isFavorite(item.id)}
             onToggleBookmark={handleToggleBookmark}
+            onAuthorPress={handleAuthorPress}
+            onJournalPress={handleJournalPress}
           />
         )}
         keyExtractor={item => item.id}

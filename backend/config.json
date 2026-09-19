@@ -1,6 +1,7 @@
 {
   "api": {
-    "email": "novelleapps@outlook.com"
+    "email": "novelleapps@outlook.com",
+    "pexels_key": "zSWN3u3WhcoUUi6yIdyQoGZWbnkOfBKWNfqKa7jU74SVFPUEVzPgrTon"
   },
   "paper_search": {
     "sources": [

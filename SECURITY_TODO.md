@@ -16,9 +16,15 @@ whether the secret is still present in the current file.
   video-generation pipeline (Cloudinary was only used to host generated
   videos, which no longer exist). Still present in git history, so it must
   still be treated as exposed and rotated/revoked.
-- **Pexels** — `api.pexels_key` — same as Cloudinary: removed from the
-  current file (was only used by the video pipeline), still exposed via
-  history.
+- **Pexels** — `api.pexels_key` — **restored to the current
+  `backend/config.json`.** It was removed in an earlier pass on the
+  (incorrect) assumption it was only used by the video pipeline, but
+  `paper/latest.py`'s `fetch_paper_image`/`_attach_images` uses it to fetch
+  each paper's card thumbnail image - a live, non-video feature. Removing it
+  had silently broken card images going forward (already-fetched papers
+  keep whatever `image_url` they were stored with; new fetches would get
+  none without this key). Still exposed via history either way, and now
+  live in the current file too, so it still needs rotation.
 
 **Action needed (only doable from the account owner's dashboards):**
 
@@ -27,7 +33,9 @@ whether the secret is still present in the current file.
    environment variable / an untracked `.env` file).
 2. Revoke/regenerate the Cloudinary API secret (no code in this repo uses
    Cloudinary anymore, so once rotated there's nothing left to update here).
-3. Revoke/regenerate the Pexels API key (same — unused by any code now).
+3. Regenerate the Pexels API key and update `api.pexels_key` in
+   `backend/config.json` (this one IS still used, by the live paper-card
+   image fetch - don't just delete it after rotating).
 4. Confirm `backend/config.json` is added to `.gitignore` so a real
    connection string doesn't get committed again after rotation.
 

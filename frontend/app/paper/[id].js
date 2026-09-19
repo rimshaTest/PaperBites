@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
+  Image,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
@@ -17,11 +18,6 @@ import { fetchPaperById } from '../../services/api';
 import { useFavoritePapers } from '../../hooks/useStorage';
 import { useAuth } from '../../hooks/useAuth';
 import theme from '../../constants/theme';
-
-const formatAuthors = (authors) => {
-  if (!authors || authors.length === 0) return null;
-  return authors.map((a) => a.name).filter(Boolean).join(', ');
-};
 
 export default function PaperDetailScreen() {
   const router = useRouter();
@@ -80,6 +76,14 @@ export default function PaperDetailScreen() {
     }
   };
 
+  const handleAuthorPress = (author) => {
+    router.push(`/author/${encodeURIComponent(author.id)}`);
+  };
+
+  const handleJournalPress = (journal) => {
+    router.push(`/journal/${encodeURIComponent(journal)}`);
+  };
+
   if (loading) {
     return <LoadingIndicator message="Loading paper..." />;
   }
@@ -93,7 +97,7 @@ export default function PaperDetailScreen() {
     );
   }
 
-  const authors = formatAuthors(paper.authors);
+  const authors = paper.authors || [];
 
   return (
     <SafeAreaView style={styles.container}>
@@ -118,13 +122,35 @@ export default function PaperDetailScreen() {
       </View>
 
       <ScrollView style={styles.detailsContainer}>
+        {paper.image_url && (
+          <Image source={{ uri: paper.image_url }} style={styles.heroImage} resizeMode="cover" />
+        )}
+
         <Text style={styles.title}>{paper.title}</Text>
 
-        {authors && <Text style={styles.authors}>{authors}</Text>}
+        {authors.length > 0 && (
+          <Text style={styles.authors}>
+            {authors.map((author, index) => (
+              <Text
+                key={author.id || author.name}
+                onPress={author.id ? () => handleAuthorPress(author) : undefined}
+                style={author.id ? styles.link : undefined}
+              >
+                {author.name}{index < authors.length - 1 ? ', ' : ''}
+              </Text>
+            ))}
+          </Text>
+        )}
 
         {(paper.journal || paper.published_date) && (
           <Text style={styles.meta}>
-            {[paper.journal, paper.published_date].filter(Boolean).join(' · ')}
+            {paper.journal ? (
+              <Text onPress={() => handleJournalPress(paper.journal)} style={styles.link}>
+                {paper.journal}
+              </Text>
+            ) : null}
+            {paper.journal && paper.published_date ? ' · ' : ''}
+            {paper.published_date || ''}
           </Text>
         )}
 
@@ -188,6 +214,17 @@ const styles = StyleSheet.create({
   detailsContainer: {
     flex: 1,
     padding: 20,
+  },
+  heroImage: {
+    width: '100%',
+    height: 200,
+    borderRadius: 10,
+    marginBottom: 16,
+    backgroundColor: '#f0f0f0',
+  },
+  link: {
+    color: theme.accent,
+    textDecorationLine: 'underline',
   },
   title: {
     fontFamily: theme.serif,

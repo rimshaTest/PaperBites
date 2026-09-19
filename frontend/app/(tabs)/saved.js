@@ -23,6 +23,14 @@ export default function SavedScreen() {
     router.push(`/paper/${paper.id}`);
   };
 
+  const handleAuthorPress = (author) => {
+    router.push(`/author/${encodeURIComponent(author.id)}`);
+  };
+
+  const handleJournalPress = (journal) => {
+    router.push(`/journal/${encodeURIComponent(journal)}`);
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
@@ -57,6 +65,8 @@ export default function SavedScreen() {
               onPress={handlePaperPress}
               isBookmarked={isFavorite(item.id)}
               onToggleBookmark={() => removeFavorite(item.id)}
+              onAuthorPress={handleAuthorPress}
+              onJournalPress={handleJournalPress}
             />
           )}
           keyExtractor={(item) => item.id}

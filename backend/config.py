@@ -11,7 +11,8 @@ class Config:
     
     DEFAULT_CONFIG = {
         "api": {
-            "email": "user@example.com"  # For Unpaywall API
+            "email": "user@example.com",  # For Unpaywall API
+            "pexels_key": ""  # For paper card thumbnail images (paper/latest.py)
         },
         "paper": {
             "max_papers": 3,
