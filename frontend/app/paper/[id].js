@@ -14,7 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import LoadingIndicator from '../../components/LoadingIndicator';
 import ErrorMessage from '../../components/ErrorMessage';
 import { fetchPaperById } from '../../services/api';
-import { useFavoriteVideos } from '../../hooks/useStorage';
+import { useFavoritePapers } from '../../hooks/useStorage';
 import { useAuth } from '../../hooks/useAuth';
 import theme from '../../constants/theme';
 
@@ -27,7 +27,7 @@ export default function PaperDetailScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams();
   const { user, token } = useAuth();
-  const { isFavorite: isFavoriteFn, toggleFavorite: toggleFavoriteFn } = useFavoriteVideos(token);
+  const { isFavorite: isFavoriteFn, toggleFavorite: toggleFavoriteFn } = useFavoritePapers(token);
   const [paper, setPaper] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);

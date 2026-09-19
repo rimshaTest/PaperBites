@@ -1,4 +1,3 @@
-moviepy
 requests
 PyMuPDF
 scholarly
@@ -8,11 +7,7 @@ nltk
 scikit-learn
 aiohttp
 transformers
-gtts
 Pillow
-tesseract
-ffmpeg
-boto3
 fastapi
 starlette
 uvicorn
@@ -21,7 +16,6 @@ arxiv==2.2.0
 unpywall
 pydantic
 torch>=2.0.0
-pydub
 pymongo==4.5.0
 dnspython==2.4.2
 python-dotenv

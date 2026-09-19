@@ -8,14 +8,11 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
 import { fetchCategories } from '../../services/api';
 import { getInterests, saveInterests } from '../../services/storage';
 import theme from '../../constants/theme';
 
 export default function InterestsScreen() {
-  const router = useRouter();
   const [topics, setTopics] = React.useState<string[]>([]);
   const [selected, setSelected] = React.useState<string[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -57,9 +54,6 @@ export default function InterestsScreen() {
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Interests</Text>
-        <TouchableOpacity style={styles.searchButton} onPress={() => router.push('/search')}>
-          <Ionicons name="search" size={20} color={theme.text} />
-        </TouchableOpacity>
       </View>
       <Text style={styles.subtitle}>
         Pick the topics, journals, or authors you care about. Your home feed will follow.
@@ -113,16 +107,6 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: 'bold',
     color: theme.text,
-  },
-  searchButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 8,
-    borderWidth: 1.5,
-    borderColor: theme.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: theme.surface,
   },
   subtitle: {
     fontSize: 14,

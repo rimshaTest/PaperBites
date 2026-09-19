@@ -6,23 +6,21 @@ import {
   StyleSheet,
   ActivityIndicator,
   RefreshControl,
-  TouchableOpacity,
   SafeAreaView
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
 import PaperCard from '../../components/PaperCard';
 import LoadingIndicator from '../../components/LoadingIndicator';
 import ErrorMessage from '../../components/ErrorMessage';
 import { fetchPapers } from '../../services/api';
-import { useFavoriteVideos } from '../../hooks/useStorage';
+import { useFavoritePapers } from '../../hooks/useStorage';
 import { useAuth } from '../../hooks/useAuth';
 import theme from '../../constants/theme';
 
 export default function HomeScreen() {
   const router = useRouter();
   const { user, token } = useAuth();
-  const { isFavorite, toggleFavorite } = useFavoriteVideos(token);
+  const { isFavorite, toggleFavorite } = useFavoritePapers(token);
   const [papers, setPapers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -139,12 +137,7 @@ export default function HomeScreen() {
       <View style={styles.header}>
         <View style={styles.headerSpacer} />
         <Text style={styles.title}>PaperBites</Text>
-        <TouchableOpacity
-          style={styles.searchButton}
-          onPress={() => router.push('/search')}
-        >
-          <Ionicons name="search-outline" size={22} color={theme.text} />
-        </TouchableOpacity>
+        <View style={styles.headerSpacer} />
       </View>
 
       <FlatList
@@ -193,10 +186,6 @@ const styles = StyleSheet.create({
   },
   headerSpacer: {
     width: 32,
-  },
-  searchButton: {
-    width: 32,
-    alignItems: 'flex-end',
   },
   title: {
     flex: 1,

@@ -11,18 +11,7 @@ class Config:
     
     DEFAULT_CONFIG = {
         "api": {
-            "pexels_key": "",
             "email": "user@example.com"  # For Unpaywall API
-        },
-        "video": {
-            "formats": {
-                "tiktok": {"width": 1080, "height": 1920},
-                "instagram": {"width": 1080, "height": 1080},
-                "youtube": {"width": 1920, "height": 1080}
-            },
-            "default_format": "tiktok",
-            "fps": 30,
-            "quality": "medium"
         },
         "paper": {
             "max_papers": 3,
@@ -32,22 +21,8 @@ class Config:
                 "min_length": 30
             }
         },
-        "storage": {
-            "s3": {
-                "bucket_name": "paperbites-videos",
-                "region": "us-east-1",
-                "access_key_id": "",
-                "secret_access_key": ""
-            },
-            "cloudinary": {
-                "cloud_name": "dd9tsotfz",
-                "api_key": "453877466769253",
-                "api_secret": "cibm0X3UMWkTdRaRzH5Xjz7i554"
-            }
-        },
         "paths": {
             "temp_dir": "temp_assets",
-            "output_dir": "videos",
             "tesseract_cmd": ""
         }
     }
@@ -77,21 +52,14 @@ class Config:
     
     def load_env(self) -> None:
         """Override configuration with environment variables."""
-        # API keys
-        if os.getenv("PEXELS_API_KEY"):
-            self.set("api.pexels_key", os.getenv("PEXELS_API_KEY"))
-            
         # OCR configuration
         if os.getenv("TESSERACT_CMD"):
             self.set("paths.tesseract_cmd", os.getenv("TESSERACT_CMD"))
-            
+
         # Output directories
         if os.getenv("PAPERBITES_TEMP_DIR"):
             self.set("paths.temp_dir", os.getenv("PAPERBITES_TEMP_DIR"))
-            
-        if os.getenv("PAPERBITES_OUTPUT_DIR"):
-            self.set("paths.output_dir", os.getenv("PAPERBITES_OUTPUT_DIR"))
-            
+
     def get(self, key_path: str, default: Any = None) -> Any:
         """
         Get configuration value using dot notation.

@@ -85,7 +85,7 @@ export const useRecentSearches = () => {
 };
 
 /**
- * Custom hook for managing bookmarked ("favorite") videos.
+ * Custom hook for managing bookmarked ("favorite") papers.
  *
  * Bookmarks are stored server-side (see backend/bookmarks.py) and scoped to
  * the signed-in account, so a session token (from useAuth()) is required.
@@ -94,9 +94,9 @@ export const useRecentSearches = () => {
  * a signed-out user bookmark something.
  *
  * @param {string|null} token - Session token from useAuth()
- * @returns {Object} - Favorite videos data and functions
+ * @returns {Object} - Favorite papers data and functions
  */
-export const useFavoriteVideos = (token) => {
+export const useFavoritePapers = (token) => {
   const [favorites, setFavorites] = useState([]);
   const [loading, setLoading] = useState(!!token);
   const [error, setError] = useState(null);
@@ -118,7 +118,7 @@ export const useFavoriteVideos = (token) => {
         if (!cancelled) setFavorites(bookmarked);
       } catch (err) {
         console.error('Error loading favorites:', err);
-        if (!cancelled) setError('Failed to load favorite videos');
+        if (!cancelled) setError('Failed to load favorite papers');
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -128,39 +128,39 @@ export const useFavoriteVideos = (token) => {
     return () => { cancelled = true; };
   }, [token]);
 
-  // Check if a video is in favorites
-  const isFavorite = useCallback((videoId) => {
-    return favorites.some(video => video.id === videoId);
+  // Check if a paper is in favorites
+  const isFavorite = useCallback((paperId) => {
+    return favorites.some(paper => paper.id === paperId);
   }, [favorites]);
 
-  // Add a video to favorites
-  const addFavorite = useCallback(async (video) => {
-    if (!video || !video.id || !token) return false;
-    if (isFavorite(video.id)) return true;
+  // Add a paper to favorites
+  const addFavorite = useCallback(async (paper) => {
+    if (!paper || !paper.id || !token) return false;
+    if (isFavorite(paper.id)) return true;
 
     // Optimistic update so the UI reacts immediately
-    setFavorites(prev => [video, ...prev]);
+    setFavorites(prev => [paper, ...prev]);
 
     try {
-      await addBookmark(token, video.id);
+      await addBookmark(token, paper.id);
       return true;
     } catch (err) {
       console.error('Error adding favorite:', err);
       // Roll back on failure
-      setFavorites(prev => prev.filter(v => v.id !== video.id));
+      setFavorites(prev => prev.filter(p => p.id !== paper.id));
       return false;
     }
   }, [token, isFavorite]);
 
-  // Remove a video from favorites
-  const removeFavorite = useCallback(async (videoId) => {
+  // Remove a paper from favorites
+  const removeFavorite = useCallback(async (paperId) => {
     if (!token) return false;
 
     const previous = favorites;
-    setFavorites(prev => prev.filter(video => video.id !== videoId));
+    setFavorites(prev => prev.filter(paper => paper.id !== paperId));
 
     try {
-      await removeBookmark(token, videoId);
+      await removeBookmark(token, paperId);
       return true;
     } catch (err) {
       console.error('Error removing favorite:', err);
@@ -171,11 +171,11 @@ export const useFavoriteVideos = (token) => {
   }, [token, favorites]);
 
   // Toggle favorite status
-  const toggleFavorite = useCallback(async (video) => {
-    if (isFavorite(video.id)) {
-      return removeFavorite(video.id);
+  const toggleFavorite = useCallback(async (paper) => {
+    if (isFavorite(paper.id)) {
+      return removeFavorite(paper.id);
     } else {
-      return addFavorite(video);
+      return addFavorite(paper);
     }
   }, [isFavorite, removeFavorite, addFavorite]);
 
