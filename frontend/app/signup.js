@@ -37,7 +37,7 @@ export default function SignupScreen() {
     setSubmitting(false);
 
     if (ok) {
-      router.back();
+      router.replace('/interests-onboarding');
     } else {
       setFormError(authError || 'Signup failed');
     }

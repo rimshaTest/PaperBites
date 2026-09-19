@@ -11,6 +11,8 @@ export default function Layout() {
         <Stack.Screen name="paper/[id]" />
         <Stack.Screen name="author/[id]" />
         <Stack.Screen name="journal/[name]" />
+        <Stack.Screen name="interests-onboarding" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="settings" />
       </Stack>
     </AuthProvider>
   );

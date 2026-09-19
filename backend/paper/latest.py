@@ -296,6 +296,150 @@ async def fetch_latest_openalex(
     return results[:limit]
 
 
+_JATS_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def _crossref_date(item: Dict, key: str) -> Optional[str]:
+    parts = ((item.get(key) or {}).get("date-parts") or [[None]])[0]
+    if not parts or not parts[0]:
+        return None
+    year = parts[0]
+    month = parts[1] if len(parts) > 1 else 1
+    day = parts[2] if len(parts) > 2 else 1
+    try:
+        return datetime.date(year, month, day).isoformat()
+    except ValueError:
+        return None
+
+
+def _crossref_published_date(item: Dict) -> Optional[str]:
+    for key in ("published", "published-print", "published-online"):
+        date = _crossref_date(item, key)
+        if date:
+            return date
+    return None
+
+
+async def fetch_latest_crossref(category: str, since: datetime.date, limit: int) -> List[Dict]:
+    """Search Crossref for recent journal-article works in a category, newest first.
+
+    Crossref's metadata coverage is broad but its per-work data is thinner than Semantic
+    Scholar/OpenAlex (no reliable open-access flag, no author ids, and an abstract only some of
+    the time) - it fills a different gap: works neither of those two has indexed yet.
+    fetch_unpaywall_oa_location (below) resolves an actual open-access link for the DOIs this
+    turns up, since Crossref's own `URL` field is usually just a doi.org redirect to the
+    (often paywalled) publisher page.
+    """
+    email = config_instance.get("api.email")
+    today = datetime.date.today()
+    fetch_size = min(limit * 3, 100)
+    url = (
+        "https://api.crossref.org/works"
+        f"?query.bibliographic={urllib.parse.quote(category)}"
+        f"&filter=from-pub-date:{since.isoformat()},until-pub-date:{today.isoformat()},type:journal-article"
+        f"&sort=published&order=desc&rows={fetch_size}"
+    )
+    if email:
+        url += f"&mailto={urllib.parse.quote(email)}"
+
+    async with aiohttp.ClientSession(timeout=_HTTP_TIMEOUT) as session:
+        data = await _get_json_with_retry(session, url, "Crossref")
+
+    if not data:
+        return []
+
+    results = []
+    for item in (data.get("message") or {}).get("items", []):
+        published_date = _crossref_published_date(item)
+        if not _is_plausible_recent_date(published_date, since):
+            continue
+
+        titles = item.get("title") or []
+        if not titles:
+            continue
+
+        authors = []
+        for a in item.get("author", []):
+            name = " ".join(part for part in [a.get("given"), a.get("family")] if part)
+            if name:
+                authors.append({"id": None, "name": name})
+        if not authors:
+            continue
+
+        raw_abstract = item.get("abstract") or ""
+        journals = item.get("container-title") or []
+
+        results.append({
+            "source": "crossref",
+            "source_id": item.get("DOI", ""),
+            "title": titles[0],
+            "authors": authors,
+            "abstract": _JATS_TAG_RE.sub("", raw_abstract).strip(),
+            "citation_count": item.get("is-referenced-by-count") or 0,
+            "published_date": published_date,
+            "categories": [category],
+            "journal": journals[0] if journals else None,
+            "publication_type": "journal",
+            "is_open_access": None,  # resolved by fetch_unpaywall_oa_location below
+            "doi": item.get("DOI"),
+            "url": item.get("URL"),
+        })
+
+    return results[:limit]
+
+
+async def fetch_unpaywall_oa_location(session: aiohttp.ClientSession, doi: str) -> Optional[Dict]:
+    """Look up a DOI's actual open-access link via Unpaywall.
+
+    Used to upgrade a Crossref result's URL (usually just a doi.org redirect to the publisher's,
+    often paywalled, page) to a real, freely-readable PDF/HTML link - the same service
+    paper/download.py's get_doi_paper() uses for the citation-paste flow.
+    """
+    email = config_instance.get("api.email") or "user@example.com"
+    url = f"https://api.unpaywall.org/v2/{urllib.parse.quote(doi, safe='')}?email={urllib.parse.quote(email)}"
+
+    try:
+        async with session.get(url) as response:
+            if response.status != 200:
+                return None
+            data = await response.json()
+    except Exception as e:
+        logger.debug(f"Error fetching Unpaywall location for '{doi}': {e}")
+        return None
+
+    if not data.get("is_oa"):
+        return None
+
+    location = data.get("best_oa_location")
+    if not location:
+        return None
+
+    return {"url": location.get("url_for_pdf") or location.get("url")}
+
+
+async def _fill_open_access_links(papers: List[Dict]) -> None:
+    """Resolve a confirmed open-access link via Unpaywall for any paper whose OA status is
+    still unknown (Crossref results - Semantic Scholar/OpenAlex are already filtered to
+    open-access-only at fetch time). A paper Unpaywall can't confirm as open access keeps
+    whatever URL it already had rather than being dropped outright here - the caller decides
+    whether to filter it out.
+    """
+    candidates = [p for p in papers if p.get("is_open_access") is None and p.get("doi")]
+    if not candidates:
+        return
+
+    async with aiohttp.ClientSession(timeout=_HTTP_TIMEOUT) as session:
+        async def resolve(paper: Dict) -> None:
+            location = await fetch_unpaywall_oa_location(session, paper["doi"])
+            if location:
+                paper["url"] = location["url"] or paper.get("url")
+                paper["is_open_access"] = True
+            else:
+                paper["is_open_access"] = False
+
+        await asyncio.gather(*(resolve(p) for p in candidates))
+
+
 def _dedupe(papers: List[Dict]) -> List[Dict]:
     seen_dois = set()
     seen_titles = set()
@@ -317,9 +461,6 @@ def _dedupe(papers: List[Dict]) -> List[Dict]:
         unique.append(paper)
 
     return unique
-
-
-_JATS_TAG_RE = re.compile(r"<[^>]+>")
 
 
 async def fetch_crossref_abstract(session: aiohttp.ClientSession, doi: str) -> Optional[str]:
@@ -582,7 +723,11 @@ async def _attach_images(papers: List[Dict], category: str) -> None:
 async def get_latest_papers(
     category: str, days_back: int = 7, limit: int = 20, sort_by: str = "date"
 ) -> List[Dict]:
-    """Fetch papers for a category from Semantic Scholar + OpenAlex, deduped.
+    """Fetch papers for a category from Semantic Scholar + OpenAlex + Crossref, deduped.
+
+    Semantic Scholar and OpenAlex are filtered to open access at fetch time; Crossref's own
+    open-access flag isn't reliable, so its results get a real open-access link resolved (or
+    ruled out) via Unpaywall below before anything from it is kept.
 
     `sort_by="date"` (default) gives the normal "latest papers" feed. `sort_by="citations"`
     instead returns the most-cited papers within the date window - mainly useful for
@@ -591,17 +736,24 @@ async def get_latest_papers(
     """
     since = datetime.date.today() - datetime.timedelta(days=days_back)
 
-    semantic_scholar_papers, openalex_papers = await asyncio.gather(
+    semantic_scholar_papers, openalex_papers, crossref_papers = await asyncio.gather(
         fetch_latest_semantic_scholar(category, since, limit),
         fetch_latest_openalex(category, since, limit, sort_by=sort_by),
+        fetch_latest_crossref(category, since, limit),
     )
 
-    combined = _dedupe(semantic_scholar_papers + openalex_papers)
+    combined = _dedupe(semantic_scholar_papers + openalex_papers + crossref_papers)
     if sort_by == "citations":
         combined.sort(key=lambda p: p.get("citation_count") or 0, reverse=True)
     else:
         combined.sort(key=lambda p: p.get("published_date") or "", reverse=True)
     combined = combined[:limit]
+
+    await _fill_open_access_links(combined)
+    before_oa_drop = len(combined)
+    combined = [p for p in combined if p.get("is_open_access") is not False]
+    if before_oa_drop != len(combined):
+        logger.info(f"Dropped {before_oa_drop - len(combined)} Crossref paper(s) Unpaywall couldn't confirm as open access")
 
     combined = await _fill_missing_abstracts(combined)
     await _apply_language_and_translation(combined)

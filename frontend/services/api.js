@@ -122,6 +122,53 @@ export const fetchJournal = async (journalName) => {
 };
 
 /**
+ * Fetch the signed-in user's chosen topic interests
+ * @param {string} token - Session token from login/signup
+ * @returns {Promise<Array<string>>}
+ */
+export const fetchInterests = async (token) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/interests`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return data.interests;
+  } catch (error) {
+    console.error('Error fetching interests:', error);
+    throw error;
+  }
+};
+
+/**
+ * Replace the signed-in user's chosen topic interests
+ * @param {string} token - Session token from login/signup
+ * @param {Array<string>} interests
+ * @returns {Promise<Array<string>>}
+ */
+export const saveInterests = async (token, interests) => {
+  const response = await fetch(`${API_BASE_URL}/interests`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ interests }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`API error: ${response.status}`);
+  }
+
+  const data = await response.json();
+  return data.interests;
+};
+
+/**
  * Fetch the fixed list of paper categories
  * @returns {Promise<Array<string>>} - Promise that resolves to an array of category names
  */

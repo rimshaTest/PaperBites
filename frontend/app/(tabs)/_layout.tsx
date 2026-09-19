@@ -44,9 +44,8 @@ export default function TabLayout() {
           tabBarIcon: ({ color }) => <IconSymbol size={26} name="person.fill" color={color} />,
         }}
       />
-      {/* Brought in from main's frontend rewrite; not wired up here since it calls
-          /api/categories, which doesn't exist in this branch's backend yet. Hidden
-          from the tab bar rather than deleted, since it's someone else's in-progress work. */}
+      {/* Reachable from Profile > Settings > Manage Feed, and shown once as an onboarding
+          popup right after signup - not a tab of its own. */}
       <Tabs.Screen name="interests" options={{ href: null }} />
     </Tabs>
   );

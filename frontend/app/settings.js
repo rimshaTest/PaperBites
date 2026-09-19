@@ -1,67 +1,27 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, Switch, StyleSheet } from 'react-native';
-import {SafeAreaView} from 'react-native-safe-area-context';
+import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useAppSettings } from '../hooks/useStorage';
 import theme from '../constants/theme';
-
-const QUALITY_OPTIONS = ['low', 'medium', 'high'];
 
 export default function SettingsScreen() {
   const router = useRouter();
-  const { settings, loading, updateSettings } = useAppSettings();
-
-  const cycleQuality = () => {
-    const currentIndex = QUALITY_OPTIONS.indexOf(settings.downloadQuality);
-    const next = QUALITY_OPTIONS[(currentIndex + 1) % QUALITY_OPTIONS.length];
-    updateSettings({ downloadQuality: next });
-  };
-
-  if (loading) {
-    return <SafeAreaView style={styles.container} />;
-  }
 
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={22} color={theme.text} />
+        <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
+          <Ionicons name="arrow-back" size={24} color={theme.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Settings</Text>
-        <View style={{ width: 22 }} />
+        <View style={styles.headerButton} />
       </View>
 
-      <View style={styles.row}>
-        <Text style={styles.rowText}>Autoplay videos</Text>
-        <Switch
-          value={settings.autoplay}
-          onValueChange={(value) => updateSettings({ autoplay: value })}
-          trackColor={{ true: theme.accent }}
-        />
-      </View>
-
-      <View style={styles.row}>
-        <Text style={styles.rowText}>Dark mode</Text>
-        <Switch
-          value={settings.darkMode}
-          onValueChange={(value) => updateSettings({ darkMode: value })}
-          trackColor={{ true: theme.accent }}
-        />
-      </View>
-
-      <View style={styles.row}>
-        <Text style={styles.rowText}>Push notifications</Text>
-        <Switch
-          value={settings.pushNotifications}
-          onValueChange={(value) => updateSettings({ pushNotifications: value })}
-          trackColor={{ true: theme.accent }}
-        />
-      </View>
-
-      <TouchableOpacity style={styles.row} onPress={cycleQuality}>
-        <Text style={styles.rowText}>Download quality</Text>
-        <Text style={styles.rowValue}>{settings.downloadQuality}</Text>
+      <Text style={styles.sectionTitle}>Manage Feed</Text>
+      <TouchableOpacity style={styles.row} onPress={() => router.push('/interests')}>
+        <Ionicons name="pricetags-outline" size={22} color={theme.text} />
+        <Text style={styles.rowText}>Interests</Text>
+        <Ionicons name="chevron-forward" size={20} color={theme.textMuted} />
       </TouchableOpacity>
     </SafeAreaView>
   );
@@ -71,42 +31,52 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.background,
-    padding: 20,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 24,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    borderBottomWidth: 1.5,
+    borderBottomColor: theme.border,
+    backgroundColor: theme.surface,
   },
-  backButton: {
-    width: 22,
+  headerButton: {
+    width: 34,
+    padding: 5,
   },
   headerTitle: {
     fontFamily: theme.serif,
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: 'bold',
     color: theme.text,
+  },
+  sectionTitle: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    color: theme.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginTop: 24,
+    marginHorizontal: 20,
+    marginBottom: 8,
   },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    gap: 12,
     backgroundColor: theme.surface,
     borderWidth: 1.5,
     borderColor: theme.border,
     borderRadius: 10,
     paddingHorizontal: 16,
     paddingVertical: 14,
-    marginBottom: 12,
+    marginHorizontal: 20,
   },
   rowText: {
+    flex: 1,
     fontSize: 15,
     color: theme.text,
-  },
-  rowValue: {
-    fontSize: 14,
-    color: theme.textMuted,
-    textTransform: 'capitalize',
   },
 });

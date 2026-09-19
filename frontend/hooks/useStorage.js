@@ -1,11 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { fetchBookmarks, addBookmark, removeBookmark } from '../services/api';
-
-// Constants for storage keys
-const STORAGE_KEYS = {
-  APP_SETTINGS: 'paperbites_app_settings',
-};
 
 /**
  * Custom hook for managing bookmarked ("favorite") papers.
@@ -110,89 +104,5 @@ export const useFavoritePapers = (token) => {
     addFavorite,
     removeFavorite,
     toggleFavorite,
-  };
-};
-
-/**
- * Custom hook for managing app settings
- * 
- * @returns {Object} - App settings data and functions
- */
-export const useAppSettings = () => {
-  const [settings, setSettings] = useState({
-    autoplay: true,
-    darkMode: false,
-    downloadQuality: 'medium',
-    pushNotifications: true,
-  });
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  // Load settings on mount
-  useEffect(() => {
-    const loadSettings = async () => {
-      try {
-        setLoading(true);
-        const jsonValue = await AsyncStorage.getItem(STORAGE_KEYS.APP_SETTINGS);
-        if (jsonValue != null) {
-          setSettings(JSON.parse(jsonValue));
-        }
-      } catch (err) {
-        console.error('Error loading settings:', err);
-        setError('Failed to load app settings');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadSettings();
-  }, []);
-
-  // Update settings
-  const updateSettings = useCallback(async (newSettings) => {
-    try {
-      const updatedSettings = { ...settings, ...newSettings };
-      setSettings(updatedSettings);
-      
-      // Save to storage
-      const jsonValue = JSON.stringify(updatedSettings);
-      await AsyncStorage.setItem(STORAGE_KEYS.APP_SETTINGS, jsonValue);
-      
-      return true;
-    } catch (err) {
-      console.error('Error updating settings:', err);
-      return false;
-    }
-  }, [settings]);
-
-  // Reset settings to defaults
-  const resetSettings = useCallback(async () => {
-    const defaultSettings = {
-      autoplay: true,
-      darkMode: false,
-      downloadQuality: 'medium',
-      pushNotifications: true,
-    };
-    
-    try {
-      setSettings(defaultSettings);
-      
-      // Save to storage
-      const jsonValue = JSON.stringify(defaultSettings);
-      await AsyncStorage.setItem(STORAGE_KEYS.APP_SETTINGS, jsonValue);
-      
-      return true;
-    } catch (err) {
-      console.error('Error resetting settings:', err);
-      return false;
-    }
-  }, []);
-
-  return {
-    settings,
-    loading,
-    error,
-    updateSettings,
-    resetSettings,
   };
 };

@@ -8,6 +8,7 @@ import os
 from typing import List, Dict, Optional
 
 import bookmarks as bookmarks_store
+import interests as interests_store
 import auth
 
 
@@ -85,13 +86,54 @@ def get_authenticated_user_id(request) -> Optional[str]:
 
 
 async def list_papers(request):
-    """Get a list of papers, fetched via `cli.py fetch-latest` (no video generation)."""
+    """Get a list of papers, fetched via `cli.py fetch-latest` (no video generation).
+
+    When the request is authenticated and the user has chosen interests, papers whose
+    categories match one of those interests are boosted to the front of the feed (a plain
+    stable sort, so relative recency within each group is unchanged) - a simpler stand-in
+    for the embedding-based ranking described as future work in the technical spec.
+    """
     limit = int(request.query_params.get("limit", "50"))
     offset = int(request.query_params.get("offset", "0"))
     category = request.query_params.get("category")
 
     papers = get_all_papers(category)
+
+    user_id = get_authenticated_user_id(request)
+    if user_id:
+        user_interests = set(interests_store.get_interests(user_id))
+        if user_interests:
+            papers.sort(key=lambda p: 0 if user_interests.intersection(p.get("categories") or []) else 1)
+
     return JSONResponse(papers[offset:offset + limit])
+
+
+async def get_interests(request):
+    """Get the current user's chosen topic interests."""
+    user_id = get_authenticated_user_id(request)
+    if not user_id:
+        return JSONResponse({"detail": "Authentication required"}, status_code=401)
+
+    return JSONResponse({"interests": interests_store.get_interests(user_id)})
+
+
+async def set_interests(request):
+    """Replace the current user's chosen topic interests."""
+    user_id = get_authenticated_user_id(request)
+    if not user_id:
+        return JSONResponse({"detail": "Authentication required"}, status_code=401)
+
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"detail": "Invalid JSON body"}, status_code=400)
+
+    interests = body.get("interests")
+    if not isinstance(interests, list) or not all(isinstance(i, str) for i in interests):
+        return JSONResponse({"detail": "interests must be a list of strings"}, status_code=400)
+
+    interests_store.set_interests(user_id, interests)
+    return JSONResponse({"interests": interests_store.get_interests(user_id)})
 
 
 async def get_paper(request):
@@ -249,6 +291,8 @@ routes = [
     Route("/api/authors/{author_id}", get_author),
     Route("/api/journals/{journal_name}", get_journal),
     Route("/api/categories", get_categories),
+    Route("/api/interests", get_interests, methods=["GET"]),
+    Route("/api/interests", set_interests, methods=["POST"]),
     Route("/api/bookmarks", list_bookmarked_videos, methods=["GET"]),
     Route("/api/bookmarks", add_bookmark, methods=["POST"]),
     Route("/api/bookmarks/{video_id}", remove_bookmark, methods=["DELETE"]),
