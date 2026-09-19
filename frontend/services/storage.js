@@ -2,11 +2,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Storage keys
 const KEYS = {
-  RECENT_SEARCHES: 'paperbites_recent_searches',
-  WATCH_HISTORY: 'paperbites_watch_history',
-  APP_SETTINGS: 'paperbites_app_settings',
   AUTH_TOKEN: 'paperbites_auth_token',
   AUTH_USER: 'paperbites_auth_user',
+  INTERESTS: 'paperbites_interests',
+  SAVED_PAPERS: 'paperbites_saved_papers',
 };
 
 /**
@@ -51,133 +50,76 @@ export const clearAuthSession = async () => {
 };
 
 /**
- * Save recent searches to storage
- * 
- * @param {Array} searches - Array of search strings
- * @returns {Promise<void>}
+ * Get the user's saved topic/category interests.
+ * @returns {Promise<Array<string>>}
  */
-export const saveRecentSearches = async (searches) => {
+export const getInterests = async () => {
   try {
-    const jsonValue = JSON.stringify(searches);
-    await AsyncStorage.setItem(KEYS.RECENT_SEARCHES, jsonValue);
-  } catch (error) {
-    console.error('Error saving recent searches:', error);
-  }
-};
-
-/**
- * Get recent searches from storage
- * 
- * @returns {Promise<Array>} Array of search strings
- */
-export const getRecentSearches = async () => {
-  try {
-    const jsonValue = await AsyncStorage.getItem(KEYS.RECENT_SEARCHES);
+    const jsonValue = await AsyncStorage.getItem(KEYS.INTERESTS);
     return jsonValue != null ? JSON.parse(jsonValue) : [];
   } catch (error) {
-    console.error('Error loading recent searches:', error);
+    console.error('Error loading interests:', error);
     return [];
   }
 };
 
 /**
- * Add a video to watch history
- * 
- * @param {Object} video - Video object
- * @returns {Promise<void>}
+ * Save the user's selected topic/category interests.
+ * @param {Array<string>} interests
  */
-export const addToWatchHistory = async (video) => {
+export const saveInterests = async (interests) => {
   try {
-    // Get current history
-    const history = await getWatchHistory();
-    
-    // Remove if already in history to avoid duplicates
-    const filteredHistory = history.filter(item => item.id !== video.id);
-    
-    // Add to beginning of history with timestamp
-    const updatedHistory = [
-      { ...video, watchedAt: Date.now() },
-      ...filteredHistory
-    ];
-    
-    // Limit history to 50 items
-    const limitedHistory = updatedHistory.slice(0, 50);
-    
-    const jsonValue = JSON.stringify(limitedHistory);
-    await AsyncStorage.setItem(KEYS.WATCH_HISTORY, jsonValue);
+    await AsyncStorage.setItem(KEYS.INTERESTS, JSON.stringify(interests));
   } catch (error) {
-    console.error('Error adding to watch history:', error);
+    console.error('Error saving interests:', error);
   }
 };
 
 /**
- * Get watch history
- * 
- * @returns {Promise<Array>} Array of video objects with watchedAt timestamps
+ * Whether a paper id is in the device-local saved list.
+ * @param {string} paperId
+ * @returns {Promise<boolean>}
  */
-export const getWatchHistory = async () => {
+export const isPaperSaved = async (paperId) => {
   try {
-    const jsonValue = await AsyncStorage.getItem(KEYS.WATCH_HISTORY);
-    return jsonValue != null ? JSON.parse(jsonValue) : [];
+    const jsonValue = await AsyncStorage.getItem(KEYS.SAVED_PAPERS);
+    const savedIds = jsonValue != null ? JSON.parse(jsonValue) : [];
+    return savedIds.includes(paperId);
   } catch (error) {
-    console.error('Error loading watch history:', error);
-    return [];
+    console.error('Error checking saved paper:', error);
+    return false;
   }
 };
 
 /**
- * Clear watch history
- * 
- * @returns {Promise<void>}
+ * Add a paper id to the device-local saved list.
+ * @param {string} paperId
  */
-export const clearWatchHistory = async () => {
+export const savePaperId = async (paperId) => {
   try {
-    await AsyncStorage.setItem(KEYS.WATCH_HISTORY, JSON.stringify([]));
+    const jsonValue = await AsyncStorage.getItem(KEYS.SAVED_PAPERS);
+    const savedIds = jsonValue != null ? JSON.parse(jsonValue) : [];
+    if (!savedIds.includes(paperId)) {
+      await AsyncStorage.setItem(KEYS.SAVED_PAPERS, JSON.stringify([...savedIds, paperId]));
+    }
   } catch (error) {
-    console.error('Error clearing watch history:', error);
+    console.error('Error saving paper id:', error);
   }
 };
 
 /**
- * Save app settings
- * 
- * @param {Object} settings - Settings object
- * @returns {Promise<void>}
+ * Remove a paper id from the device-local saved list.
+ * @param {string} paperId
  */
-export const saveAppSettings = async (settings) => {
+export const unsavePaperId = async (paperId) => {
   try {
-    const jsonValue = JSON.stringify(settings);
-    await AsyncStorage.setItem(KEYS.APP_SETTINGS, jsonValue);
+    const jsonValue = await AsyncStorage.getItem(KEYS.SAVED_PAPERS);
+    const savedIds = jsonValue != null ? JSON.parse(jsonValue) : [];
+    await AsyncStorage.setItem(
+      KEYS.SAVED_PAPERS,
+      JSON.stringify(savedIds.filter((id) => id !== paperId))
+    );
   } catch (error) {
-    console.error('Error saving app settings:', error);
+    console.error('Error unsaving paper id:', error);
   }
-};
-
-/**
- * Get app settings
- * 
- * @returns {Promise<Object>} Settings object
- */
-export const getAppSettings = async () => {
-  try {
-    const jsonValue = await AsyncStorage.getItem(KEYS.APP_SETTINGS);
-    return jsonValue != null ? JSON.parse(jsonValue) : getDefaultSettings();
-  } catch (error) {
-    console.error('Error loading app settings:', error);
-    return getDefaultSettings();
-  }
-};
-
-/**
- * Get default app settings
- * 
- * @returns {Object} Default settings
- */
-const getDefaultSettings = () => {
-  return {
-    autoplay: true,
-    darkMode: false,
-    downloadQuality: 'medium',
-    pushNotifications: true,
-  };
 };
