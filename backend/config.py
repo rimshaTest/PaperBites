@@ -20,7 +20,8 @@ class Config:
     DEFAULT_CONFIG = {
         "api": {
             "email": "user@example.com",  # For Unpaywall API
-            "pexels_key": ""  # For paper card thumbnail images (paper/latest.py)
+            "pexels_key": "",  # For paper card thumbnail images (paper/latest.py)
+            "semantic_scholar_key": ""  # Optional - raises Semantic Scholar's low anonymous rate limit
         },
         "paper": {
             "max_papers": 3,
@@ -71,6 +72,8 @@ class Config:
             self.set("storage.mongodb.database_name", os.getenv("PAPERBITES_MONGODB_DB"))
         if os.getenv("PAPERBITES_PEXELS_KEY"):
             self.set("api.pexels_key", os.getenv("PAPERBITES_PEXELS_KEY"))
+        if os.getenv("PAPERBITES_SEMANTIC_SCHOLAR_KEY"):
+            self.set("api.semantic_scholar_key", os.getenv("PAPERBITES_SEMANTIC_SCHOLAR_KEY"))
         if os.getenv("PAPERBITES_GEMINI_KEY"):
             self.set("api.gemini_key", os.getenv("PAPERBITES_GEMINI_KEY"))
         if os.getenv("PAPERBITES_EMAIL"):

@@ -145,8 +145,15 @@ async def fetch_latest_semantic_scholar(category: str, since: datetime.date, lim
         f"?query={urllib.parse.quote(category)}&year={year_range}&limit={fetch_size}&fields={fields}"
     )
 
+    # Unauthenticated requests share a very low, easy-to-exhaust rate limit; a free API key
+    # (https://www.semanticscholar.org/product/api#api-key-form) raises it substantially.
+    headers = {"Accept": "application/json"}
+    api_key = config_instance.get("api.semantic_scholar_key")
+    if api_key:
+        headers["x-api-key"] = api_key
+
     async with aiohttp.ClientSession(timeout=_HTTP_TIMEOUT) as session:
-        data = await _get_json_with_retry(session, url, "Semantic Scholar", headers={"Accept": "application/json"})
+        data = await _get_json_with_retry(session, url, "Semantic Scholar", headers=headers)
 
     if not data:
         return []
