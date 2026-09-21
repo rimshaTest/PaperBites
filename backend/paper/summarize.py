@@ -15,7 +15,7 @@ import asyncio
 import logging
 import os
 import tempfile
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 import aiohttp
 
@@ -24,37 +24,52 @@ from config import Config
 config_instance = Config()
 logger = logging.getLogger("paperbites.summarize")
 
-_MODEL_NAME = "gemini-2.5-flash"
+# Cycled round-robin, one model per call, so each model's own separate free-tier quota absorbs
+# part of the load instead of one model's 5-requests/minute cap gating the whole run. No
+# verified guarantee every one of these model ids is live on a given account/API version - a
+# model that 404s or otherwise errors is simply skipped in favor of the next one in the list
+# (see summarize_text), so an invalid entry here just reduces the effective pool rather than
+# breaking anything.
+_MODEL_NAMES = [
+    "gemini-2.5-flash",
+    "gemini-2.5-flash-lite",
+    "gemini-3-flash",
+    "gemini-3.1-flash-lite",
+    "gemini-3.5-flash-lite",
+    "gemini-3.6-flash",
+    "gemini-3.7-flash",
+    "gemini-3.8-flash",
+]
 _MAX_SUMMARY_WORDS = 200
 # Cap how much extracted PDF text goes into the prompt - full papers can be tens of thousands of
 # words, and we only need enough to produce a good summary, not the whole document.
 _PDF_TEXT_CHAR_LIMIT = 15000
 
-# The free tier for gemini-2.5-flash caps at 5 requests/minute - easy to blow through within the
-# first couple of papers of a single fetch-latest run if calls just fire concurrently and react
-# to 429s after the fact (each one then burns 30-45s on Google's own suggested retry delay,
-# often several papers' worth at once). Serializing calls with a minimum spacing instead paces
-# requests proactively, so the whole run is both faster and doesn't hammer the API with requests
-# that are guaranteed to be rejected.
-_gemini_rate_limit_lock = asyncio.Lock()
-_gemini_next_call_time = 0.0
+_model_cycle_lock = asyncio.Lock()
+_next_model_index = 0
+_llm_cache: Dict[str, object] = {}
 
 
-def _gemini_min_interval_seconds() -> float:
-    rpm = config_instance.get("api.gemini_requests_per_minute", 5) or 5
-    return 60.0 / max(int(rpm), 1)
+def _configured_model_names() -> List[str]:
+    """api.gemini_models (a list, or a comma-separated string via PAPERBITES_GEMINI_MODELS)
+    overrides the built-in list above, if set."""
+    configured = config_instance.get("api.gemini_models")
+    if not configured:
+        return _MODEL_NAMES
+    if isinstance(configured, str):
+        return [name.strip() for name in configured.split(",") if name.strip()]
+    return list(configured)
 
 
-async def _wait_for_gemini_rate_limit() -> None:
-    global _gemini_next_call_time
-    async with _gemini_rate_limit_lock:
-        loop = asyncio.get_event_loop()
-        now = loop.time()
-        wait = _gemini_next_call_time - now
-        if wait > 0:
-            await asyncio.sleep(wait)
-            now = loop.time()
-        _gemini_next_call_time = now + _gemini_min_interval_seconds()
+async def _next_model_name(models: List[str]) -> str:
+    """Advance the shared round-robin position by one and return the model at that slot -
+    concurrent summarize_text calls each get a different model instead of piling onto the same
+    one."""
+    global _next_model_index
+    async with _model_cycle_lock:
+        name = models[_next_model_index % len(models)]
+        _next_model_index += 1
+        return name
 
 _SUMMARY_PROMPT = (
     "You are writing a short, plain-English summary of a research paper for a general-audience "
@@ -67,21 +82,31 @@ _SUMMARY_PROMPT = (
 )
 
 
-def _get_llm():
-    """Lazily build the Gemini chat model. Returns None if no API key is configured, so callers
-    can fall back to the raw abstract instead of hard-failing when Gemini isn't set up."""
+def _get_llm_for_model(model_name: str):
+    """Lazily build (and cache) the Gemini chat model for one model name. Returns None if no API
+    key is configured, so callers can fall back to the raw abstract instead of hard-failing when
+    Gemini isn't set up."""
     api_key = config_instance.get("api.gemini_key")
     if not api_key:
         return None
-    from langchain_google_genai import ChatGoogleGenerativeAI
+    if model_name not in _llm_cache:
+        from langchain_google_genai import ChatGoogleGenerativeAI
 
-    return ChatGoogleGenerativeAI(model=_MODEL_NAME, google_api_key=api_key, temperature=0.3)
+        _llm_cache[model_name] = ChatGoogleGenerativeAI(
+            model=model_name, google_api_key=api_key, temperature=0.3
+        )
+    return _llm_cache[model_name]
 
 
 async def summarize_text(title: str, text: str, source_label: str = "Abstract") -> Optional[str]:
-    """Summarize arbitrary paper text (abstract or full PDF text) into a <=200 word description."""
-    llm = _get_llm()
-    if not llm or not text:
+    """Summarize arbitrary paper text (abstract or full PDF text) into a <=200 word description.
+
+    Tries each configured model in round-robin order, moving on immediately (no delay) on any
+    failure - a rate limit, an invalid/unavailable model name, or anything else - so one model's
+    free-tier cap or a bad model id doesn't stall or break the whole run. Gives up only once
+    every model in the list has failed for this call.
+    """
+    if not config_instance.get("api.gemini_key") or not text:
         return None
 
     prompt = _SUMMARY_PROMPT.format(
@@ -91,14 +116,21 @@ async def summarize_text(title: str, text: str, source_label: str = "Abstract") 
         text=text[:_PDF_TEXT_CHAR_LIMIT],
     )
 
-    await _wait_for_gemini_rate_limit()
-    try:
-        response = await llm.ainvoke(prompt)
-        summary = (response.content or "").strip()
-        return summary or None
-    except Exception as e:
-        logger.warning(f"Gemini summarization failed for '{title}': {e}")
-        return None
+    models = _configured_model_names()
+    for _ in range(len(models)):
+        model_name = await _next_model_name(models)
+        llm = _get_llm_for_model(model_name)
+        if not llm:
+            continue
+        try:
+            response = await llm.ainvoke(prompt)
+            summary = (response.content or "").strip()
+            if summary:
+                return summary
+        except Exception as e:
+            logger.warning(f"Gemini model '{model_name}' failed for '{title}': {e}")
+
+    return None
 
 
 async def _download_pdf_text(session: aiohttp.ClientSession, url: str) -> Optional[str]:

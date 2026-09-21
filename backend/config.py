@@ -23,7 +23,7 @@ class Config:
             "pexels_key": "",  # For paper card thumbnail images (paper/latest.py)
             "semantic_scholar_key": "",  # Optional - raises Semantic Scholar's low anonymous rate limit
             "gemini_key": "",  # For card description summarization (paper/summarize.py)
-            "gemini_requests_per_minute": 5  # Free tier default for gemini-2.5-flash; raise if on a paid plan
+            "gemini_models": ""  # Optional comma-separated override of paper/summarize.py's model list
         },
         "paper": {
             "max_papers": 3,
@@ -78,8 +78,8 @@ class Config:
             self.set("api.semantic_scholar_key", os.getenv("PAPERBITES_SEMANTIC_SCHOLAR_KEY"))
         if os.getenv("PAPERBITES_GEMINI_KEY"):
             self.set("api.gemini_key", os.getenv("PAPERBITES_GEMINI_KEY"))
-        if os.getenv("PAPERBITES_GEMINI_RPM"):
-            self.set("api.gemini_requests_per_minute", int(os.getenv("PAPERBITES_GEMINI_RPM")))
+        if os.getenv("PAPERBITES_GEMINI_MODELS"):
+            self.set("api.gemini_models", os.getenv("PAPERBITES_GEMINI_MODELS"))
         if os.getenv("PAPERBITES_EMAIL"):
             self.set("api.email", os.getenv("PAPERBITES_EMAIL"))
 

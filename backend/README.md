@@ -41,9 +41,9 @@ python cli.py fetch-latest [--category "Physics"] [--days 7] [--limit 20] [--sor
 list. Semantic Scholar's anonymous rate limit is low and easy to exhaust across all 8 categories
 in one run - set `PAPERBITES_SEMANTIC_SCHOLAR_KEY` in `.env` (free, see `.env.example`) if you
 hit repeated rate-limit warnings. If `PAPERBITES_GEMINI_KEY` is set, description summarization
-is paced to stay under `PAPERBITES_GEMINI_RPM` requests/minute (default 5, matching
-gemini-2.5-flash's free tier) - a run with many papers will take a while on the free tier by
-design; raise `PAPERBITES_GEMINI_RPM` if you're on a paid Gemini plan.
+round-robins across several Gemini models (`paper/summarize.py`'s `_MODEL_NAMES`, overridable
+via `PAPERBITES_GEMINI_MODELS`) so no single model's free-tier cap gates the whole run - a model
+that's rate-limited or invalid is skipped immediately in favor of the next one, with no delay.
 
 ## API
 
