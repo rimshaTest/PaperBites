@@ -40,7 +40,10 @@ python cli.py fetch-latest [--category "Physics"] [--days 7] [--limit 20] [--sor
 `fetch-latest` with no `--category` fetches all categories in `paper/latest.py`'s `CATEGORIES`
 list. Semantic Scholar's anonymous rate limit is low and easy to exhaust across all 8 categories
 in one run - set `PAPERBITES_SEMANTIC_SCHOLAR_KEY` in `.env` (free, see `.env.example`) if you
-hit repeated rate-limit warnings.
+hit repeated rate-limit warnings. If `PAPERBITES_GEMINI_KEY` is set, description summarization
+is paced to stay under `PAPERBITES_GEMINI_RPM` requests/minute (default 5, matching
+gemini-2.5-flash's free tier) - a run with many papers will take a while on the free tier by
+design; raise `PAPERBITES_GEMINI_RPM` if you're on a paid Gemini plan.
 
 ## API
 
