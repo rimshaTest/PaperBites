@@ -1,156 +1,105 @@
-# PaperBites: Open Access Research Paper to TikTok Video Converter
+# PaperBites Backend
 
-PaperBites is an application that converts academic research papers into engaging short-form videos suitable for platforms like TikTok, Instagram, and YouTube. It uses AI to extract key information and generate visually appealing videos with voiceovers and relevant visuals.
+A Starlette (ASGI) API that fetches recent, open-access research papers from free academic APIs,
+stores them in MongoDB, and serves them - along with accounts, bookmarks, interests, and profile
+data - to the PaperBites mobile app.
 
-## Important Updates
+There is no video-generation pipeline anymore. This backend used to convert papers into
+narrated short-form videos (PDF download → OCR → summarize → compose video → upload to
+Cloudinary); that entire pipeline (`video/`, `utils/cloudinary_storage.py`, the CLI's
+`search`/`id`/`pdf` subcommands) was removed. `paper/download.py`, `extraction.py`, and
+`search.py` are kept - they're paper-processing utilities a future citation-paste/resolve
+feature would need - but nothing currently calls them.
 
-This version includes significant improvements to the paper retrieval system:
-- Integration with multiple free, open APIs (arXiv, OpenAlex, Semantic Scholar)
-- Proper license checking for public display
-- Enhanced error handling
-- Better fallback mechanisms
-
-## Installation
-
-### Prerequisites
-
-- Python 3.7 or higher
-- FFmpeg (for video processing)
-- Tesseract OCR (for PDF text extraction)
-
-### Install from source
+## Setup
 
 ```bash
-# Clone the repository
-git clone https://github.com/yourusername/paperbites.git
-cd paperbites
-
-# Install dependencies
 pip install -r requirements.txt
-
-# Install the package
-pip install -e .
+cp .env.example .env
 ```
 
-## Usage
+Fill in `.env` with your own values (see `.env.example` for the full list - Mongo connection
+string, Pexels/Gemini/Semantic Scholar API keys, contact email). Anything set in `.env`
+overrides the matching value in `config.json` (see `config.py`'s `load_env()`); `config.json`'s
+own copies of these are only a fallback for setups without a `.env` yet.
 
-### Command Line Interface
+If you hit `ModuleNotFoundError: No module named 'langdetect'` on an older `pip`/`setuptools`,
+pin `pip install "setuptools<60"` first, then retry - `langdetect`'s packaging predates modern
+build isolation.
 
-Search for papers and create videos:
-
-```bash
-# Search for papers on a topic and convert to videos
-python cli.py search "machine learning" --papers 3
-
-# Process a specific paper by arXiv ID
-python cli.py id 2104.08653
-
-# Process a specific paper by DOI
-python cli.py id 10.1145/3458817.3476195
-
-# Process a local PDF
-python cli.py pdf my_paper.pdf
-```
-
-### API Server
-
-Start the API server to browse and search for papers:
+## Running
 
 ```bash
-# Start the server
+# Start the API server (serves on :8000)
 python api_server.py
+
+# Fetch/refresh papers into MongoDB - run this at least once before the app has anything to show
+python cli.py fetch-latest [--category "Physics"] [--days 7] [--limit 20] [--sort-by date|citations]
 ```
 
-The API will be available at http://localhost:8000 with the following endpoints:
+`fetch-latest` with no `--category` fetches all categories in `paper/latest.py`'s `CATEGORIES`
+list. Semantic Scholar's anonymous rate limit is low and easy to exhaust across all 8 categories
+in one run - set `PAPERBITES_SEMANTIC_SCHOLAR_KEY` in `.env` (free, see `.env.example`) if you
+hit repeated rate-limit warnings.
 
-- GET `/api/videos` - List all videos
-- GET `/api/videos/{video_id}` - Get a specific video
-- GET `/api/topics` - List popular topics
-- GET `/api/search?query=keyword` - Search for papers
-- GET `/api/paper/{paper_id}` - Get paper information
+## API
+
+All routes are under `/api`. Auth-required routes take `Authorization: Bearer <token>`.
+
+**Papers**
+- `GET /papers?category=&limit=&offset=` - the feed, newest first. When authenticated and the
+  user has chosen interests, hard-filtered to papers whose categories match (see Interests below).
+- `GET /papers/{id}` - a single paper.
+- `GET /categories` - the fixed list of paper categories.
+
+**Authors & journals**
+- `GET /authors/{author_id}` - an author's name and every paper of theirs.
+- `GET /journals/{journal_name}` - every paper published in that journal/venue.
+
+**Auth**
+- `POST /auth/signup` `{email, password}` → `{token, user}`
+- `POST /auth/login` `{email, password}` → `{token, user}`
+- `POST /auth/logout` (auth required)
+- `GET /auth/me` (auth required) → `{user}`
+
+**Bookmarks** (auth required)
+- `GET /bookmarks` - full paper objects for everything the user has bookmarked.
+- `POST /bookmarks` `{video_id}` - bookmark a paper (the field is still named `video_id` on
+  disk and over the wire - a holdover from before the app pivoted from videos to papers, kept
+  as-is to avoid a data migration).
+- `DELETE /bookmarks/{video_id}`
+
+**Interests** (auth required)
+- `GET /interests` → `{interests: [...]}`
+- `POST /interests` `{interests: [...]}` - replaces the user's chosen topics wholesale.
+
+**Profile** (auth required)
+- `GET /profile` → `{tier1, tier2}`
+- `PUT /profile/tier1` `{fields}` - cache-safe fields (`field_of_study`, `education_level`,
+  `general_interests`, `location`).
+- `PUT /profile/tier2` `{fields, consent}` - sensitive-context fields (`age`, `gender`, `sex`,
+  `location_precise`, `mental_disabilities`, `physical_disabilities`, `chronic_illnesses`), each
+  with its own `used_for_personalization`/`used_for_feed_relevance` consent flags. Every Tier 2
+  read/write is appended to a separate audit log.
+
+## Storage
+
+MongoDB (`db.py`) holds the `papers` collection - the only real collection. Accounts, sessions,
+bookmarks, interests, and profile data are all flat JSON files (`auth.py`, `bookmarks.py`,
+`interests.py`, `profile.py`), matching each other's pattern rather than adding a second
+database. **These JSON files hold real account data (password hashes, live session tokens) and
+must never be committed** - see `.gitignore` and `SECURITY_TODO.md`.
 
 ## Configuration
 
-Edit `config.json` to customize behavior:
+`config.py` merges, in order: hardcoded defaults → `config.json` → environment variables
+(including a gitignored `.env`, loaded via `python-dotenv`). See `.env.example` for what to set.
 
-```json
-{
-  "api": {
-    "pexels_key": "YOUR_PEXELS_API_KEY",
-    "email": "your-email@example.com"
-  },
-  "paper_search": {
-    "sources": [
-      "arxiv",
-      "openalex",
-      "semantic_scholar"
-    ],
-    "max_papers": 3,
-    "open_access_only": true
-  },
-  "video": {
-    "formats": {
-      "tiktok": {"width": 1080, "height": 1920},
-      "instagram": {"width": 1080, "height": 1080},
-      "youtube": {"width": 1920, "height": 1080}
-    },
-    "default_format": "tiktok",
-    "fps": 30
-  },
-  "storage": {
-    "cloudinary": {
-      "cloud_name": "",
-      "api_key": "",
-      "api_secret": ""
-    }
-  },
-  "paths": {
-    "temp_dir": "temp_assets",
-    "output_dir": "videos",
-    "tesseract_cmd": "path/to/tesseract" 
-  }
-}
-```
+## Not built
 
-## API Requirements
-
-1. **Email for APIs**: The application uses APIs that benefit from having a valid email address for "polite pool" access. You must provide a valid email address in the config file.
-
-2. **All APIs are Free and Unrestricted**: This version uses only free, unrestricted APIs that do not have commercial limitations:
-   - arXiv API (academic papers in physics, math, CS, etc.)
-   - OpenAlex API (comprehensive open access scholarly materials)
-   - Semantic Scholar API (AI-enhanced research paper access)
-
-3. **Pexels API Key (Optional)**: For stock videos and images, obtain a free API key from [Pexels](https://www.pexels.com/api/).
-
-## License Compliance
-
-PaperBites is designed to respect copyright and licensing:
-
-1. It only processes and displays papers with appropriate open access licenses that allow redistribution.
-2. Papers are checked against the following licenses:
-   - Creative Commons (CC-BY, CC0, CC-BY-SA)
-   - Open Access specific licenses
-   - Public Domain
-   - arXiv default license
-
-For public display, proper attribution is always included.
-
-## Supported Paper IDs
-
-The system can retrieve papers using multiple ID formats:
-- arXiv IDs (e.g., "2104.08653")
-- DOIs (e.g., "10.1145/3458817.3476195")
-- Semantic Scholar IDs (with "SS-" prefix)
-- OpenAlex IDs (usually starting with "W")
-
-## Troubleshooting
-
-If you encounter issues:
-
-1. Check that all dependencies are installed
-2. Verify that FFmpeg and Tesseract are in your PATH
-3. Ensure your email is correctly set in `config.json`
-4. Check the logs in the `logs` directory
-
-For more help, please open an issue on GitHub.
+Leveled reading (Original/Simpler/Simplest generation and caching), the embedding-based
+interest/relevance matching described as future work, citation-paste-to-save, screenshot/poster
+matching, the rating widget, and age-gating/parental-consent for Tier 2 profile data. A
+per-paper chat endpoint (`paper/chat.py`) exists but has no route registered in `api_server.py`
+yet, and its frontend counterpart imports a function that doesn't exist in the frontend's API
+client - both are dormant, not reachable.
