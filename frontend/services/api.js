@@ -13,9 +13,12 @@ const COMPUTER_IP = '10.212.104.176'; // Replace with your actual IP
 const TUNNEL_URL = 'https://altered-possibility-far-finals.trycloudflare.com';
 
 const getApiBaseUrl = () => {
-  // Production: use environment variable
-  if (process.env.REACT_APP_API_URL) {
-    return `${process.env.REACT_APP_API_URL}/api`;
+  // Set in a .env file as EXPO_PUBLIC_API_URL=http://<host>:8000 (no trailing /api - that's
+  // added below). Only vars prefixed EXPO_PUBLIC_ are inlined into the app bundle by Expo's
+  // Metro config; a plain REACT_APP_API_URL (the Create React App convention) is never set at
+  // runtime here and silently falls through, which is what was happening before this fix.
+  if (process.env.EXPO_PUBLIC_API_URL) {
+    return `${process.env.EXPO_PUBLIC_API_URL}/api`;
   }
 
   if (Platform.OS === 'web') {
