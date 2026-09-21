@@ -13,9 +13,17 @@ import auth
 
 
 def _serialize_paper(doc: Dict) -> Dict:
-    """Convert a MongoDB paper document into a JSON-safe dict with a plain string id."""
+    """Convert a MongoDB paper document into a JSON-safe dict with a plain string id.
+
+    Papers fetched before the description/summarization step existed (or a source that never
+    got a Gemini summary) may have no `description` field at all - fall back to the raw
+    `abstract` here so every consumer of this API gets a usable description without each one
+    having to remember the fallback itself.
+    """
     doc = dict(doc)
     doc["id"] = str(doc.pop("_id"))
+    if not doc.get("description"):
+        doc["description"] = doc.get("abstract", "")
     return doc
 
 
