@@ -45,6 +45,7 @@ export interface PaperItem {
   title: string;
   authors: Author[];
   description: string;
+  abstract?: string;
   citation_count: number;
   published_date: string | null;
   journal: string | null;
@@ -203,7 +204,7 @@ export const PaperCard: React.FC<{
             </View>
           )}
 
-          <Text style={styles.description}>{item.description}</Text>
+          <Text style={styles.description}>{item.description || item.abstract}</Text>
 
           <View style={styles.actionRow}>
             {item.url && (
