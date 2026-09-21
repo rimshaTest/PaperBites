@@ -30,9 +30,31 @@ _MAX_SUMMARY_WORDS = 200
 # words, and we only need enough to produce a good summary, not the whole document.
 _PDF_TEXT_CHAR_LIMIT = 15000
 
-# Bound concurrent Gemini calls - be polite to the free tier's per-minute request limit rather
-# than firing off a request per paper simultaneously.
-_summarize_semaphore = asyncio.Semaphore(3)
+# The free tier for gemini-2.5-flash caps at 5 requests/minute - easy to blow through within the
+# first couple of papers of a single fetch-latest run if calls just fire concurrently and react
+# to 429s after the fact (each one then burns 30-45s on Google's own suggested retry delay,
+# often several papers' worth at once). Serializing calls with a minimum spacing instead paces
+# requests proactively, so the whole run is both faster and doesn't hammer the API with requests
+# that are guaranteed to be rejected.
+_gemini_rate_limit_lock = asyncio.Lock()
+_gemini_next_call_time = 0.0
+
+
+def _gemini_min_interval_seconds() -> float:
+    rpm = config_instance.get("api.gemini_requests_per_minute", 5) or 5
+    return 60.0 / max(int(rpm), 1)
+
+
+async def _wait_for_gemini_rate_limit() -> None:
+    global _gemini_next_call_time
+    async with _gemini_rate_limit_lock:
+        loop = asyncio.get_event_loop()
+        now = loop.time()
+        wait = _gemini_next_call_time - now
+        if wait > 0:
+            await asyncio.sleep(wait)
+            now = loop.time()
+        _gemini_next_call_time = now + _gemini_min_interval_seconds()
 
 _SUMMARY_PROMPT = (
     "You are writing a short, plain-English summary of a research paper for a general-audience "
@@ -69,14 +91,14 @@ async def summarize_text(title: str, text: str, source_label: str = "Abstract") 
         text=text[:_PDF_TEXT_CHAR_LIMIT],
     )
 
-    async with _summarize_semaphore:
-        try:
-            response = await llm.ainvoke(prompt)
-            summary = (response.content or "").strip()
-            return summary or None
-        except Exception as e:
-            logger.warning(f"Gemini summarization failed for '{title}': {e}")
-            return None
+    await _wait_for_gemini_rate_limit()
+    try:
+        response = await llm.ainvoke(prompt)
+        summary = (response.content or "").strip()
+        return summary or None
+    except Exception as e:
+        logger.warning(f"Gemini summarization failed for '{title}': {e}")
+        return None
 
 
 async def _download_pdf_text(session: aiohttp.ClientSession, url: str) -> Optional[str]:
