@@ -44,6 +44,41 @@ whether the secret is still present in the current file.
 4. Confirm `backend/config.json` is added to `.gitignore` so a real
    connection string doesn't get committed again after rotation.
 
+## Committed account data (urgent, new)
+
+`backend/users.json` and `backend/sessions.json` were committed and pushed
+(the "added profile and bookmark features with theme adherence" commit) -
+neither had ever been in `.gitignore`. Both contain real, live data, not
+placeholders:
+
+- `users.json`: an actual account's email, PBKDF2 salt, and password hash
+  (200,000 iterations - not trivial to crack, but a public hash is still
+  worse than a private one, and the value is now permanently in git history
+  regardless of what's in the current file).
+- `sessions.json`: a **live, currently-valid bearer session token** for that
+  account (30-day TTL from creation per `auth.py`'s `SESSION_TTL_SECONDS`) -
+  anyone with this token can act as that account against the backend until
+  it expires, no password needed.
+
+`backend/interests.json` and `backend/bookmarks.json` were committed too;
+lower severity (no credentials), but still real per-account data that
+shouldn't be in git.
+
+**Fixed in this pass:** all four files added to `backend/.gitignore` and
+untracked (`git rm --cached`) - they stay on disk locally, just stop being
+committed going forward. This does NOT undo the exposure already pushed.
+
+**Action needed:**
+1. Treat the exposed session token as compromised - log out and back in on
+   that account (or otherwise invalidate the token in `sessions.json`) to
+   get a fresh one; the old one otherwise remains valid until it naturally
+   expires.
+2. Consider changing that account's password, since the hash is now
+   historically exposed - low urgency given PBKDF2/200k iterations, but
+   cheap to do.
+3. Nothing to do for `interests.json`/`bookmarks.json` beyond the
+   `.gitignore` fix already made.
+
 ## MongoDB usage (resolved)
 
 Paper fetches ARE written to MongoDB from this repo: `backend/db.py`

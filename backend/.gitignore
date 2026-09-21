@@ -1,6 +1,17 @@
 __pycache__/
 logs/
 .env
+
+# Runtime JSON-file stores (auth.py/bookmarks.py/interests.py/profile.py) - real user data
+# (password hashes, live session tokens), never meant to be committed. config.json is the app's
+# own config, not a runtime store, and stays tracked.
+users.json
+sessions.json
+bookmarks.json
+interests.json
+profile_tier1.json
+profile_tier2.json
+profile_tier2_audit.json
 paper/__pycache__/
 utils/__pycache__/
 video/__pycache__/
