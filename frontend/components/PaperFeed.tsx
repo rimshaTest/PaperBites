@@ -22,7 +22,8 @@ import { Image } from 'expo-image';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { fetchPapers } from '../services/api';
-import { getInterests, isPaperSaved, savePaperId, unsavePaperId } from '../services/storage';
+import { useAuth } from '../hooks/useAuth';
+import { useFavoritePapers } from '../hooks/useStorage';
 import theme from '../constants/theme';
 
 const { width, height } = Dimensions.get('window');
@@ -51,43 +52,19 @@ export interface PaperItem {
   image_url: string | null;
   url: string | null;
   doi: string | null;
-  category: string | null;
+  categories: string[] | null;
   language: string;
-  relevance: string;
 }
 
 export const PaperCard: React.FC<{
   item: PaperItem;
   onExpandedChange: (expanded: boolean) => void;
-  onUnsave?: (id: string) => void;
-}> = ({ item, onExpandedChange, onUnsave }) => {
+  isBookmarked: boolean;
+  onToggleBookmark: (item: PaperItem) => void;
+}> = ({ item, onExpandedChange, isBookmarked, onToggleBookmark }) => {
   const router = useRouter();
   const top = useSharedValue(COLLAPSED_TOP);
   const [isExpanded, setIsExpanded] = React.useState(false);
-  const [saved, setSaved] = React.useState(false);
-
-  React.useEffect(() => {
-    let cancelled = false;
-    isPaperSaved(item.id).then((value) => {
-      if (!cancelled) {
-        setSaved(value);
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [item.id]);
-
-  const toggleSave = async () => {
-    const next = !saved;
-    setSaved(next);
-    if (next) {
-      await savePaperId(item.id);
-    } else {
-      await unsavePaperId(item.id);
-      onUnsave?.(item.id);
-    }
-  };
 
   const setExpanded = React.useCallback(
     (expanded: boolean) => {
@@ -134,17 +111,17 @@ export const PaperCard: React.FC<{
         ) : (
           <View style={[styles.image, styles.imageFallback]} />
         )}
-        <TouchableOpacity style={styles.saveButton} onPress={toggleSave}>
+        <TouchableOpacity style={styles.saveButton} onPress={() => onToggleBookmark(item)}>
           <Ionicons
-            name={saved ? 'bookmark' : 'bookmark-outline'}
+            name={isBookmarked ? 'bookmark' : 'bookmark-outline'}
             size={20}
-            color={saved ? theme.accent : theme.surface}
+            color={isBookmarked ? theme.accent : theme.surface}
           />
         </TouchableOpacity>
         <View style={styles.badgeColumn}>
-          {item.category && (
+          {item.categories && item.categories.length > 0 && (
             <View style={styles.categoryBadge}>
-              <Text style={styles.categoryBadgeText}>{item.category}</Text>
+              <Text style={styles.categoryBadgeText}>{item.categories[0]}</Text>
             </View>
           )}
           <View style={styles.languageBadge}>
@@ -227,16 +204,6 @@ export const PaperCard: React.FC<{
 
           <Text style={styles.description}>{item.description}</Text>
 
-          <View style={styles.relevanceBox}>
-            {item.relevance === 'N/A' ? (
-              <TouchableOpacity onPress={() => router.push('/profile')}>
-                <Text style={styles.relevanceLink}>Update your profile for a tailored feed</Text>
-              </TouchableOpacity>
-            ) : (
-              <Text style={styles.relevanceValue}>{item.relevance}</Text>
-            )}
-          </View>
-
           <View style={styles.actionRow}>
             {item.url && (
               <TouchableOpacity
@@ -247,13 +214,6 @@ export const PaperCard: React.FC<{
                 <Ionicons name="open-outline" size={16} color={theme.surface} />
               </TouchableOpacity>
             )}
-            <TouchableOpacity
-              style={[styles.chatButton, styles.actionButton]}
-              onPress={() => router.push(`/chat/${item.id}` as any)}
-            >
-              <Text style={styles.chatButtonText}>Ask about this paper</Text>
-              <Ionicons name="chatbubble-ellipses-outline" size={16} color={theme.text} />
-            </TouchableOpacity>
           </View>
         </ScrollView>
       </Animated.View>
@@ -262,26 +222,26 @@ export const PaperCard: React.FC<{
 };
 
 const PaperFeed: React.FC = () => {
+  const router = useRouter();
+  const { user, token } = useAuth();
+  const { isFavorite, toggleFavorite } = useFavoritePapers(token);
   const [papers, setPapers] = React.useState<PaperItem[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [anyExpanded, setAnyExpanded] = React.useState(false);
 
-  // Fetch papers from the backend, filtered by the user's selected interests (if any)
+  // Fetch papers from the backend - passing the token lets the server hard-filter to the
+  // signed-in user's chosen interests (see /api/interests), when they've set any.
   useFocusEffect(
     React.useCallback(() => {
       const loadPapers = async () => {
         try {
           setLoading(true);
-          const [papersData, interests] = await Promise.all([fetchPapers(), getInterests()]);
+          const papersData = await fetchPapers({ token });
           const allPapers: PaperItem[] = papersData ?? [];
-          const filtered =
-            interests && interests.length > 0
-              ? allPapers.filter((paper) => paper.category && interests.includes(paper.category))
-              : allPapers;
           // Sort newest to oldest (defensive - the backend already sorts, but this holds
-          // regardless of query order or the client-side interest filter above).
-          const sorted = [...filtered].sort((a, b) =>
+          // regardless of query order).
+          const sorted = [...allPapers].sort((a, b) =>
             (b.published_date ?? '').localeCompare(a.published_date ?? '')
           );
           setPapers(sorted);
@@ -295,8 +255,16 @@ const PaperFeed: React.FC = () => {
       };
 
       loadPapers();
-    }, [])
+    }, [token])
   );
+
+  const handleToggleBookmark = (item: PaperItem) => {
+    if (!user) {
+      router.push('/login');
+      return;
+    }
+    toggleFavorite(item as any);
+  };
 
   if (loading) {
     return (
@@ -327,7 +295,14 @@ const PaperFeed: React.FC = () => {
     <FlatList
       data={papers}
       keyExtractor={(item) => item.id}
-      renderItem={({ item }) => <PaperCard item={item} onExpandedChange={setAnyExpanded} />}
+      renderItem={({ item }) => (
+        <PaperCard
+          item={item}
+          onExpandedChange={setAnyExpanded}
+          isBookmarked={isFavorite(item.id)}
+          onToggleBookmark={handleToggleBookmark}
+        />
+      )}
       pagingEnabled
       scrollEnabled={!anyExpanded}
       snapToInterval={height}
@@ -508,29 +483,6 @@ const styles = StyleSheet.create({
     color: theme.text,
     marginBottom: 14,
   },
-  relevanceBox: {
-    backgroundColor: theme.surface,
-    borderWidth: 1,
-    borderColor: theme.border,
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 14,
-  },
-  relevanceLabel: {
-    fontSize: 12,
-    color: theme.textMuted,
-    marginBottom: 2,
-  },
-  relevanceValue: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: theme.text,
-  },
-  relevanceLink: {
-    fontSize: 12,
-    color: theme.textMuted,
-    textDecorationLine: 'underline',
-  },
   actionRow: {
     gap: 10,
   },
@@ -547,16 +499,6 @@ const styles = StyleSheet.create({
   },
   readButtonText: {
     color: theme.surface,
-    fontWeight: 'bold',
-    fontSize: 14,
-  },
-  chatButton: {
-    backgroundColor: theme.surface,
-    borderWidth: 1,
-    borderColor: theme.border,
-  },
-  chatButtonText: {
-    color: theme.text,
     fontWeight: 'bold',
     fontSize: 14,
   },

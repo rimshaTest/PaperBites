@@ -34,16 +34,18 @@ console.log(`Using API base URL: ${API_BASE_URL}`);
 
 /**
  * Fetch the paper feed - fetched via the backend's `fetch-latest` pipeline (Semantic
- * Scholar/OpenAlex, no video generation involved). This is the primary feed now that video
- * generation is a backburner feature.
+ * Scholar/OpenAlex/Crossref, no video generation involved). This is the primary feed now that
+ * video generation is a backburner feature.
  * @param {Object} options - Filter options
  * @param {number} options.limit - Maximum number of papers to fetch
  * @param {number} options.offset - Offset for pagination
  * @param {string} options.category - Category to filter by
+ * @param {string} [options.token] - Session token; when present, the feed is hard-filtered to
+ *   the signed-in user's chosen interests (see /api/interests), if they've set any
  * @returns {Promise<Array>} - Promise that resolves to an array of papers, newest first
  */
 export const fetchPapers = async (options = {}) => {
-  const { limit = 50, offset = 0, category } = options;
+  const { limit = 50, offset = 0, category, token } = options;
 
   let queryParams = `?limit=${limit}&offset=${offset}`;
   if (category) {
@@ -51,7 +53,9 @@ export const fetchPapers = async (options = {}) => {
   }
 
   try {
-    const response = await fetch(`${API_BASE_URL}/papers${queryParams}`);
+    const response = await fetch(`${API_BASE_URL}/papers${queryParams}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    });
 
     if (!response.ok) {
       throw new Error(`API error: ${response.status}`);

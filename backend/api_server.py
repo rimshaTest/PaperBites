@@ -88,10 +88,11 @@ def get_authenticated_user_id(request) -> Optional[str]:
 async def list_papers(request):
     """Get a list of papers, fetched via `cli.py fetch-latest` (no video generation).
 
-    When the request is authenticated and the user has chosen interests, papers whose
-    categories match one of those interests are boosted to the front of the feed (a plain
-    stable sort, so relative recency within each group is unchanged) - a simpler stand-in
-    for the embedding-based ranking described as future work in the technical spec.
+    When the request is authenticated and the user has chosen interests, the feed is hard-filtered
+    to only papers whose categories intersect those interests - a simpler stand-in for the
+    embedding-based ranking described as future work in the technical spec. A user with no
+    interests set (skipped onboarding, or hasn't visited Interests yet) sees everything,
+    unfiltered.
     """
     limit = int(request.query_params.get("limit", "50"))
     offset = int(request.query_params.get("offset", "0"))
@@ -103,7 +104,7 @@ async def list_papers(request):
     if user_id:
         user_interests = set(interests_store.get_interests(user_id))
         if user_interests:
-            papers.sort(key=lambda p: 0 if user_interests.intersection(p.get("categories") or []) else 1)
+            papers = [p for p in papers if user_interests.intersection(p.get("categories") or [])]
 
     return JSONResponse(papers[offset:offset + limit])
 
