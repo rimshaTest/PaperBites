@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
   TouchableOpacity,
   Linking,
+  RefreshControl,
 } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -221,42 +222,73 @@ export const PaperCard: React.FC<{
   );
 };
 
+const PAGE_SIZE = 10;
+
 const PaperFeed: React.FC = () => {
   const router = useRouter();
   const { user, token } = useAuth();
   const { isFavorite, toggleFavorite } = useFavoritePapers(token);
   const [papers, setPapers] = React.useState<PaperItem[]>([]);
   const [loading, setLoading] = React.useState(true);
+  const [loadingMore, setLoadingMore] = React.useState(false);
+  const [refreshing, setRefreshing] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [anyExpanded, setAnyExpanded] = React.useState(false);
+  const [page, setPage] = React.useState(0);
+  const [hasMore, setHasMore] = React.useState(true);
 
-  // Fetch papers from the backend - passing the token lets the server hard-filter to the
-  // signed-in user's chosen interests (see /api/interests), when they've set any.
+  // Fetch a page of papers from the backend - passing the token lets the server hard-filter to
+  // the signed-in user's chosen interests (see /api/interests), when they've set any.
+  const loadPapers = async (reset: boolean) => {
+    const pageToLoad = reset ? 0 : page;
+    if (!reset && !hasMore) return;
+
+    try {
+      if (reset && papers.length === 0) setLoading(true);
+      else if (!reset) setLoadingMore(true);
+
+      const fetched: PaperItem[] = (await fetchPapers({
+        token,
+        limit: PAGE_SIZE,
+        offset: pageToLoad * PAGE_SIZE,
+      })) ?? [];
+
+      setHasMore(fetched.length === PAGE_SIZE);
+      setPapers((prev) => {
+        const combined = reset ? fetched : [...prev, ...fetched];
+        // Sort newest to oldest (defensive - the backend already sorts, but this holds
+        // regardless of query order).
+        return [...combined].sort((a, b) => (b.published_date ?? '').localeCompare(a.published_date ?? ''));
+      });
+      setPage(pageToLoad + 1);
+      setError(null);
+    } catch (err) {
+      setError('Failed to load papers');
+      console.error(err);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+      setLoadingMore(false);
+    }
+  };
+
+  // Reload from the top every time Home regains focus (e.g. after logging in elsewhere).
   useFocusEffect(
     React.useCallback(() => {
-      const loadPapers = async () => {
-        try {
-          setLoading(true);
-          const papersData = await fetchPapers({ token });
-          const allPapers: PaperItem[] = papersData ?? [];
-          // Sort newest to oldest (defensive - the backend already sorts, but this holds
-          // regardless of query order).
-          const sorted = [...allPapers].sort((a, b) =>
-            (b.published_date ?? '').localeCompare(a.published_date ?? '')
-          );
-          setPapers(sorted);
-          setError(null);
-        } catch (err) {
-          setError('Failed to load papers');
-          console.error(err);
-        } finally {
-          setLoading(false);
-        }
-      };
-
-      loadPapers();
+      loadPapers(true);
     }, [token])
   );
+
+  const handleRefresh = () => {
+    setRefreshing(true);
+    loadPapers(true);
+  };
+
+  const handleEndReached = () => {
+    if (!loading && !loadingMore && hasMore) {
+      loadPapers(false);
+    }
+  };
 
   const handleToggleBookmark = (item: PaperItem) => {
     if (!user) {
@@ -314,6 +346,11 @@ const PaperFeed: React.FC = () => {
       windowSize={5}
       removeClippedSubviews
       style={styles.list}
+      onEndReached={handleEndReached}
+      onEndReachedThreshold={0.5}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={theme.text} />
+      }
     />
   );
 };
