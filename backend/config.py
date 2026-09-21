@@ -4,6 +4,14 @@ import json
 from typing import Any, Dict, Optional
 import logging
 
+from dotenv import load_dotenv
+
+# Loads backend/.env (gitignored) into the process environment, if present, before any
+# environment variable is read below - lets secrets (Mongo connection string, API keys) live
+# outside the committed config.json instead of in plaintext. A missing .env is not an error;
+# load_dotenv() is a no-op in that case and config.json's own values are used as-is.
+load_dotenv()
+
 class Config:
     """
     Configuration manager with defaults, file loading and environment variables.
@@ -52,7 +60,22 @@ class Config:
                 logging.error(f"Error loading config file: {e}")
     
     def load_env(self) -> None:
-        """Override configuration with environment variables."""
+        """Override configuration with environment variables (including a gitignored .env file
+        loaded by load_dotenv() above). Runs after load_file(), so these win over config.json -
+        the intended way to supply secrets without committing them."""
+        # Secrets - keep these out of config.json; set them in backend/.env instead (see
+        # .env.example)
+        if os.getenv("PAPERBITES_MONGODB_URI"):
+            self.set("storage.mongodb.connection_string", os.getenv("PAPERBITES_MONGODB_URI"))
+        if os.getenv("PAPERBITES_MONGODB_DB"):
+            self.set("storage.mongodb.database_name", os.getenv("PAPERBITES_MONGODB_DB"))
+        if os.getenv("PAPERBITES_PEXELS_KEY"):
+            self.set("api.pexels_key", os.getenv("PAPERBITES_PEXELS_KEY"))
+        if os.getenv("PAPERBITES_GEMINI_KEY"):
+            self.set("api.gemini_key", os.getenv("PAPERBITES_GEMINI_KEY"))
+        if os.getenv("PAPERBITES_EMAIL"):
+            self.set("api.email", os.getenv("PAPERBITES_EMAIL"))
+
         # OCR configuration
         if os.getenv("TESSERACT_CMD"):
             self.set("paths.tesseract_cmd", os.getenv("TESSERACT_CMD"))
