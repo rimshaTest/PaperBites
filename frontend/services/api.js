@@ -260,3 +260,71 @@ export const removeBookmark = async (token, paperId) => {
 
   return response.json();
 };
+
+/**
+ * Fetch the signed-in user's profile - Tier 1 (cache-safe) and Tier 2 (sensitive-context, with
+ * per-field consent flags) fields.
+ * @param {string} token - Session token from login/signup
+ * @returns {Promise<{tier1: Object, tier2: {fields: Object, consent: Object}}>}
+ */
+export const fetchProfile = async (token) => {
+  const response = await fetch(`${API_BASE_URL}/profile`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!response.ok) {
+    throw new Error(`API error: ${response.status}`);
+  }
+
+  return response.json();
+};
+
+/**
+ * Update the signed-in user's Tier 1 (cache-safe) profile fields.
+ * @param {string} token - Session token from login/signup
+ * @param {Object} fields - field_of_study, education_level, general_interests, location
+ * @returns {Promise<Object>} - the updated Tier 1 fields
+ */
+export const saveProfileTier1 = async (token, fields) => {
+  const response = await fetch(`${API_BASE_URL}/profile/tier1`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ fields }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`API error: ${response.status}`);
+  }
+
+  const data = await response.json();
+  return data.tier1;
+};
+
+/**
+ * Update the signed-in user's Tier 2 (sensitive-context) profile fields and their per-field
+ * consent flags (used_for_personalization, used_for_feed_relevance).
+ * @param {string} token - Session token from login/signup
+ * @param {Object} fields
+ * @param {Object} consent - {[fieldName]: {used_for_personalization, used_for_feed_relevance}}
+ * @returns {Promise<{fields: Object, consent: Object}>}
+ */
+export const saveProfileTier2 = async (token, fields, consent) => {
+  const response = await fetch(`${API_BASE_URL}/profile/tier2`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ fields, consent }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`API error: ${response.status}`);
+  }
+
+  const data = await response.json();
+  return data.tier2;
+};

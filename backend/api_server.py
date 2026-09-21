@@ -9,6 +9,7 @@ from typing import List, Dict, Optional
 
 import bookmarks as bookmarks_store
 import interests as interests_store
+import profile as profile_store
 import auth
 
 
@@ -143,6 +144,66 @@ async def set_interests(request):
 
     interests_store.set_interests(user_id, interests)
     return JSONResponse({"interests": interests_store.get_interests(user_id)})
+
+
+async def get_profile(request):
+    """Get the current user's Tier 1 (cache-safe) and Tier 2 (sensitive-context) profile fields."""
+    user_id = get_authenticated_user_id(request)
+    if not user_id:
+        return JSONResponse({"detail": "Authentication required"}, status_code=401)
+
+    return JSONResponse({
+        "tier1": profile_store.get_tier1(user_id),
+        "tier2": profile_store.get_tier2(user_id),
+    })
+
+
+async def set_profile_tier1(request):
+    """Update the current user's Tier 1 (cache-safe) profile fields."""
+    user_id = get_authenticated_user_id(request)
+    if not user_id:
+        return JSONResponse({"detail": "Authentication required"}, status_code=401)
+
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"detail": "Invalid JSON body"}, status_code=400)
+
+    fields = body.get("fields")
+    if not isinstance(fields, dict):
+        return JSONResponse({"detail": "fields must be an object"}, status_code=400)
+
+    try:
+        updated = profile_store.set_tier1(user_id, fields)
+    except ValueError as e:
+        return JSONResponse({"detail": str(e)}, status_code=400)
+
+    return JSONResponse({"tier1": updated})
+
+
+async def set_profile_tier2(request):
+    """Update the current user's Tier 2 (sensitive-context) profile fields and their per-field
+    consent flags."""
+    user_id = get_authenticated_user_id(request)
+    if not user_id:
+        return JSONResponse({"detail": "Authentication required"}, status_code=401)
+
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"detail": "Invalid JSON body"}, status_code=400)
+
+    fields = body.get("fields") or {}
+    consent = body.get("consent") or {}
+    if not isinstance(fields, dict) or not isinstance(consent, dict):
+        return JSONResponse({"detail": "fields and consent must be objects"}, status_code=400)
+
+    try:
+        updated = profile_store.set_tier2(user_id, fields, consent)
+    except ValueError as e:
+        return JSONResponse({"detail": str(e)}, status_code=400)
+
+    return JSONResponse({"tier2": updated})
 
 
 async def get_paper(request):
@@ -302,6 +363,9 @@ routes = [
     Route("/api/categories", get_categories),
     Route("/api/interests", get_interests, methods=["GET"]),
     Route("/api/interests", set_interests, methods=["POST"]),
+    Route("/api/profile", get_profile, methods=["GET"]),
+    Route("/api/profile/tier1", set_profile_tier1, methods=["PUT"]),
+    Route("/api/profile/tier2", set_profile_tier2, methods=["PUT"]),
     Route("/api/bookmarks", list_bookmarked_videos, methods=["GET"]),
     Route("/api/bookmarks", add_bookmark, methods=["POST"]),
     Route("/api/bookmarks/{video_id}", remove_bookmark, methods=["DELETE"]),
