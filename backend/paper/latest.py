@@ -18,6 +18,7 @@ from langdetect import DetectorFactory, LangDetectException, detect_langs
 
 from config import Config
 from paper.summarize import summarize_paper
+from utils.text import clean_abstract
 
 # Every aiohttp call in this module uses this timeout - a slow/hanging third-party API
 # should never be able to stall the whole fetch pipeline indefinitely. This matters especially
@@ -178,7 +179,7 @@ async def fetch_latest_semantic_scholar(category: str, since: datetime.date, lim
             "source_id": item.get("paperId", ""),
             "title": item.get("title") or "Untitled",
             "authors": authors,
-            "abstract": item.get("abstract") or "",
+            "abstract": clean_abstract(item.get("abstract") or ""),
             "citation_count": item.get("citationCount") or 0,
             "published_date": item.get("publicationDate"),
             "categories": [category],
@@ -289,7 +290,7 @@ async def fetch_latest_openalex(
             "source_id": (item.get("id") or "").rsplit("/", 1)[-1],
             "title": item.get("title") or item.get("display_name") or "Untitled",
             "authors": authors,
-            "abstract": reconstruct_openalex_abstract(item.get("abstract_inverted_index")),
+            "abstract": clean_abstract(reconstruct_openalex_abstract(item.get("abstract_inverted_index"))),
             "citation_count": item.get("cited_by_count") or 0,
             "published_date": item.get("publication_date"),
             "categories": [category],
@@ -381,7 +382,7 @@ async def fetch_latest_crossref(category: str, since: datetime.date, limit: int)
             "source_id": item.get("DOI", ""),
             "title": titles[0],
             "authors": authors,
-            "abstract": _JATS_TAG_RE.sub("", raw_abstract).strip(),
+            "abstract": clean_abstract(_JATS_TAG_RE.sub("", raw_abstract).strip()),
             "citation_count": item.get("is-referenced-by-count") or 0,
             "published_date": published_date,
             "categories": [category],
@@ -491,7 +492,7 @@ async def fetch_crossref_abstract(session: aiohttp.ClientSession, doi: str) -> O
     if not raw_abstract:
         return None
 
-    return _JATS_TAG_RE.sub("", raw_abstract).strip()
+    return clean_abstract(_JATS_TAG_RE.sub("", raw_abstract).strip())
 
 
 async def _fill_missing_abstracts(papers: List[Dict]) -> List[Dict]:

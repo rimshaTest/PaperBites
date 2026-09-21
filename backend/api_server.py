@@ -11,10 +11,16 @@ import bookmarks as bookmarks_store
 import interests as interests_store
 import profile as profile_store
 import auth
+from utils.text import clean_abstract
 
 
 def _serialize_paper(doc: Dict) -> Dict:
     """Convert a MongoDB paper document into a JSON-safe dict with a plain string id.
+
+    Also cleans `abstract`/`description` here (not just at ingestion in paper/latest.py) so
+    papers stored before clean_abstract() existed display cleanly too, without needing a
+    re-fetch: strips a leading "Abstract" label and inline structured-abstract section headers
+    ("Purpose:", "Findings:", etc.).
 
     Papers fetched before the description/summarization step existed (or a source that never
     got a Gemini summary) may have no `description` field at all - fall back to the raw
@@ -23,8 +29,9 @@ def _serialize_paper(doc: Dict) -> Dict:
     """
     doc = dict(doc)
     doc["id"] = str(doc.pop("_id"))
-    if not doc.get("description"):
-        doc["description"] = doc.get("abstract", "")
+    if doc.get("abstract"):
+        doc["abstract"] = clean_abstract(doc["abstract"])
+    doc["description"] = clean_abstract(doc.get("description")) or doc.get("abstract", "")
     return doc
 
 
