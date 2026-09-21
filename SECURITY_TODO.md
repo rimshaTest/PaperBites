@@ -15,7 +15,12 @@ whether the secret is still present in the current file.
   from the current `backend/config.json` as part of removing the
   video-generation pipeline (Cloudinary was only used to host generated
   videos, which no longer exist). Still present in git history, so it must
-  still be treated as exposed and rotated/revoked.
+  still be treated as exposed and rotated/revoked. The same key/secret pair
+  was ALSO hardcoded in `frontend/config.ts` (from the same "render and
+  netlify set up" commit) - that file was dead code (nothing imported it;
+  its companion `cloudinaryService.tsx` no longer existed either) and has
+  now been deleted, but it's a second place this exact secret leaked from,
+  still in history either way.
 - **Pexels** — `api.pexels_key` — **restored to the current
   `backend/config.json`.** It was removed in an earlier pass on the
   (incorrect) assumption it was only used by the video pipeline, but
