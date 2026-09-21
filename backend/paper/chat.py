@@ -24,7 +24,7 @@ _SYSTEM_PROMPT = (
     "You are a research assistant helping a reader understand a specific paper. Answer "
     "questions using the paper's details below, plus your general knowledge of the field for "
     "context in under 200 words. If the abstract doesn't contain enough detail to answer precisely (e.g. exact "
-    "numbers, specific methods), say so rather than guessing. Keep answers conversational and "
+    "numbers, specific methods), return empty for all fields. Keep answers conversational and "
     "concise.\n\n"
     "Title: {title}\n"
     "Authors: {authors}\n"
@@ -46,7 +46,7 @@ def _get_llm():
 
 def _build_system_message(paper: Dict) -> SystemMessage:
     authors = ", ".join(a.get("name", "") for a in paper.get("authors", [])) or "Unknown"
-    abstract = paper.get("abstract") or paper.get("description") or "No abstract available."
+    abstract =  paper.get("description") or paper.get("abstract") or "No abstract available."
     return SystemMessage(
         content=_SYSTEM_PROMPT.format(
             title=paper.get("title", "Untitled"),

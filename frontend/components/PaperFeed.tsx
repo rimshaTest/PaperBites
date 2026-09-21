@@ -227,10 +227,15 @@ export const PaperCard: React.FC<{
 
 const PAGE_SIZE = 10;
 
+type FavoritePapersApi = {
+  isFavorite: (paperId: string) => boolean;
+  toggleFavorite: (paper: PaperItem) => void;
+};
+
 const PaperFeed: React.FC = () => {
   const router = useRouter();
   const { user, token } = useAuth();
-  const { isFavorite, toggleFavorite } = useFavoritePapers(token);
+  const { isFavorite, toggleFavorite } = useFavoritePapers(token) as unknown as FavoritePapersApi;
   const [papers, setPapers] = React.useState<PaperItem[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [loadingMore, setLoadingMore] = React.useState(false);
@@ -254,6 +259,7 @@ const PaperFeed: React.FC = () => {
         token,
         limit: PAGE_SIZE,
         offset: pageToLoad * PAGE_SIZE,
+        category: '',
       })) ?? [];
 
       setHasMore(fetched.length === PAGE_SIZE);
@@ -382,6 +388,17 @@ const styles = StyleSheet.create({
   },
   imageFallback: {
     backgroundColor: '#ccc4ae',
+  },
+  saveButton: {
+    position: 'absolute',
+    top: 50,
+    left: 16,
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.35)',
   },
   badgeColumn: {
     position: 'absolute',

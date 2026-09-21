@@ -12,6 +12,7 @@ import {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../hooks/useAuth';
+import theme from '../constants/theme';
 
 export default function SignupScreen() {
   const router = useRouter();
@@ -123,13 +124,20 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   submitButton: {
-    backgroundColor: '#4285F4',
-    borderRadius: 8,
-    paddingVertical: 14,
+    backgroundColor: theme.accent,
     alignItems: 'center',
-    marginBottom: 16,
+    borderWidth: 1.5,
+    borderColor: theme.border,
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 30,
+    marginTop: 16,
+  },
+  submitButtonText: {
+    color: theme.text,
+    fontSize: 15,
+    fontWeight: 'bold',
   },
   submitButtonDisabled: { opacity: 0.6 },
-  submitButtonText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
-  switchLink: { color: '#4285F4', textAlign: 'center', fontSize: 14 },
+  switchLink: { color: '#c5b590', textAlign: 'center', fontSize: 14 },
 });

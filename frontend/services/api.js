@@ -10,7 +10,7 @@ const COMPUTER_IP = '10.212.104.176'; // Replace with your actual IP
 // isolation, where the phone can't reach the laptop directly by LAN IP. Quick tunnel URLs are
 // ephemeral (a new one is generated each time `cloudflared tunnel --url http://localhost:8000`
 // is started), so update this when it changes.
-const TUNNEL_URL = 'https://altered-possibility-far-finals.trycloudflare.com';
+const TUNNEL_URL = 'https://foster-preservation-oil-unnecessary.trycloudflare.com';
 
 const getApiBaseUrl = () => {
   // Set in a .env file as EXPO_PUBLIC_API_URL=http://<host>:8000 (no trailing /api - that's
