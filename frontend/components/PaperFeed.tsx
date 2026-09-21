@@ -43,7 +43,7 @@ interface Author {
 export interface PaperItem {
   id: string;
   title: string;
-  authors: Author[];
+  authors: Author[] | null;
   description: string;
   abstract?: string;
   citation_count: number;
@@ -75,6 +75,8 @@ export const PaperCard: React.FC<{
     },
     [onExpandedChange]
   );
+
+  const authors = item.authors || [];
 
   const goToAuthor = (author: Author) => {
     if (author.id) {
@@ -158,11 +160,11 @@ export const PaperCard: React.FC<{
           )}
 
           <View style={styles.authorsRow}>
-            {item.authors.length === 0 ? (
+            {authors.length === 0 ? (
               <Text style={styles.authorsText}>Unknown authors</Text>
             ) : (
               <Text style={styles.authorsText}>
-                {item.authors.map((author, index) => (
+                {authors.map((author, index) => (
                   <React.Fragment key={`${author.id ?? author.name}-${index}`}>
                     <Text
                       style={author.id ? styles.authorLink : styles.authorPlain}
@@ -170,7 +172,7 @@ export const PaperCard: React.FC<{
                     >
                       {author.name}
                     </Text>
-                    {index < item.authors.length - 1 && <Text style={styles.authorsText}>, </Text>}
+                    {index < authors.length - 1 && <Text style={styles.authorsText}>, </Text>}
                   </React.Fragment>
                 ))}
               </Text>
