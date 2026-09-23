@@ -115,6 +115,9 @@ export const PaperCard: React.FC<{
         ) : (
           <View style={[styles.image, styles.imageFallback]} />
         )}
+        <View pointerEvents="none" style={styles.brandBar}>
+          <Text style={styles.brandText}>PaperBites</Text>
+        </View>
         <TouchableOpacity style={styles.saveButton} onPress={() => onToggleBookmark(item)}>
           <Ionicons
             name={isBookmarked ? 'bookmark' : 'bookmark-outline'}
@@ -344,6 +347,10 @@ const PaperFeed: React.FC = () => {
           onToggleBookmark={handleToggleBookmark}
         />
       )}
+      // Every card is exactly `height` tall - telling FlatList that up front via
+      // getItemLayout skips its own (comparatively expensive) dynamic measurement pass, which
+      // is what made paging feel janky rather than an instant, deterministic snap to each page.
+      getItemLayout={(_, index) => ({ length: height, offset: height * index, index })}
       pagingEnabled
       scrollEnabled={!anyExpanded}
       snapToInterval={height}
@@ -388,6 +395,22 @@ const styles = StyleSheet.create({
   },
   imageFallback: {
     backgroundColor: '#ccc4ae',
+  },
+  brandBar: {
+    position: 'absolute',
+    top: 16,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+  },
+  brandText: {
+    fontFamily: theme.serif,
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: theme.surface,
+    textShadowColor: 'rgba(0, 0, 0, 0.5)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   saveButton: {
     position: 'absolute',

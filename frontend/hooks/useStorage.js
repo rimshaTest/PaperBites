@@ -18,6 +18,25 @@ export const useFavoritePapers = (token) => {
   const [loading, setLoading] = useState(!!token);
   const [error, setError] = useState(null);
 
+  const refetch = useCallback(async () => {
+    if (!token) {
+      setFavorites([]);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const bookmarked = await fetchBookmarks(token);
+      setFavorites(bookmarked);
+    } catch (err) {
+      console.error('Error loading favorites:', err);
+      setError('Failed to load favorite papers');
+    } finally {
+      setLoading(false);
+    }
+  }, [token]);
+
   // (Re)load bookmarks whenever the session token changes (login/logout)
   useEffect(() => {
     let cancelled = false;
@@ -104,5 +123,6 @@ export const useFavoritePapers = (token) => {
     addFavorite,
     removeFavorite,
     toggleFavorite,
+    refetch,
   };
 };

@@ -100,6 +100,8 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: theme.textMuted,
     marginBottom: 20,
+    maxWidth: '85%',
+    textAlign: 'center',
   },
   primaryButton: {
     backgroundColor: theme.accent,

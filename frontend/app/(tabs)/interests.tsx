@@ -87,7 +87,7 @@ export default function InterestsScreen() {
               No topics available yet - check back once more papers have been added.
             </Text>
           ) : (
-            <ScrollView contentContainerStyle={styles.chipContainer}>
+            <ScrollView style={styles.chipScroll} contentContainerStyle={styles.chipContainer}>
               {topics.map((topic) => {
                 const isSelected = selected.includes(topic);
                 return (
@@ -163,6 +163,9 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: 'bold',
   },
+  chipScroll: {
+    flex: 1,
+  },
   chipContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -176,6 +179,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 10,
     backgroundColor: theme.surface,
+    maxWidth: '100%',
   },
   chipSelected: {
     backgroundColor: theme.accent,
@@ -183,6 +187,7 @@ const styles = StyleSheet.create({
   chipText: {
     fontSize: 14,
     color: theme.text,
+    flexShrink: 1,
   },
   chipTextSelected: {
     fontWeight: 'bold',

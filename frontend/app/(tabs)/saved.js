@@ -7,7 +7,7 @@ import {
   TouchableOpacity,
   SafeAreaView
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import PaperCard from '../../components/PaperCard';
 import { useFavoritePapers } from '../../hooks/useStorage';
@@ -17,7 +17,15 @@ import theme from '../../constants/theme';
 export default function SavedScreen() {
   const router = useRouter();
   const { user, token, loading: authLoading } = useAuth();
-  const { favorites, loading, isFavorite, removeFavorite } = useFavoritePapers(token);
+  const { favorites, loading, isFavorite, removeFavorite, refetch } = useFavoritePapers(token);
+
+  // Reload whenever the Saved tab regains focus, so bookmarks added/removed
+  // elsewhere (e.g. from the Home feed) don't leave this list stale.
+  useFocusEffect(
+    React.useCallback(() => {
+      refetch();
+    }, [refetch])
+  );
 
   const handlePaperPress = (paper) => {
     router.push(`/paper/${paper.id}`);
