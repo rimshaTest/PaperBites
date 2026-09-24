@@ -23,17 +23,19 @@ detailed history).
 - **Profile data model**: optional, anonymized Tier 1 (cache-safe) and Tier 2 (sensitive-context)
   fields with per-field consent toggles, editable from Profile > Profile Details.
 - **Card images**: a Pexels stock photo keyed on the paper's title, not AI/user-generated.
-- **Add a paper by citation (or URL)**: paste a citation (MLA, APA, or any other style), or a
-  direct link to the paper's page (e.g. an open-access journal article), from Saved > "+"
-  (`frontend/app/add-paper.js`). A citation is fuzzy-matched against Crossref; a URL is scraped
-  for its `citation_*` meta tags to find a DOI (or embedded directly in the URL itself), falling
-  back to a bibliographic search on the page's title/authors if no DOI turns up anywhere. Either
-  way, Unpaywall resolves a real open-access link, and confirming runs it through the same
-  enrichment pipeline as the discovery feed before saving and auto-bookmarking it
-  (`backend/paper/citation.py`). Its category isn't picked by the user - Gemini chooses it from
-  the paper's own text in the same call that generates its summary, since (unlike a
-  `fetch-latest` paper) it has no search-query category to start from. If nothing matches at all,
-  the user can submit it for manual admin review instead (`backend/paper_reviews.py`).
+- **Add a paper by citation, URL, or photo**: paste a citation (MLA, APA, or any other style), a
+  direct link to the paper's page (e.g. an open-access journal article), or - experimentally -
+  photograph a title page/poster or pick a screenshot, from Saved > "+" (`frontend/app/add-paper.js`).
+  A citation is fuzzy-matched against Crossref; a URL is scraped for its `citation_*` meta tags to
+  find a DOI (or embedded directly in the URL itself), falling back to a bibliographic search on
+  the page's title/authors if no DOI turns up anywhere; a photo is read by Gemini vision into a
+  citation-like string first (no QR decoding), then resolved the same way. Either way, Unpaywall
+  resolves a real open-access link, and confirming runs it through the same enrichment pipeline as
+  the discovery feed before saving and auto-bookmarking it (`backend/paper/citation.py`). Its
+  category isn't picked by the user - Gemini chooses it from the paper's own text in the same call
+  that generates its summary, since (unlike a `fetch-latest` paper) it has no search-query
+  category to start from. If nothing matches at all, the user can submit it for manual admin
+  review instead (`backend/paper_reviews.py`).
 
 ## What's not built yet
 

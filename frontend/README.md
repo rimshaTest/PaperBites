@@ -20,7 +20,8 @@ frontend/
 │   ├── paper/[id].js             # Paper detail screen
 │   ├── chat/[id].js              # Per-paper chat - NOT wired in, see "Known gaps" below
 │   ├── login.js / signup.js      # Auth screens
-│   ├── add-paper.js              # Add-a-paper-by-citation modal, reached from Saved > "+"
+│   ├── add-paper.js              # Add-a-paper modal, reached from Saved > "+" - citation, URL,
+│   │                              # or (experimental) a camera/screenshot photo
 │   ├── interests-onboarding.js   # One-time modal shown right after signup
 │   ├── profile-details.js        # Tier 1/2 profile fields with per-field consent toggles
 │   ├── settings.js               # Settings > Manage Feed > Interests
@@ -71,7 +72,10 @@ Then open in Expo Go, an iOS/Android simulator, or a browser.
   Paper**: paste a citation (MLA, APA, or any other style) or a link to the paper's page, tap the
   right match, and it's saved and auto-bookmarked - Gemini picks the category itself from the
   paper's text, same as it does for the paper's summary. If nothing matches, "Submit for manual
-  review" queues it for a human to look at instead.
+  review" queues it for a human to look at instead. The camera button next to the input
+  (marked with a star - tap or hover it for an "Experimental feature" note) lets you photograph
+  a title page/poster or pick an existing screenshot instead of typing; Gemini vision reads a
+  citation off it server-side and searches with that.
 - **Profile**: shows the signed-in account, with links to Profile Details and Settings, or a
   login/signup prompt when signed out.
 - **Profile Details**: Tier 1 (cache-safe: field of study, education level, general interests,

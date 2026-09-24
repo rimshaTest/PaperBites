@@ -77,6 +77,14 @@ All routes are under `/api`. Auth-required routes take `Authorization: Bearer <t
   above couldn't resolve for manual admin review (`paper_reviews.py`, stored in MongoDB's
   `paper_reviews` collection), per the spec's fallback for when automated matching fails
   outright. No admin UI reads this queue yet - it's queried directly for now.
+- `POST /papers/citation/scan` (auth required, multipart form with an `image` file) -
+  **experimental**: extracts a citation from a photo of a paper's title page or a poster via
+  Gemini vision (`paper/summarize.py`'s `extract_citation_text_from_image`), then resolves it
+  exactly like the `/citation/search` above (so it also gets URL-embedded-DOI/meta-tag handling
+  for free if the extracted text happens to be a URL). No QR-code decoding - that would need a
+  system `zbar` library this deployment doesn't assume is installed - so this only helps when
+  Gemini can read the title/authors directly off the image. → `{candidates: [...], extracted:
+  "<citation-like string>" | null}`
 
 **Authors & journals**
 - `GET /authors/{author_id}` - an author's name and every paper of theirs.
