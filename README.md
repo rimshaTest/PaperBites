@@ -26,7 +26,10 @@ detailed history).
 - **Add a paper by citation**: paste a citation (MLA, APA, or any other style) from Saved > "+"
   (`frontend/app/add-paper.js`); Crossref fuzzy-matches it, Unpaywall resolves a real
   open-access link, and confirming runs it through the same enrichment pipeline as the discovery
-  feed before saving and auto-bookmarking it (`backend/paper/citation.py`).
+  feed before saving and auto-bookmarking it (`backend/paper/citation.py`). Its category isn't
+  picked by the user - Gemini chooses it from the paper's own text in the same call that
+  generates its summary, since (unlike a `fetch-latest` paper) it has no search-query category
+  to start from.
 
 ## What's not built yet
 

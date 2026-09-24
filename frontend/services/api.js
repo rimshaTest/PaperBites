@@ -290,20 +290,21 @@ export const searchPaperByCitation = async (token, citation) => {
 
 /**
  * Save a confirmed citation-search candidate as a real paper (server-side it's run through the
- * same enrichment pipeline the discovery feed uses) and bookmark it for the signed-in user.
+ * same enrichment pipeline the discovery feed uses - including a Gemini-chosen category, picked
+ * from the paper's abstract/full text in the same call that generates its summary) and bookmark
+ * it for the signed-in user.
  * @param {string} token - Session token from login/signup
  * @param {Object} candidate - One of the candidates returned by searchPaperByCitation
- * @param {string} category - One of the fixed categories from fetchCategories()
  * @returns {Promise<Object>} - Promise that resolves to the saved paper
  */
-export const addPaperByCitation = async (token, candidate, category) => {
+export const addPaperByCitation = async (token, candidate) => {
   const response = await fetch(`${API_BASE_URL}/papers/citation/confirm`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify({ ...candidate, category }),
+    body: JSON.stringify(candidate),
   });
 
   if (!response.ok) {

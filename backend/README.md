@@ -60,10 +60,14 @@ All routes are under `/api`. Auth-required routes take `Authorization: Bearer <t
   citation (MLA, APA, or any other style) against Crossref, resolving a confirmed open-access
   link for each candidate via Unpaywall. → `{candidates: [{doi, title, authors, journal,
   published_date, url, is_open_access}, ...]}`
-- `POST /papers/citation/confirm` (auth required) - takes one candidate from the search above
-  plus a `category` (one of `/categories`' fixed list), runs it through the same enrichment
-  pipeline `fetch-latest` uses (abstract fallback, translation, Gemini summary, card image),
-  stores it, and auto-bookmarks it for the caller. → the saved paper.
+- `POST /papers/citation/confirm` (auth required) - takes one candidate from the search above,
+  runs it through the same enrichment pipeline `fetch-latest` uses (abstract fallback,
+  translation, card image), stores it, and auto-bookmarks it for the caller. Unlike
+  `fetch-latest` (which already knows a paper's category from the search query that found it),
+  this path has no category to start from - Gemini picks one from the fixed `/categories` list
+  in the same call that generates the summary (`paper/summarize.py`'s
+  `summarize_and_classify_paper`). A paper Gemini can't classify (no API key, or every model
+  fails) is saved uncategorized rather than guessed. → the saved paper.
 
 **Authors & journals**
 - `GET /authors/{author_id}` - an author's name and every paper of theirs.

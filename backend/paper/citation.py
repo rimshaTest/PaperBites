@@ -10,8 +10,11 @@ Two steps, matching the spec's confirm-dialog flow:
    acceptable shortcut.
 2. add_paper_from_citation() takes the one candidate the user confirmed and runs it through the
    same enrichment pipeline paper/latest.py's discovery feed uses (abstract fallback, language
-   detection/translation, Gemini summary, card image), so a citation-added paper looks and
-   behaves identically to one the feed found on its own.
+   detection/translation, card image) - except the summary and category are produced together by
+   one Gemini call (paper.summarize.summarize_and_classify_paper) rather than the user picking a
+   category by hand: the discovery feed already knows a paper's category from the search query
+   that found it, but a citation-added paper doesn't, so the same read that produces the summary
+   also classifies it.
 """
 import asyncio
 import logging
@@ -25,7 +28,6 @@ from paper.latest import (
     CATEGORIES,
     _HTTP_TIMEOUT,
     _apply_language_and_translation,
-    _apply_summaries,
     _attach_images,
     _crossref_published_date,
     _fill_missing_abstracts,
@@ -33,6 +35,7 @@ from paper.latest import (
     fetch_crossref_abstract,
     fetch_unpaywall_oa_location,
 )
+from paper.summarize import summarize_and_classify_paper
 
 config_instance = Config()
 logger = logging.getLogger("paperbites.citation")
@@ -101,15 +104,13 @@ async def search_citation(raw_citation: str, max_results: int = 5) -> List[Dict]
     return candidates
 
 
-async def add_paper_from_citation(candidate: Dict, category: str) -> Dict:
+async def add_paper_from_citation(candidate: Dict) -> Dict:
     """Build a full paper record from a confirmed citation-search candidate and run it through
     the discovery feed's own enrichment pipeline, so it's stored and served identically to any
-    other paper. Raises ValueError on bad input (unknown category, missing DOI, or a paper that
-    ends up with no usable description from any source).
+    other paper - except its category comes from the same Gemini read that produces its summary,
+    not from the user. Raises ValueError on bad input (missing DOI, or a paper that ends up with
+    no usable description/category from any source).
     """
-    if category not in CATEGORIES:
-        raise ValueError(f"Unknown category: {category}")
-
     doi = (candidate or {}).get("doi")
     if not doi:
         raise ValueError("A DOI is required to add a paper by citation")
@@ -126,7 +127,7 @@ async def add_paper_from_citation(candidate: Dict, category: str) -> Dict:
         "abstract": abstract,
         "citation_count": 0,
         "published_date": candidate.get("published_date"),
-        "categories": [category],
+        "categories": [],
         "journal": candidate.get("journal"),
         "publication_type": "journal",
         "is_open_access": candidate.get("is_open_access"),
@@ -137,11 +138,22 @@ async def add_paper_from_citation(candidate: Dict, category: str) -> Dict:
     combined = [paper]
     combined = await _fill_missing_abstracts(combined)
     await _apply_language_and_translation(combined)
-    await _apply_summaries(combined)
-    await _attach_images(combined, category)
 
-    result = combined[0]
-    if not result.get("description"):
+    async with aiohttp.ClientSession(timeout=_HTTP_TIMEOUT) as session:
+        result = await summarize_and_classify_paper(session, paper, CATEGORIES)
+
+    if result:
+        paper["description"] = result["summary"]
+        paper["categories"] = [result["category"]]
+    else:
+        # No Gemini key, or every model failed - fall back to the raw abstract like the
+        # discovery feed does, and leave the paper uncategorized rather than guessing.
+        paper["description"] = paper.get("abstract") or ""
+        logger.warning(f"Could not classify category for '{paper['title']}' - saving uncategorized")
+
+    if not paper.get("description"):
         raise ValueError("Could not generate a description for this paper (no abstract or full text available)")
 
-    return result
+    await _attach_images(combined, paper["categories"][0] if paper["categories"] else paper["title"])
+
+    return paper

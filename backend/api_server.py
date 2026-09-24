@@ -284,7 +284,8 @@ async def search_paper_by_citation(request):
 
 async def add_paper_by_citation(request):
     """Save the citation-search candidate the user confirmed as a real paper (running it through
-    the same enrichment pipeline the discovery feed uses) and bookmark it for the current user."""
+    the same enrichment pipeline the discovery feed uses, including a Gemini-chosen category) and
+    bookmark it for the current user."""
     user_id = get_authenticated_user_id(request)
     if not user_id:
         return JSONResponse({"detail": "Authentication required"}, status_code=401)
@@ -311,7 +312,7 @@ async def add_paper_by_citation(request):
         return JSONResponse({"detail": "Adding papers is temporarily unavailable"}, status_code=503)
 
     try:
-        paper = await add_paper_from_citation(candidate, body.get("category"))
+        paper = await add_paper_from_citation(candidate)
     except ValueError as e:
         return JSONResponse({"detail": str(e)}, status_code=400)
 

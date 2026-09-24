@@ -12,6 +12,7 @@ Uses langchain-google-genai rather than the raw google-generativeai SDK so the s
 can be reused by the per-paper chat agent (paper/chat.py).
 """
 import asyncio
+import json
 import logging
 import os
 import tempfile
@@ -131,6 +132,95 @@ async def summarize_text(title: str, text: str, source_label: str = "Abstract") 
             logger.warning(f"Gemini model '{model_name}' failed for '{title}': {e}")
 
     return None
+
+
+_SUMMARY_AND_CATEGORY_PROMPT = (
+    "You are writing a short, plain-English summary of a research paper for a general-audience "
+    "app feed, and classifying it into exactly one category.\n\n"
+    "Categories (pick exactly one): {categories}\n\n"
+    "Summarize the paper in under {max_words} words - focus on what the researchers did, what "
+    "they found, and why it matters to a non-expert reader. Write flowing prose with no headers, "
+    "bullet points, or preamble like 'This paper' - just the summary itself.\n\n"
+    'Respond with ONLY a JSON object of the exact form {{"summary": "...", "category": "..."}} - '
+    "no markdown code fences, no other text. \"category\" must be exactly one of the category "
+    "names listed above, spelled exactly as given.\n\n"
+    "Title: {title}\n\n"
+    "{source_label}:\n{text}"
+)
+
+
+async def summarize_and_classify(
+    title: str, text: str, categories: List[str], source_label: str = "Abstract"
+) -> Optional[Dict[str, str]]:
+    """Summarize paper text and classify it into one of `categories` in a single Gemini call.
+
+    Used for papers added outside the discovery feed (e.g. add-paper-by-citation), which don't
+    already know their category the way a feed fetch (keyed to a search category) does - the
+    category comes from the same read of the paper that produces the summary, rather than a
+    second LLM call.
+
+    Tries each configured model in round-robin order like summarize_text, moving on immediately
+    on any failure. Returns None if Gemini isn't configured, every model fails, or a model's
+    response can't be parsed into the expected {summary, category} shape with a valid category.
+    """
+    if not config_instance.get("api.gemini_key") or not text:
+        return None
+
+    prompt = _SUMMARY_AND_CATEGORY_PROMPT.format(
+        categories=", ".join(categories),
+        max_words=_MAX_SUMMARY_WORDS,
+        title=title,
+        source_label=source_label,
+        text=text[:_PDF_TEXT_CHAR_LIMIT],
+    )
+
+    models = _configured_model_names()
+    for _ in range(len(models)):
+        model_name = await _next_model_name(models)
+        llm = _get_llm_for_model(model_name)
+        if not llm:
+            continue
+        try:
+            response = await llm.ainvoke(prompt)
+            raw = (response.content or "").strip()
+            # Models occasionally wrap JSON in a ```json fence despite being told not to - strip
+            # it rather than failing classification over formatting alone.
+            if raw.startswith("```"):
+                raw = raw.strip("`")
+                if raw.lower().startswith("json"):
+                    raw = raw[4:]
+            parsed = json.loads(raw)
+            summary = (parsed.get("summary") or "").strip()
+            category = (parsed.get("category") or "").strip()
+            matched_category = next((c for c in categories if c.lower() == category.lower()), None)
+            if summary and matched_category:
+                return {"summary": summary, "category": matched_category}
+        except Exception as e:
+            logger.warning(f"Gemini model '{model_name}' failed to summarize+classify '{title}': {e}")
+
+    return None
+
+
+async def summarize_and_classify_paper(
+    session: aiohttp.ClientSession, paper: Dict, categories: List[str]
+) -> Optional[Dict[str, str]]:
+    """Same abstract-or-PDF-fallback source selection as summarize_paper(), but summarizing and
+    classifying in one combined call. Used by paper/citation.py's add-paper flow."""
+    title = paper.get("title") or "Untitled"
+    abstract = (paper.get("abstract") or "").strip()
+
+    if abstract:
+        return await summarize_and_classify(title, abstract, categories, source_label="Abstract")
+
+    url = paper.get("url")
+    if not url:
+        return None
+
+    full_text = await _download_pdf_text(session, url)
+    if not full_text:
+        return None
+
+    return await summarize_and_classify(title, full_text, categories, source_label="Full paper text")
 
 
 async def _download_pdf_text(session: aiohttp.ClientSession, url: str) -> Optional[str]:

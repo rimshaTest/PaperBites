@@ -12,18 +12,19 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { fetchCategories, searchPaperByCitation, addPaperByCitation } from '../services/api';
+import { searchPaperByCitation, addPaperByCitation } from '../services/api';
 import { useAuth } from '../hooks/useAuth';
 import theme from '../constants/theme';
 
 /**
  * Add-a-paper-by-citation flow (docs/TECHNICAL_SPEC.md's "Add-Paper Ingestion Pipeline"),
- * reached from the Saved tab's "+" button. Three steps:
+ * reached from the Saved tab's "+" button. Two steps:
  *   1. Paste a citation (MLA, APA, or any other style - sent to the backend as-is).
- *   2. Confirm which of Crossref's fuzzy-matched candidates is the right paper.
- *   3. Pick a category so it can be filtered like any other paper, then save.
- * On success the paper is stored server-side and auto-bookmarked, so it shows up
- * immediately in Saved.
+ *   2. Confirm which of Crossref's fuzzy-matched candidates is the right paper, then save.
+ * The category isn't picked here - the backend's Gemini summary step reads the paper's
+ * abstract/full text and chooses the best-fitting category in the same call, so it's
+ * classified the same way a discovered-feed paper's summary is generated. On success the
+ * paper is stored server-side and auto-bookmarked, so it shows up immediately in Saved.
  */
 export default function AddPaperScreen() {
   const router = useRouter();
@@ -33,10 +34,6 @@ export default function AddPaperScreen() {
   const [searching, setSearching] = useState(false);
   const [candidates, setCandidates] = useState(null);
   const [selected, setSelected] = useState(null);
-
-  const [categories, setCategories] = useState([]);
-  const [category, setCategory] = useState(null);
-  const [categoriesLoading, setCategoriesLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const handleSearch = async () => {
@@ -55,29 +52,17 @@ export default function AddPaperScreen() {
     }
   };
 
-  const handlePickCandidate = async (candidate) => {
+  const handleSave = async (candidate) => {
+    if (!candidate || !token) return;
     setSelected(candidate);
-    if (categories.length > 0) return;
-    setCategoriesLoading(true);
-    try {
-      const fetched = await fetchCategories();
-      setCategories(fetched ?? []);
-    } catch (err) {
-      console.error('Failed to load categories:', err);
-    } finally {
-      setCategoriesLoading(false);
-    }
-  };
-
-  const handleSave = async () => {
-    if (!selected || !category || !token) return;
     setSaving(true);
     try {
-      const paper = await addPaperByCitation(token, selected, category);
+      const paper = await addPaperByCitation(token, candidate);
       router.replace(`/paper/${paper.id}`);
     } catch (err) {
       console.error('Adding paper failed:', err);
       Alert.alert('Could not add paper', err.message || 'Something went wrong. Try again.');
+      setSelected(null);
     } finally {
       setSaving(false);
     }
@@ -118,7 +103,7 @@ export default function AddPaperScreen() {
         {candidates !== null && (
           <View style={styles.resultsSection}>
             <Text style={styles.sectionTitle}>
-              {candidates.length === 0 ? 'No matches found' : 'Is this your paper?'}
+              {candidates.length === 0 ? 'No matches found' : 'Tap the right paper to add it'}
             </Text>
             {candidates.length === 0 && (
               <Text style={styles.emptyText}>
@@ -131,7 +116,8 @@ export default function AddPaperScreen() {
                 <TouchableOpacity
                   key={candidate.doi}
                   style={[styles.candidateCard, isSelected && styles.candidateCardSelected]}
-                  onPress={() => handlePickCandidate(candidate)}
+                  onPress={() => handleSave(candidate)}
+                  disabled={saving}
                 >
                   <Text style={styles.candidateTitle}>{candidate.title}</Text>
                   {candidate.authors?.length > 0 && (
@@ -143,56 +129,27 @@ export default function AddPaperScreen() {
                       .join(' · ')}
                   </Text>
                   <View style={styles.oaBadge}>
-                    <Ionicons
-                      name={candidate.is_open_access ? 'lock-open-outline' : 'lock-closed-outline'}
-                      size={14}
-                      color={candidate.is_open_access ? theme.text : theme.textMuted}
-                    />
-                    <Text style={styles.oaBadgeText}>
-                      {candidate.is_open_access ? 'Open access' : 'No open-access copy found'}
-                    </Text>
+                    {isSelected && saving ? (
+                      <>
+                        <ActivityIndicator size="small" color={theme.textMuted} />
+                        <Text style={styles.oaBadgeText}>Adding - summarizing and categorizing...</Text>
+                      </>
+                    ) : (
+                      <>
+                        <Ionicons
+                          name={candidate.is_open_access ? 'lock-open-outline' : 'lock-closed-outline'}
+                          size={14}
+                          color={candidate.is_open_access ? theme.text : theme.textMuted}
+                        />
+                        <Text style={styles.oaBadgeText}>
+                          {candidate.is_open_access ? 'Open access' : 'No open-access copy found'}
+                        </Text>
+                      </>
+                    )}
                   </View>
                 </TouchableOpacity>
               );
             })}
-          </View>
-        )}
-
-        {selected && (
-          <View style={styles.resultsSection}>
-            <Text style={styles.sectionTitle}>Category</Text>
-            {categoriesLoading ? (
-              <ActivityIndicator style={{ marginTop: 10 }} color={theme.text} />
-            ) : (
-              <View style={styles.chipContainer}>
-                {categories.map((topic) => {
-                  const isChipSelected = category === topic;
-                  return (
-                    <TouchableOpacity
-                      key={topic}
-                      style={[styles.chip, isChipSelected && styles.chipSelected]}
-                      onPress={() => setCategory(topic)}
-                    >
-                      <Text style={[styles.chipText, isChipSelected && styles.chipTextSelected]}>
-                        {topic}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            )}
-
-            <TouchableOpacity
-              style={[styles.primaryButton, (!category || saving) && styles.buttonDisabled]}
-              onPress={handleSave}
-              disabled={!category || saving}
-            >
-              {saving ? (
-                <ActivityIndicator color={theme.surface} />
-              ) : (
-                <Text style={styles.primaryButtonText}>Add Paper</Text>
-              )}
-            </TouchableOpacity>
           </View>
         )}
       </ScrollView>
@@ -305,31 +262,5 @@ const styles = StyleSheet.create({
   oaBadgeText: {
     fontSize: 12,
     color: theme.textMuted,
-  },
-  chipContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-    marginBottom: 16,
-  },
-  chip: {
-    borderWidth: 1.5,
-    borderColor: theme.border,
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    backgroundColor: theme.surface,
-    maxWidth: '100%',
-  },
-  chipSelected: {
-    backgroundColor: theme.accent,
-  },
-  chipText: {
-    fontSize: 14,
-    color: theme.text,
-    flexShrink: 1,
-  },
-  chipTextSelected: {
-    fontWeight: 'bold',
   },
 });
