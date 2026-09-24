@@ -688,6 +688,22 @@ async def _apply_summaries(papers: List[Dict]) -> None:
         await asyncio.gather(*(apply(p) for p in papers))
 
 
+async def _apply_embeddings(papers: List[Dict]) -> None:
+    """Embed each paper's description for semantic search (paper/embeddings.py), exactly once at
+    ingestion - never recomputed on a later reload/view. A paper Gemini can't embed (no API key,
+    or the call fails) simply has no `embedding` field; semantic search filters those out rather
+    than the ingestion pipeline failing over it.
+    """
+    from paper.embeddings import embed_document
+
+    async def embed(paper: Dict) -> None:
+        vector = await embed_document(paper.get("description") or "")
+        if vector:
+            paper["embedding"] = vector
+
+    await asyncio.gather(*(embed(p) for p in papers))
+
+
 async def fetch_paper_image(session: aiohttp.ClientSession, query: str) -> Optional[str]:
     """Fetch a stock photo URL from Pexels for a card image (no download - just the URL)."""
     api_key = config_instance.get("api.pexels_key")
@@ -774,6 +790,7 @@ async def get_latest_papers(
     if before_drop != len(combined):
         logger.info(f"Dropped {before_drop - len(combined)} paper(s) with no description available from any source")
 
+    await _apply_embeddings(combined)
     await _attach_images(combined, category)
 
     logger.info(f"Found {len(combined)} latest papers for '{category}'")

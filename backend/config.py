@@ -24,7 +24,8 @@ class Config:
             "semantic_scholar_key": "",  # Optional - raises Semantic Scholar's low anonymous rate limit
             "gemini_key": "",  # For card description summarization (paper/summarize.py)
             "gemini_models": "",  # Optional comma-separated override of paper/summarize.py's model list
-            "gemini_image_models": ""  # Optional comma-separated override of the add-paper-by-photo model list
+            "gemini_image_models": "",  # Optional comma-separated override of the add-paper-by-photo model list
+            "gemini_embedding_model": ""  # Optional override of paper/embeddings.py's embedding model
         },
         "paper": {
             "max_papers": 3,
@@ -83,6 +84,8 @@ class Config:
             self.set("api.gemini_models", os.getenv("PAPERBITES_GEMINI_MODELS"))
         if os.getenv("PAPERBITES_GEMINI_IMAGE_MODELS"):
             self.set("api.gemini_image_models", os.getenv("PAPERBITES_GEMINI_IMAGE_MODELS"))
+        if os.getenv("PAPERBITES_GEMINI_EMBEDDING_MODEL"):
+            self.set("api.gemini_embedding_model", os.getenv("PAPERBITES_GEMINI_EMBEDDING_MODEL"))
         if os.getenv("PAPERBITES_EMAIL"):
             self.set("api.email", os.getenv("PAPERBITES_EMAIL"))
 

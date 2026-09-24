@@ -19,7 +19,8 @@ Two steps, matching the spec's confirm-dialog flow:
    one Gemini call (paper.summarize.summarize_and_classify_paper) rather than the user picking a
    category by hand: the discovery feed already knows a paper's category from the search query
    that found it, but a citation-added paper doesn't, so the same read that produces the summary
-   also classifies it.
+   also classifies it. It's also embedded for semantic search (paper/embeddings.py) exactly once
+   here, same as the discovery feed does at its own ingestion point.
 
 When neither path finds a match, the frontend offers to queue the input for manual admin review
 (paper_reviews.py) instead - the spec's fallback for when automated matching can't resolve it.
@@ -45,6 +46,7 @@ from paper.latest import (
     fetch_crossref_abstract,
     fetch_unpaywall_oa_location,
 )
+from paper.embeddings import embed_document
 from paper.summarize import summarize_and_classify_paper
 
 config_instance = Config()
@@ -271,6 +273,10 @@ async def add_paper_from_citation(candidate: Dict) -> Dict:
 
     if not paper.get("description"):
         raise ValueError("Could not generate a description for this paper (no abstract or full text available)")
+
+    vector = await embed_document(paper["description"])
+    if vector:
+        paper["embedding"] = vector
 
     await _attach_images(combined, paper["categories"][0] if paper["categories"] else paper["title"])
 

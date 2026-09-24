@@ -30,6 +30,7 @@ def _serialize_paper(doc: Dict) -> Dict:
     """
     doc = dict(doc)
     doc["id"] = str(doc.pop("_id"))
+    doc.pop("embedding", None)  # a 768-float vector the client never uses - don't ship it
     if doc.get("abstract"):
         doc["abstract"] = clean_abstract(doc["abstract"])
     doc["description"] = clean_abstract(doc.get("description")) or doc.get("abstract", "")
@@ -106,10 +107,10 @@ async def list_papers(request):
     """Get a list of papers, fetched via `cli.py fetch-latest` (no video generation).
 
     When the request is authenticated and the user has chosen interests, the feed is hard-filtered
-    to only papers whose categories intersect those interests - a simpler stand-in for the
-    embedding-based ranking described as future work in the technical spec. A user with no
-    interests set (skipped onboarding, or hasn't visited Interests yet) sees everything,
-    unfiltered.
+    to only papers whose categories intersect those interests - a deliberate hard exclusion, not
+    a ranking signal (see search_papers_semantically below for the embedding-based feature
+    instead). A user with no interests set (skipped onboarding, or hasn't visited Interests yet)
+    sees everything, unfiltered.
     """
     limit = int(request.query_params.get("limit", "50"))
     offset = int(request.query_params.get("offset", "0"))
@@ -124,6 +125,46 @@ async def list_papers(request):
             papers = [p for p in papers if user_interests.intersection(p.get("categories") or [])]
 
     return JSONResponse(papers[offset:offset + limit])
+
+
+async def search_papers_semantically(request):
+    """Semantic search over papers embedded at ingestion (paper/embeddings.py), via cosine
+    similarity. Brute-force in Python over every embedded paper - fine at this app's corpus
+    size (a fetch-latest feed, not a web-scale index); MongoDB Atlas's native $vectorSearch is a
+    drop-in upgrade later if that stops being true. The query is embedded once per request (a
+    deliberate search action), separate from the hard interests filter above rather than
+    blending into it.
+    """
+    query = (request.query_params.get("q") or "").strip()
+    if not query:
+        return JSONResponse({"detail": "q is required"}, status_code=400)
+
+    limit = int(request.query_params.get("limit", "20"))
+
+    try:
+        from paper.embeddings import embed_query, cosine_similarity
+    except ImportError as e:
+        print(f"Semantic search unavailable, paper.embeddings failed to import: {e}")
+        return JSONResponse({"detail": "Semantic search is temporarily unavailable"}, status_code=503)
+
+    query_vector = await embed_query(query)
+    if not query_vector:
+        return JSONResponse({"detail": "Semantic search is temporarily unavailable"}, status_code=503)
+
+    try:
+        import db
+        cursor = db.get_db().papers.find({"embedding": {"$exists": True}})
+        scored = [
+            (cosine_similarity(query_vector, doc.get("embedding") or []), doc)
+            for doc in cursor
+        ]
+    except Exception as e:
+        print(f"Error reading papers for semantic search from MongoDB: {e}")
+        return JSONResponse([])
+
+    scored.sort(key=lambda pair: pair[0], reverse=True)
+    top_papers = [doc for _, doc in scored[:limit]]
+    return JSONResponse([_serialize_paper(doc) for doc in top_papers])
 
 
 async def get_interests(request):
@@ -500,6 +541,9 @@ async def get_me(request):
 # Define routes
 routes = [
     Route("/api/papers", list_papers),
+    # Must come before /api/papers/{paper_id} below - otherwise that pattern would match
+    # "search" as a paper_id and shadow this route entirely.
+    Route("/api/papers/search", search_papers_semantically),
     Route("/api/papers/{paper_id}", get_paper),
     Route("/api/authors/{author_id}", get_author),
     Route("/api/journals/{journal_name}", get_journal),

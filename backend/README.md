@@ -46,6 +46,8 @@ hit repeated rate-limit warnings. If `PAPERBITES_GEMINI_KEY` is set, description
 round-robins across several Gemini models (`paper/summarize.py`'s `_MODEL_NAMES`, overridable
 via `PAPERBITES_GEMINI_MODELS`) so no single model's free-tier cap gates the whole run - a model
 that's rate-limited or invalid is skipped immediately in favor of the next one, with no delay.
+Each paper is also embedded exactly once here (`paper/embeddings.py`, one Gemini embedding call
+per paper - not repeated on later reloads/views) for `GET /papers/search`'s semantic search.
 
 ## API
 
@@ -54,6 +56,12 @@ All routes are under `/api`. Auth-required routes take `Authorization: Bearer <t
 **Papers**
 - `GET /papers?category=&limit=&offset=` - the feed, newest first. When authenticated and the
   user has chosen interests, hard-filtered to papers whose categories match (see Interests below).
+- `GET /papers/search?q=&limit=` - semantic search over papers embedded at ingestion
+  (`paper/embeddings.py`), ranked by cosine similarity to the query. Brute-force in Python at
+  this app's corpus size; unrelated to and not blended with the Interests hard filter above (see
+  `paper/embeddings.py`'s module docstring for the scope decision behind that). A paper embedded
+  before this feature existed (or one Gemini couldn't embed) is simply absent from results, not
+  an error.
 - `GET /papers/{id}` - a single paper.
 - `GET /categories` - the fixed list of paper categories.
 - `POST /papers/citation/search` `{citation}` (auth required) - resolves a raw pasted citation
