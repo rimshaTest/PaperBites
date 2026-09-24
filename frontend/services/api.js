@@ -262,6 +262,59 @@ export const removeBookmark = async (token, paperId) => {
 };
 
 /**
+ * Fuzzy-match a raw pasted citation (MLA, APA, or any other style) against Crossref, for the
+ * first step of the add-paper-by-citation flow.
+ * @param {string} token - Session token from login/signup
+ * @param {string} citation - The raw citation text as pasted/typed by the user
+ * @returns {Promise<Array>} - Promise that resolves to candidate matches: each
+ *   {doi, title, authors, journal, published_date, url, is_open_access}
+ */
+export const searchPaperByCitation = async (token, citation) => {
+  const response = await fetch(`${API_BASE_URL}/papers/citation/search`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ citation }),
+  });
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(body.detail || `API error: ${response.status}`);
+  }
+
+  const data = await response.json();
+  return data.candidates;
+};
+
+/**
+ * Save a confirmed citation-search candidate as a real paper (server-side it's run through the
+ * same enrichment pipeline the discovery feed uses) and bookmark it for the signed-in user.
+ * @param {string} token - Session token from login/signup
+ * @param {Object} candidate - One of the candidates returned by searchPaperByCitation
+ * @param {string} category - One of the fixed categories from fetchCategories()
+ * @returns {Promise<Object>} - Promise that resolves to the saved paper
+ */
+export const addPaperByCitation = async (token, candidate, category) => {
+  const response = await fetch(`${API_BASE_URL}/papers/citation/confirm`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ ...candidate, category }),
+  });
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(body.detail || `API error: ${response.status}`);
+  }
+
+  return response.json();
+};
+
+/**
  * Fetch the signed-in user's profile - Tier 1 (cache-safe) and Tier 2 (sensitive-context, with
  * per-field consent flags) fields.
  * @param {string} token - Session token from login/signup

@@ -256,6 +256,75 @@ async def get_categories(request):
         return JSONResponse(_FALLBACK_CATEGORIES)
 
 
+async def search_paper_by_citation(request):
+    """Fuzzy-match a raw pasted citation (MLA, APA, or any other style) against Crossref and
+    return candidate matches for the confirm-dialog step of the add-paper-by-citation flow."""
+    user_id = get_authenticated_user_id(request)
+    if not user_id:
+        return JSONResponse({"detail": "Authentication required"}, status_code=401)
+
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"detail": "Invalid JSON body"}, status_code=400)
+
+    citation = (body.get("citation") or "").strip()
+    if not citation:
+        return JSONResponse({"detail": "citation is required"}, status_code=400)
+
+    try:
+        from paper.citation import search_citation
+    except ImportError as e:
+        print(f"Citation search unavailable, paper.citation failed to import: {e}")
+        return JSONResponse({"detail": "Citation search is temporarily unavailable"}, status_code=503)
+
+    candidates = await search_citation(citation)
+    return JSONResponse({"candidates": candidates})
+
+
+async def add_paper_by_citation(request):
+    """Save the citation-search candidate the user confirmed as a real paper (running it through
+    the same enrichment pipeline the discovery feed uses) and bookmark it for the current user."""
+    user_id = get_authenticated_user_id(request)
+    if not user_id:
+        return JSONResponse({"detail": "Authentication required"}, status_code=401)
+
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"detail": "Invalid JSON body"}, status_code=400)
+
+    candidate = {
+        "doi": body.get("doi"),
+        "title": body.get("title"),
+        "authors": body.get("authors") or [],
+        "journal": body.get("journal"),
+        "published_date": body.get("published_date"),
+        "url": body.get("url"),
+        "is_open_access": body.get("is_open_access"),
+    }
+
+    try:
+        from paper.citation import add_paper_from_citation
+    except ImportError as e:
+        print(f"Adding papers unavailable, paper.citation failed to import: {e}")
+        return JSONResponse({"detail": "Adding papers is temporarily unavailable"}, status_code=503)
+
+    try:
+        paper = await add_paper_from_citation(candidate, body.get("category"))
+    except ValueError as e:
+        return JSONResponse({"detail": str(e)}, status_code=400)
+
+    import db
+    db.upsert_papers([paper])
+    doc = db.get_db().papers.find_one({"source": paper["source"], "source_id": paper["source_id"]})
+    saved = _serialize_paper(doc)
+
+    bookmarks_store.add_bookmark(user_id, saved["id"])
+
+    return JSONResponse(saved, status_code=201)
+
+
 async def list_bookmarked_videos(request):
     """Get full metadata for every paper the current user has bookmarked."""
     user_id = get_authenticated_user_id(request)
@@ -368,6 +437,8 @@ routes = [
     Route("/api/authors/{author_id}", get_author),
     Route("/api/journals/{journal_name}", get_journal),
     Route("/api/categories", get_categories),
+    Route("/api/papers/citation/search", search_paper_by_citation, methods=["POST"]),
+    Route("/api/papers/citation/confirm", add_paper_by_citation, methods=["POST"]),
     Route("/api/interests", get_interests, methods=["GET"]),
     Route("/api/interests", set_interests, methods=["POST"]),
     Route("/api/profile", get_profile, methods=["GET"]),

@@ -23,13 +23,17 @@ detailed history).
 - **Profile data model**: optional, anonymized Tier 1 (cache-safe) and Tier 2 (sensitive-context)
   fields with per-field consent toggles, editable from Profile > Profile Details.
 - **Card images**: a Pexels stock photo keyed on the paper's title, not AI/user-generated.
+- **Add a paper by citation**: paste a citation (MLA, APA, or any other style) from Saved > "+"
+  (`frontend/app/add-paper.js`); Crossref fuzzy-matches it, Unpaywall resolves a real
+  open-access link, and confirming runs it through the same enrichment pipeline as the discovery
+  feed before saving and auto-bookmarking it (`backend/paper/citation.py`).
 
 ## What's not built yet
 
-Leveled reading (Original/Simpler/Simplest), citation-paste-to-save, screenshot/poster matching,
-the rating widget, and the age-gating/parental-consent flow for Tier 2 profile data are all
-still unbuilt. A per-paper chat screen (`frontend/app/chat/[id].js`) and its backend
-(`backend/paper/chat.py`) exist but aren't wired into navigation or the API routes yet.
+Leveled reading (Original/Simpler/Simplest), screenshot/poster matching, the rating widget, and
+the age-gating/parental-consent flow for Tier 2 profile data are all still unbuilt. A per-paper
+chat screen (`frontend/app/chat/[id].js`) and its backend (`backend/paper/chat.py`) exist but
+aren't wired into navigation or the API routes yet.
 
 ## Project structure
 

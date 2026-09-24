@@ -20,6 +20,7 @@ frontend/
 │   ├── paper/[id].js             # Paper detail screen
 │   ├── chat/[id].js              # Per-paper chat - NOT wired in, see "Known gaps" below
 │   ├── login.js / signup.js      # Auth screens
+│   ├── add-paper.js              # Add-a-paper-by-citation modal, reached from Saved > "+"
 │   ├── interests-onboarding.js   # One-time modal shown right after signup
 │   ├── profile-details.js        # Tier 1/2 profile fields with per-field consent toggles
 │   ├── settings.js               # Settings > Manage Feed > Interests
@@ -66,7 +67,9 @@ Then open in Expo Go, an iOS/Android simulator, or a browser.
 
 - **Home**: `PaperFeed` - swipe/page vertically between papers; drag a card's info panel up to
   expand it full-screen and read the description; pull to refresh; paginates automatically.
-- **Saved**: bookmarked papers, account-scoped (requires login).
+- **Saved**: bookmarked papers, account-scoped (requires login). The "+" button opens **Add a
+  Paper**: paste a citation (MLA, APA, or any other style), confirm which Crossref match is
+  right, pick a category, and it's saved and auto-bookmarked.
 - **Profile**: shows the signed-in account, with links to Profile Details and Settings, or a
   login/signup prompt when signed out.
 - **Profile Details**: Tier 1 (cache-safe: field of study, education level, general interests,

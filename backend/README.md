@@ -7,9 +7,11 @@ data - to the PaperBites mobile app.
 There is no video-generation pipeline anymore. This backend used to convert papers into
 narrated short-form videos (PDF download → OCR → summarize → compose video → upload to
 Cloudinary); that entire pipeline (`video/`, `utils/cloudinary_storage.py`, the CLI's
-`search`/`id`/`pdf` subcommands) was removed. `paper/download.py`, `extraction.py`, and
-`search.py` are kept - they're paper-processing utilities a future citation-paste/resolve
-feature would need - but nothing currently calls them.
+`search`/`id`/`pdf` subcommands) was removed. The add-paper-by-citation feature (see API below)
+uses `paper/citation.py`, which is new and reuses `paper/latest.py`'s Crossref/Unpaywall/
+enrichment helpers directly rather than the older `paper/search.py` (Google Scholar-scraping-
+based query search) - `search.py`, `download.py`, and `extraction.py` predate that pivot and
+remain dormant; nothing currently calls them.
 
 ## Setup
 
@@ -54,6 +56,14 @@ All routes are under `/api`. Auth-required routes take `Authorization: Bearer <t
   user has chosen interests, hard-filtered to papers whose categories match (see Interests below).
 - `GET /papers/{id}` - a single paper.
 - `GET /categories` - the fixed list of paper categories.
+- `POST /papers/citation/search` `{citation}` (auth required) - fuzzy-matches a raw pasted
+  citation (MLA, APA, or any other style) against Crossref, resolving a confirmed open-access
+  link for each candidate via Unpaywall. → `{candidates: [{doi, title, authors, journal,
+  published_date, url, is_open_access}, ...]}`
+- `POST /papers/citation/confirm` (auth required) - takes one candidate from the search above
+  plus a `category` (one of `/categories`' fixed list), runs it through the same enrichment
+  pipeline `fetch-latest` uses (abstract fallback, translation, Gemini summary, card image),
+  stores it, and auto-bookmarks it for the caller. → the saved paper.
 
 **Authors & journals**
 - `GET /authors/{author_id}` - an author's name and every paper of theirs.
@@ -101,8 +111,8 @@ must never be committed** - see `.gitignore` and `SECURITY_TODO.md`.
 ## Not built
 
 Leveled reading (Original/Simpler/Simplest generation and caching), the embedding-based
-interest/relevance matching described as future work, citation-paste-to-save, screenshot/poster
-matching, the rating widget, and age-gating/parental-consent for Tier 2 profile data. A
+interest/relevance matching described as future work, screenshot/poster matching, the rating
+widget, and age-gating/parental-consent for Tier 2 profile data. A
 per-paper chat endpoint (`paper/chat.py`) exists but has no route registered in `api_server.py`
 yet, and its frontend counterpart imports a function that doesn't exist in the frontend's API
 client - both are dormant, not reachable.
