@@ -223,6 +223,31 @@ async def summarize_and_classify_paper(
     return await summarize_and_classify(title, full_text, categories, source_label="Full paper text")
 
 
+# Prioritized by vision/OCR quality, not speed - the opposite tradeoff from _MODEL_NAMES above,
+# which is tuned for cheap high-throughput bulk summarization. This is a single interactive
+# user-triggered call (one photo, one result), so a fixed best-to-worst fallback order serves it
+# better than round-robin load distribution: try the strongest vision model first, and only fall
+# back to a weaker/cheaper one if it's unavailable or errors. No verified guarantee every model
+# id here is live on a given account/API version - same as _MODEL_NAMES, an invalid or
+# unavailable one is simply skipped in favor of the next.
+_IMAGE_MODEL_NAMES = [
+    "gemini-2.5-pro",
+    "gemini-2.5-flash",
+    "gemini-2.5-flash-lite",
+]
+
+
+def _configured_image_model_names() -> List[str]:
+    """api.gemini_image_models (a list, or a comma-separated string via
+    PAPERBITES_GEMINI_IMAGE_MODELS) overrides the built-in list above, if set."""
+    configured = config_instance.get("api.gemini_image_models")
+    if not configured:
+        return _IMAGE_MODEL_NAMES
+    if isinstance(configured, str):
+        return [name.strip() for name in configured.split(",") if name.strip()]
+    return list(configured)
+
+
 _IMAGE_CITATION_PROMPT = (
     "This image shows a research paper - its title page, a printed page, or a conference "
     "poster. Read whatever you can make out: the title, author names, and journal/venue/year if "
@@ -248,10 +273,9 @@ async def extract_citation_text_from_image(image_bytes: bytes, mime_type: str) -
     doesn't assume is installed, so this only helps when Gemini can read the title/authors
     directly off the page, not when a poster's QR code is the only readable thing on it.
 
-    Tries each configured model in round-robin order like summarize_text, since not every cycled
-    model is guaranteed to support image input - a model that errors (including one that simply
-    can't handle images) is skipped in favor of the next, same failure handling as everywhere
-    else in this module.
+    Tries models in a fixed best-to-worst priority order (_IMAGE_MODEL_NAMES) rather than the
+    round-robin used elsewhere in this module - see that list's own comment for why. A model
+    that errors (including one that simply can't handle images) is skipped in favor of the next.
     """
     if not config_instance.get("api.gemini_key") or not image_bytes:
         return None
@@ -269,9 +293,7 @@ async def extract_citation_text_from_image(image_bytes: bytes, mime_type: str) -
         {"type": "image_url", "image_url": f"data:{mime_type};base64,{b64_image}"},
     ])
 
-    models = _configured_model_names()
-    for _ in range(len(models)):
-        model_name = await _next_model_name(models)
+    for model_name in _configured_image_model_names():
         llm = _get_llm_for_model(model_name)
         if not llm:
             continue

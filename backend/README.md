@@ -81,9 +81,13 @@ All routes are under `/api`. Auth-required routes take `Authorization: Bearer <t
   **experimental**: extracts a citation from a photo of a paper's title page or a poster via
   Gemini vision (`paper/summarize.py`'s `extract_citation_text_from_image`), then resolves it
   exactly like the `/citation/search` above (so it also gets URL-embedded-DOI/meta-tag handling
-  for free if the extracted text happens to be a URL). No QR-code decoding - that would need a
-  system `zbar` library this deployment doesn't assume is installed - so this only helps when
-  Gemini can read the title/authors directly off the image. → `{candidates: [...], extracted:
+  for free if the extracted text happens to be a URL). Tries a fixed, accuracy-first model order
+  (`gemini-2.5-pro` → `gemini-2.5-flash` → `gemini-2.5-flash-lite`, overridable via
+  `PAPERBITES_GEMINI_IMAGE_MODELS`) rather than the round-robin `fetch-latest` uses - this is one
+  interactive photo per request, not bulk throughput, so read accuracy matters more than spreading
+  load. No QR-code decoding - that would need a system `zbar` library this deployment doesn't
+  assume is installed - so this only helps when Gemini can read the title/authors directly off
+  the image. → `{candidates: [...], extracted:
   "<citation-like string>" | null}`
 
 **Authors & journals**
