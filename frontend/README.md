@@ -68,9 +68,10 @@ Then open in Expo Go, an iOS/Android simulator, or a browser.
 - **Home**: `PaperFeed` - swipe/page vertically between papers; drag a card's info panel up to
   expand it full-screen and read the description; pull to refresh; paginates automatically.
 - **Saved**: bookmarked papers, account-scoped (requires login). The "+" button opens **Add a
-  Paper**: paste a citation (MLA, APA, or any other style), tap the right Crossref match, and
-  it's saved and auto-bookmarked - Gemini picks the category itself from the paper's text, same
-  as it does for the paper's summary.
+  Paper**: paste a citation (MLA, APA, or any other style) or a link to the paper's page, tap the
+  right match, and it's saved and auto-bookmarked - Gemini picks the category itself from the
+  paper's text, same as it does for the paper's summary. If nothing matches, "Submit for manual
+  review" queues it for a human to look at instead.
 - **Profile**: shows the signed-in account, with links to Profile Details and Settings, or a
   login/signup prompt when signed out.
 - **Profile Details**: Tier 1 (cache-safe: field of study, education level, general interests,

@@ -262,21 +262,22 @@ export const removeBookmark = async (token, paperId) => {
 };
 
 /**
- * Fuzzy-match a raw pasted citation (MLA, APA, or any other style) against Crossref, for the
- * first step of the add-paper-by-citation flow.
+ * Resolve a raw pasted citation (MLA, APA, or any other style) OR a direct link to the paper's
+ * page (e.g. an open-access journal article URL) into candidate matches, for the first step of
+ * the add-paper-by-citation flow.
  * @param {string} token - Session token from login/signup
- * @param {string} citation - The raw citation text as pasted/typed by the user
+ * @param {string} input - The raw citation text or paper URL as pasted/typed by the user
  * @returns {Promise<Array>} - Promise that resolves to candidate matches: each
  *   {doi, title, authors, journal, published_date, url, is_open_access}
  */
-export const searchPaperByCitation = async (token, citation) => {
+export const searchPaperByCitation = async (token, input) => {
   const response = await fetch(`${API_BASE_URL}/papers/citation/search`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify({ citation }),
+    body: JSON.stringify({ citation: input }),
   });
 
   if (!response.ok) {
@@ -305,6 +306,31 @@ export const addPaperByCitation = async (token, candidate) => {
       Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify(candidate),
+  });
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(body.detail || `API error: ${response.status}`);
+  }
+
+  return response.json();
+};
+
+/**
+ * Queue a citation/URL the automated search couldn't match, for manual admin review - the
+ * fallback for when search/add fails outright (see add-paper.js's empty-results state).
+ * @param {string} token - Session token from login/signup
+ * @param {string} input - The citation text or URL the user originally entered
+ * @returns {Promise<Object>} - Promise that resolves to {status, id}
+ */
+export const submitPaperForReview = async (token, input) => {
+  const response = await fetch(`${API_BASE_URL}/papers/citation/review`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ input }),
   });
 
   if (!response.ok) {

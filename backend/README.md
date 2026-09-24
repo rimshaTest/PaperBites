@@ -56,10 +56,15 @@ All routes are under `/api`. Auth-required routes take `Authorization: Bearer <t
   user has chosen interests, hard-filtered to papers whose categories match (see Interests below).
 - `GET /papers/{id}` - a single paper.
 - `GET /categories` - the fixed list of paper categories.
-- `POST /papers/citation/search` `{citation}` (auth required) - fuzzy-matches a raw pasted
-  citation (MLA, APA, or any other style) against Crossref, resolving a confirmed open-access
-  link for each candidate via Unpaywall. → `{candidates: [{doi, title, authors, journal,
-  published_date, url, is_open_access}, ...]}`
+- `POST /papers/citation/search` `{citation}` (auth required) - resolves a raw pasted citation
+  (MLA, APA, or any other style) OR a direct link to the paper's page (e.g. an open-access
+  journal's article URL) into candidate matches, each with a confirmed open-access link resolved
+  via Unpaywall. A citation is fuzzy-matched against Crossref; a URL is instead scraped for its
+  `citation_*` `<meta>` tags (the Highwire/Google-Scholar metadata standard most publishers embed)
+  to find a DOI - either from the tag itself or embedded directly in the URL - and looked up
+  exactly against Crossref, falling back to a bibliographic search on the page's title/authors if
+  no DOI can be found anywhere. → `{candidates: [{doi, title, authors, journal, published_date,
+  url, is_open_access}, ...]}`
 - `POST /papers/citation/confirm` (auth required) - takes one candidate from the search above,
   runs it through the same enrichment pipeline `fetch-latest` uses (abstract fallback,
   translation, card image), stores it, and auto-bookmarks it for the caller. Unlike
@@ -68,6 +73,10 @@ All routes are under `/api`. Auth-required routes take `Authorization: Bearer <t
   in the same call that generates the summary (`paper/summarize.py`'s
   `summarize_and_classify_paper`). A paper Gemini can't classify (no API key, or every model
   fails) is saved uncategorized rather than guessed. → the saved paper.
+- `POST /papers/citation/review` `{input}` (auth required) - queues a citation/URL the search
+  above couldn't resolve for manual admin review (`paper_reviews.py`), per the spec's fallback
+  for when automated matching fails outright. No admin UI reads this queue yet - it's a flat
+  JSON file, read by hand for now.
 
 **Authors & journals**
 - `GET /authors/{author_id}` - an author's name and every paper of theirs.
@@ -102,10 +111,11 @@ All routes are under `/api`. Auth-required routes take `Authorization: Bearer <t
 ## Storage
 
 MongoDB (`db.py`) holds the `papers` collection - the only real collection. Accounts, sessions,
-bookmarks, interests, and profile data are all flat JSON files (`auth.py`, `bookmarks.py`,
-`interests.py`, `profile.py`), matching each other's pattern rather than adding a second
-database. **These JSON files hold real account data (password hashes, live session tokens) and
-must never be committed** - see `.gitignore` and `SECURITY_TODO.md`.
+bookmarks, interests, profile data, and pending manual-review submissions are all flat JSON files
+(`auth.py`, `bookmarks.py`, `interests.py`, `profile.py`, `paper_reviews.py`), matching each
+other's pattern rather than adding a second database. **These JSON files hold real account data
+(password hashes, live session tokens) and must never be committed** - see `.gitignore` and
+`SECURITY_TODO.md`.
 
 ## Configuration
 

@@ -10,6 +10,7 @@ from typing import List, Dict, Optional
 import bookmarks as bookmarks_store
 import interests as interests_store
 import profile as profile_store
+import paper_reviews as paper_reviews_store
 import auth
 from utils.text import clean_abstract
 
@@ -257,8 +258,9 @@ async def get_categories(request):
 
 
 async def search_paper_by_citation(request):
-    """Fuzzy-match a raw pasted citation (MLA, APA, or any other style) against Crossref and
-    return candidate matches for the confirm-dialog step of the add-paper-by-citation flow."""
+    """Resolve a raw pasted citation (MLA, APA, or any other style) OR a direct link to the
+    paper's page (e.g. an open-access journal article URL) into candidate matches for the
+    confirm-dialog step of the add-paper-by-citation flow."""
     user_id = get_authenticated_user_id(request)
     if not user_id:
         return JSONResponse({"detail": "Authentication required"}, status_code=401)
@@ -324,6 +326,26 @@ async def add_paper_by_citation(request):
     bookmarks_store.add_bookmark(user_id, saved["id"])
 
     return JSONResponse(saved, status_code=201)
+
+
+async def submit_paper_review(request):
+    """Queue a citation/URL the automated search (above) couldn't match, for manual admin
+    review - the spec's fallback for when add-paper matching fails outright."""
+    user_id = get_authenticated_user_id(request)
+    if not user_id:
+        return JSONResponse({"detail": "Authentication required"}, status_code=401)
+
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"detail": "Invalid JSON body"}, status_code=400)
+
+    raw_input = (body.get("input") or "").strip()
+    if not raw_input:
+        return JSONResponse({"detail": "input is required"}, status_code=400)
+
+    entry = paper_reviews_store.submit_review(user_id, raw_input)
+    return JSONResponse({"status": "ok", "id": entry["id"]}, status_code=201)
 
 
 async def list_bookmarked_videos(request):
@@ -440,6 +462,7 @@ routes = [
     Route("/api/categories", get_categories),
     Route("/api/papers/citation/search", search_paper_by_citation, methods=["POST"]),
     Route("/api/papers/citation/confirm", add_paper_by_citation, methods=["POST"]),
+    Route("/api/papers/citation/review", submit_paper_review, methods=["POST"]),
     Route("/api/interests", get_interests, methods=["GET"]),
     Route("/api/interests", set_interests, methods=["POST"]),
     Route("/api/profile", get_profile, methods=["GET"]),

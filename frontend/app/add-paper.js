@@ -12,19 +12,24 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { searchPaperByCitation, addPaperByCitation } from '../services/api';
+import { searchPaperByCitation, addPaperByCitation, submitPaperForReview } from '../services/api';
 import { useAuth } from '../hooks/useAuth';
 import theme from '../constants/theme';
 
 /**
  * Add-a-paper-by-citation flow (docs/TECHNICAL_SPEC.md's "Add-Paper Ingestion Pipeline"),
  * reached from the Saved tab's "+" button. Two steps:
- *   1. Paste a citation (MLA, APA, or any other style - sent to the backend as-is).
- *   2. Confirm which of Crossref's fuzzy-matched candidates is the right paper, then save.
+ *   1. Paste a citation (MLA, APA, or any other style) OR a direct link to the paper's page
+ *      (e.g. an open-access journal's article URL) - sent to the backend as-is, which detects
+ *      which kind of input it got.
+ *   2. Confirm which of the resolved candidates is the right paper, then save.
  * The category isn't picked here - the backend's Gemini summary step reads the paper's
  * abstract/full text and chooses the best-fitting category in the same call, so it's
  * classified the same way a discovered-feed paper's summary is generated. On success the
  * paper is stored server-side and auto-bookmarked, so it shows up immediately in Saved.
+ *
+ * If nothing matches, the user can submit the input for manual admin review instead of being
+ * stuck - the spec's fallback for when automated matching can't resolve something.
  */
 export default function AddPaperScreen() {
   const router = useRouter();
@@ -35,12 +40,15 @@ export default function AddPaperScreen() {
   const [candidates, setCandidates] = useState(null);
   const [selected, setSelected] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [submittingReview, setSubmittingReview] = useState(false);
+  const [reviewSubmitted, setReviewSubmitted] = useState(false);
 
   const handleSearch = async () => {
     if (!citation.trim() || !token) return;
     setSearching(true);
     setCandidates(null);
     setSelected(null);
+    setReviewSubmitted(false);
     try {
       const results = await searchPaperByCitation(token, citation.trim());
       setCandidates(results ?? []);
@@ -68,6 +76,20 @@ export default function AddPaperScreen() {
     }
   };
 
+  const handleSubmitForReview = async () => {
+    if (!citation.trim() || !token) return;
+    setSubmittingReview(true);
+    try {
+      await submitPaperForReview(token, citation.trim());
+      setReviewSubmitted(true);
+    } catch (err) {
+      console.error('Submitting for review failed:', err);
+      Alert.alert('Could not submit', err.message || 'Something went wrong. Try again.');
+    } finally {
+      setSubmittingReview(false);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
@@ -79,14 +101,21 @@ export default function AddPaperScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <Text style={styles.label}>Paste a citation (MLA, APA, or any other style)</Text>
+        <Text style={styles.label}>
+          Paste a citation (MLA, APA, or any other style) or a link to the paper's page
+        </Text>
         <TextInput
           style={styles.input}
           multiline
-          placeholder={'e.g. Lovelace, Ada. "A Study of Widgets." Journal of Widgets, 2024.'}
+          placeholder={
+            'e.g. Lovelace, Ada. "A Study of Widgets." Journal of Widgets, 2024.\n' +
+            'or https://journals.plos.org/plosone/article?id=...'
+          }
           placeholderTextColor={theme.textMuted}
           value={citation}
           onChangeText={setCitation}
+          autoCapitalize="none"
+          autoCorrect={false}
         />
         <TouchableOpacity
           style={[styles.primaryButton, !citation.trim() && styles.buttonDisabled]}
@@ -106,9 +135,29 @@ export default function AddPaperScreen() {
               {candidates.length === 0 ? 'No matches found' : 'Tap the right paper to add it'}
             </Text>
             {candidates.length === 0 && (
-              <Text style={styles.emptyText}>
-                Try pasting more of the citation, or check the title/author spelling.
-              </Text>
+              <>
+                <Text style={styles.emptyText}>
+                  Try pasting more of the citation, double-check the title/author spelling, or
+                  paste a direct link to the paper's page instead.
+                </Text>
+                {reviewSubmitted ? (
+                  <Text style={styles.reviewSubmittedText}>
+                    Submitted - we'll take a look and try to add it.
+                  </Text>
+                ) : (
+                  <TouchableOpacity
+                    style={[styles.secondaryButton, submittingReview && styles.buttonDisabled]}
+                    onPress={handleSubmitForReview}
+                    disabled={submittingReview}
+                  >
+                    {submittingReview ? (
+                      <ActivityIndicator color={theme.text} />
+                    ) : (
+                      <Text style={styles.secondaryButtonText}>Submit for manual review</Text>
+                    )}
+                  </TouchableOpacity>
+                )}
+              </>
             )}
             {candidates.map((candidate) => {
               const isSelected = selected?.doi === candidate.doi;
@@ -229,6 +278,26 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 14,
     color: theme.textMuted,
+  },
+  secondaryButton: {
+    borderWidth: 1.5,
+    borderColor: theme.border,
+    borderRadius: 10,
+    height: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 16,
+  },
+  secondaryButtonText: {
+    fontSize: 15,
+    fontWeight: 'bold',
+    color: theme.text,
+  },
+  reviewSubmittedText: {
+    fontSize: 14,
+    color: theme.text,
+    fontWeight: 'bold',
+    marginTop: 16,
   },
   candidateCard: {
     borderWidth: 1.5,
