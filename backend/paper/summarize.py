@@ -223,6 +223,69 @@ async def summarize_and_classify_paper(
     return await summarize_and_classify(title, full_text, categories, source_label="Full paper text")
 
 
+_IMAGE_CITATION_PROMPT = (
+    "This image shows a research paper - its title page, a printed page, or a conference "
+    "poster. Read whatever you can make out: the title, author names, and journal/venue/year if "
+    "visible. Respond with ONLY a single-line plain-text citation-like string combining what you "
+    "read (e.g. 'Author Name. Title of the paper. Journal Name, Year.') - no JSON, no markdown, "
+    "no extra commentary, no preamble. If you cannot confidently read a title anywhere in the "
+    "image, respond with exactly: NONE"
+)
+# Hard cap on how large an uploaded photo can be before we even try sending it to Gemini - a
+# phone camera photo is typically 1-5MB; this just guards against something pathological.
+_MAX_IMAGE_BYTES = 15 * 1024 * 1024
+
+
+async def extract_citation_text_from_image(image_bytes: bytes, mime_type: str) -> Optional[str]:
+    """Experimental vision-extraction fallback for the add-paper-by-photo flow: asks Gemini to
+    read a title/authors/venue off a photographed paper page or poster and return them as a
+    single citation-like string. The caller then resolves that string the same way a pasted
+    citation is (paper/citation.py's search_citation()) - this function only replaces the "type
+    or paste the citation" step, not the bibliographic matching after it.
+
+    Deliberately skips QR-code decoding (unlike the ideal pipeline described in
+    docs/TECHNICAL_SPEC.md) - reliable QR decoding needs a system zbar library this deployment
+    doesn't assume is installed, so this only helps when Gemini can read the title/authors
+    directly off the page, not when a poster's QR code is the only readable thing on it.
+
+    Tries each configured model in round-robin order like summarize_text, since not every cycled
+    model is guaranteed to support image input - a model that errors (including one that simply
+    can't handle images) is skipped in favor of the next, same failure handling as everywhere
+    else in this module.
+    """
+    if not config_instance.get("api.gemini_key") or not image_bytes:
+        return None
+    if len(image_bytes) > _MAX_IMAGE_BYTES:
+        logger.warning(f"Rejecting image scan: {len(image_bytes)} bytes exceeds the {_MAX_IMAGE_BYTES}-byte cap")
+        return None
+
+    import base64
+
+    from langchain_core.messages import HumanMessage
+
+    b64_image = base64.b64encode(image_bytes).decode("ascii")
+    message = HumanMessage(content=[
+        {"type": "text", "text": _IMAGE_CITATION_PROMPT},
+        {"type": "image_url", "image_url": f"data:{mime_type};base64,{b64_image}"},
+    ])
+
+    models = _configured_model_names()
+    for _ in range(len(models)):
+        model_name = await _next_model_name(models)
+        llm = _get_llm_for_model(model_name)
+        if not llm:
+            continue
+        try:
+            response = await llm.ainvoke([message])
+            text = (response.content or "").strip()
+            if text and text.upper() != "NONE":
+                return text
+        except Exception as e:
+            logger.warning(f"Gemini model '{model_name}' failed to read image for citation extraction: {e}")
+
+    return None
+
+
 async def _download_pdf_text(session: aiohttp.ClientSession, url: str) -> Optional[str]:
     """Best-effort: download a PDF and extract its text layer.
 

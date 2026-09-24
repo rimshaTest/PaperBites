@@ -33,6 +33,13 @@
           "resizeMode": "contain",
           "backgroundColor": "#ffffff"
         }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "PaperBites uses your camera to add a paper from a photo of its title page or a poster.",
+          "photosPermission": "PaperBites uses your photo library to add a paper from a photo of its title page or a poster."
+        }
       ]
     ],
     "experiments": {

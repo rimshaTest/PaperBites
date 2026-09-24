@@ -290,6 +290,36 @@ export const searchPaperByCitation = async (token, input) => {
 };
 
 /**
+ * Experimental: extract a citation from a photo of a paper's title page or a poster (via Gemini
+ * vision, server-side) and resolve it into candidate matches, same shape as
+ * searchPaperByCitation(). No QR-code decoding - see the backend's own docs for why.
+ * @param {string} token - Session token from login/signup
+ * @param {Object} image - {uri, mimeType} - a local image picked/captured via expo-image-picker
+ * @returns {Promise<{candidates: Array, extracted: string|null}>}
+ */
+export const scanPaperPhoto = async (token, image) => {
+  const formData = new FormData();
+  formData.append('image', {
+    uri: image.uri,
+    name: 'photo.jpg',
+    type: image.mimeType || 'image/jpeg',
+  });
+
+  const response = await fetch(`${API_BASE_URL}/papers/citation/scan`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(body.detail || `API error: ${response.status}`);
+  }
+
+  return response.json();
+};
+
+/**
  * Save a confirmed citation-search candidate as a real paper (server-side it's run through the
  * same enrichment pipeline the discovery feed uses - including a Gemini-chosen category, picked
  * from the paper's abstract/full text in the same call that generates its summary) and bookmark

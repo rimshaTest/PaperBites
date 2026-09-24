@@ -284,6 +284,50 @@ async def search_paper_by_citation(request):
     return JSONResponse({"candidates": candidates})
 
 
+# Cap the uploaded image at Gemini vision's own reasonable size - mirrors
+# paper.summarize._MAX_IMAGE_BYTES so an oversized upload is rejected here (before ever reading
+# the whole thing into memory) rather than only after it's already been buffered.
+_MAX_SCAN_IMAGE_BYTES = 15 * 1024 * 1024
+
+
+async def scan_paper_photo(request):
+    """Experimental: extract a citation from a photo of a paper's title page or a poster (via
+    Gemini vision), then resolve it the same way a pasted citation is. No QR-code decoding - see
+    paper.summarize.extract_citation_text_from_image's docstring for why."""
+    user_id = get_authenticated_user_id(request)
+    if not user_id:
+        return JSONResponse({"detail": "Authentication required"}, status_code=401)
+
+    try:
+        form = await request.form()
+    except Exception:
+        return JSONResponse({"detail": "Invalid form data"}, status_code=400)
+
+    image = form.get("image")
+    if image is None or not hasattr(image, "read"):
+        return JSONResponse({"detail": "image is required"}, status_code=400)
+
+    image_bytes = await image.read()
+    if not image_bytes:
+        return JSONResponse({"detail": "image is empty"}, status_code=400)
+    if len(image_bytes) > _MAX_SCAN_IMAGE_BYTES:
+        return JSONResponse({"detail": "image is too large"}, status_code=413)
+
+    try:
+        from paper.summarize import extract_citation_text_from_image
+        from paper.citation import search_citation
+    except ImportError as e:
+        print(f"Photo scan unavailable, imports failed: {e}")
+        return JSONResponse({"detail": "Scanning is temporarily unavailable"}, status_code=503)
+
+    extracted = await extract_citation_text_from_image(image_bytes, image.content_type or "image/jpeg")
+    if not extracted:
+        return JSONResponse({"candidates": [], "extracted": None})
+
+    candidates = await search_citation(extracted)
+    return JSONResponse({"candidates": candidates, "extracted": extracted})
+
+
 async def add_paper_by_citation(request):
     """Save the citation-search candidate the user confirmed as a real paper (running it through
     the same enrichment pipeline the discovery feed uses, including a Gemini-chosen category) and
@@ -461,6 +505,7 @@ routes = [
     Route("/api/journals/{journal_name}", get_journal),
     Route("/api/categories", get_categories),
     Route("/api/papers/citation/search", search_paper_by_citation, methods=["POST"]),
+    Route("/api/papers/citation/scan", scan_paper_photo, methods=["POST"]),
     Route("/api/papers/citation/confirm", add_paper_by_citation, methods=["POST"]),
     Route("/api/papers/citation/review", submit_paper_review, methods=["POST"]),
     Route("/api/interests", get_interests, methods=["GET"]),
