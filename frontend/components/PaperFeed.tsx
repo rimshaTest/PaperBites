@@ -20,6 +20,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { Image } from 'expo-image';
+import { useAudioPlayer } from 'expo-audio';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { fetchPapers } from '../services/api';
@@ -237,6 +238,7 @@ export const PaperCard: React.FC<{
 };
 
 const PAGE_SIZE = 10;
+const SWIPE_SOUND = require('../assets/sounds/swipe-whoosh.wav');
 
 type FavoritePapersApi = {
   isFavorite: (paperId: string) => boolean;
@@ -255,12 +257,15 @@ const PaperFeed: React.FC = () => {
   const [anyExpanded, setAnyExpanded] = React.useState(false);
   const [page, setPage] = React.useState(0);
   const [hasMore, setHasMore] = React.useState(true);
+  const swipeSound = useAudioPlayer(SWIPE_SOUND);
+  const lastPageIndexRef = React.useRef(0);
 
   // Fetch a page of papers from the backend - passing the token lets the server hard-filter to
   // the signed-in user's chosen interests (see /api/interests), when they've set any.
   const loadPapers = async (reset: boolean) => {
     const pageToLoad = reset ? 0 : page;
     if (!reset && !hasMore) return;
+    if (reset) lastPageIndexRef.current = 0;
 
     try {
       if (reset && papers.length === 0) setLoading(true);
@@ -307,6 +312,22 @@ const PaperFeed: React.FC = () => {
   const handleEndReached = () => {
     if (!loading && !loadingMore && hasMore) {
       loadPapers(false);
+    }
+  };
+
+  // Plays the swipe whoosh once a page-snap settles on a new card. Using the settled index
+  // (rather than trying to detect the swipe gesture mid-flight) avoids double-firing on a
+  // bounce/overscroll that snaps back to the same page.
+  const handleMomentumScrollEnd = (event: { nativeEvent: { contentOffset: { y: number } } }) => {
+    const newIndex = Math.round(event.nativeEvent.contentOffset.y / height);
+    if (newIndex !== lastPageIndexRef.current) {
+      lastPageIndexRef.current = newIndex;
+      try {
+        swipeSound.seekTo(0);
+        swipeSound.play();
+      } catch (err) {
+        console.debug('Swipe sound failed to play:', err);
+      }
     }
   };
 
@@ -372,6 +393,7 @@ const PaperFeed: React.FC = () => {
       style={styles.list}
       onEndReached={handleEndReached}
       onEndReachedThreshold={0.5}
+      onMomentumScrollEnd={handleMomentumScrollEnd}
       refreshControl={
         <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={theme.text} />
       }

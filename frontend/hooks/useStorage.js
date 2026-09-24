@@ -1,5 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useAudioPlayer } from 'expo-audio';
 import { fetchBookmarks, addBookmark, removeBookmark } from '../services/api';
+
+const BOOKMARK_SOUND = require('../assets/sounds/bookmark-ding.wav');
 
 /**
  * Custom hook for managing bookmarked ("favorite") papers.
@@ -17,6 +20,7 @@ export const useFavoritePapers = (token) => {
   const [favorites, setFavorites] = useState([]);
   const [loading, setLoading] = useState(!!token);
   const [error, setError] = useState(null);
+  const bookmarkSound = useAudioPlayer(BOOKMARK_SOUND);
 
   const refetch = useCallback(async () => {
     if (!token) {
@@ -74,6 +78,14 @@ export const useFavoritePapers = (token) => {
     if (!paper || !paper.id || !token) return false;
     if (isFavorite(paper.id)) return true;
 
+    // Play the confirm chime on add only, not remove - matches the common "saved!" pattern.
+    try {
+      bookmarkSound.seekTo(0);
+      bookmarkSound.play();
+    } catch (err) {
+      console.debug('Bookmark sound failed to play:', err);
+    }
+
     // Optimistic update so the UI reacts immediately
     setFavorites(prev => [paper, ...prev]);
 
@@ -86,7 +98,7 @@ export const useFavoritePapers = (token) => {
       setFavorites(prev => prev.filter(p => p.id !== paper.id));
       return false;
     }
-  }, [token, isFavorite]);
+  }, [token, isFavorite, bookmarkSound]);
 
   // Remove a paper from favorites
   const removeFavorite = useCallback(async (paperId) => {

@@ -1,8 +1,9 @@
 # PaperBites Frontend
 
-A React Native (Expo Router) app for the PaperBites paper feed. There is no video playback
-anywhere in this app anymore - the original TikTok-style video feed was fully removed in favor
-of a swipeable card feed over real research papers.
+A React Native (Expo Router) app for the PaperBites paper feed. There's no video *content*
+feed anymore - the original TikTok-style video feed over generated summaries was fully removed
+in favor of a swipeable card feed over real research papers. The only video left is a one-time
+logo intro played on cold app start (`components/IntroVideo.js`).
 
 ## File structure
 
@@ -26,15 +27,26 @@ frontend/
 │   ├── interests-onboarding.js   # One-time modal shown right after signup
 │   ├── profile-details.js        # Tier 1/2 profile fields with per-field consent toggles
 │   ├── settings.js               # Settings > Manage Feed > Interests
-│   └── _layout.tsx               # Root Stack + AuthProvider + GestureHandlerRootView
+│   └── _layout.tsx               # Root Stack + AuthProvider + GestureHandlerRootView + the
+│                                   # one-time IntroVideo overlay
 ├── components/
 │   ├── PaperFeed.tsx             # The actual Home feed: full-screen paging cards, drag the
-│   │                              # info panel up to expand and read the full description
-│   └── PaperCard.js              # Simpler list-row card, used by the Saved tab
+│   │                              # info panel up to expand and read the full description;
+│   │                              # plays a whoosh sound on each page-to-page swipe
+│   ├── PaperCard.js              # Simpler list-row card, used by the Saved tab and Search
+│   └── IntroVideo.js             # Full-screen logo intro (assets/splash-video.mp4), played once
+│                                   # on cold app start, then never shown again that session
 ├── hooks/
 │   ├── useAuth.js                # Session context (signup/login/logout, persisted + re-
 │   │                              # validated against the backend on mount)
-│   └── useStorage.js             # useFavoritePapers (account-scoped bookmarks)
+│   └── useStorage.js             # useFavoritePapers (account-scoped bookmarks) - also plays
+│                                   # the bookmark confirm "ding" (assets/sounds/bookmark-ding.wav)
+├── assets/
+│   ├── splash-video.mp4          # Logo intro animation (played by IntroVideo.js)
+│   ├── splash-static.png         # Poster frame shown while the video loads
+│   └── sounds/
+│       ├── bookmark-ding.wav     # Played once per bookmark add (not remove)
+│       └── swipe-whoosh.wav      # Played on each Home feed page-to-page swipe
 └── services/
     ├── api.js                    # REST client for every /api/* endpoint
     ├── auth.js                   # signup/login/logout/getMe
@@ -97,3 +109,6 @@ Then open in Expo Go, an iOS/Android simulator, or a browser.
 - `services/storage.js`'s `getInterests`/`saveInterests`/`isPaperSaved`/`savePaperId`/
   `unsavePaperId` are dead code (device-local versions from before interests/bookmarks moved to
   the account-based backend) - harmless, but worth removing in a cleanup pass.
+- `assets/sounds/bookmark-ding.wav` and `swipe-whoosh.wav` are placeholder sounds synthesized
+  programmatically (simple sine/noise envelopes), not produced sound design - swap them for
+  real assets whenever you have some; same filenames/paths, no code changes needed.

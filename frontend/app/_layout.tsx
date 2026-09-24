@@ -1,8 +1,15 @@
+import React, { useState } from 'react';
 import { Stack } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { AuthProvider } from '../hooks/useAuth';
+import IntroVideo from '../components/IntroVideo';
 
 export default function Layout() {
+  // The Stack (and whatever it renders underneath, e.g. Home's feed fetch) mounts immediately -
+  // the intro is just a full-screen overlay on top of it, not a route of its own, so there's
+  // nothing to navigate "back" out of once it finishes.
+  const [showIntro, setShowIntro] = useState(true);
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <AuthProvider>
@@ -19,6 +26,7 @@ export default function Layout() {
           <Stack.Screen name="settings" />
           <Stack.Screen name="profile-details" />
         </Stack>
+        {showIntro && <IntroVideo onFinish={() => setShowIntro(false)} />}
       </AuthProvider>
     </GestureHandlerRootView>
   );
