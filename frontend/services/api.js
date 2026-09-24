@@ -69,6 +69,33 @@ export const fetchPapers = async (options = {}) => {
 };
 
 /**
+ * Semantic search over papers embedded at ingestion (backend's paper/embeddings.py), ranked by
+ * cosine similarity to the query - matches by meaning, not just exact keywords. No auth needed;
+ * same public trust level as browsing the feed. Separate from Interests' hard category filter,
+ * not blended with it.
+ * @param {string} query - Free-text search query
+ * @param {number} [limit] - Maximum number of results
+ * @returns {Promise<Array>} - Promise that resolves to an array of matching papers, most relevant first
+ */
+export const searchPapersSemantically = async (query, limit = 20) => {
+  const params = new URLSearchParams({ q: query, limit: String(limit) });
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/papers/search?${params.toString()}`);
+
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      throw new Error(body.detail || `API error: ${response.status}`);
+    }
+
+    return response.json();
+  } catch (error) {
+    console.error('Error searching papers:', error);
+    throw error;
+  }
+};
+
+/**
  * Fetch a single paper by ID
  * @param {string} paperId - ID of the paper to fetch
  * @returns {Promise<Object>} - Promise that resolves to paper metadata

@@ -22,6 +22,7 @@ frontend/
 │   ├── login.js / signup.js      # Auth screens
 │   ├── add-paper.js              # Add-a-paper modal, reached from Saved > "+" - citation, URL,
 │   │                              # or (experimental) a camera/screenshot photo
+│   ├── search.js                 # Semantic paper search modal, reached from Home's search icon
 │   ├── interests-onboarding.js   # One-time modal shown right after signup
 │   ├── profile-details.js        # Tier 1/2 profile fields with per-field consent toggles
 │   ├── settings.js               # Settings > Manage Feed > Interests
@@ -67,7 +68,9 @@ Then open in Expo Go, an iOS/Android simulator, or a browser.
 ## Screens
 
 - **Home**: `PaperFeed` - swipe/page vertically between papers; drag a card's info panel up to
-  expand it full-screen and read the description; pull to refresh; paginates automatically.
+  expand it full-screen and read the description; pull to refresh; paginates automatically. The
+  search icon next to the "PaperBites" title opens **Search** (`search.js`): free-text semantic
+  search over papers, ranked by meaning (Gemini embeddings) rather than exact keyword match.
 - **Saved**: bookmarked papers, account-scoped (requires login). The "+" button opens **Add a
   Paper**: paste a citation (MLA, APA, or any other style) or a link to the paper's page, tap the
   right match, and it's saved and auto-bookmarked - Gemini picks the category itself from the

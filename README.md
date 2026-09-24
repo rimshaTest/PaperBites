@@ -15,9 +15,10 @@ detailed history).
   Crossref results), dedupes them, generates a plain-English description (Gemini, when
   configured, else falls back to the paper's cleaned abstract), embeds each one exactly once for
   semantic search (`backend/paper/embeddings.py`), and stores them in MongoDB.
-- **Semantic paper search**: `GET /api/papers/search?q=` ranks papers by cosine similarity to a
-  Gemini-embedded query - a separate, explicit action from the Interests hard filter below, not
-  blended into it.
+- **Semantic paper search**: a search icon on Home's card overlay opens a search screen
+  (`frontend/app/search.js`) that ranks papers by cosine similarity to a Gemini-embedded query
+  (`GET /api/papers/search?q=`) - a separate, explicit action from the Interests hard filter
+  below, not blended into it.
 - **Accounts**: email/password signup/login, session tokens (`backend/auth.py`).
 - **Bookmarks**: account-scoped, not device-scoped (`backend/bookmarks.py`).
 - **Interests**: pick topics once at signup (or later from Profile > Settings > Manage Feed) and
@@ -45,8 +46,7 @@ detailed history).
 
 Leveled reading (Original/Simpler/Simplest), QR-code decoding for the photo-scan add-paper path,
 the rating widget, and the age-gating/parental-consent flow for Tier 2 profile data are all still
-unbuilt. Semantic search (`GET /api/papers/search`) has no frontend UI yet - it's backend-only
-for now. A per-paper chat screen (`frontend/app/chat/[id].js`) and its backend
+unbuilt. A per-paper chat screen (`frontend/app/chat/[id].js`) and its backend
 (`backend/paper/chat.py`) exist but aren't wired into navigation or the API routes yet.
 
 ## Project structure

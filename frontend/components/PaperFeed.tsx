@@ -115,8 +115,16 @@ export const PaperCard: React.FC<{
         ) : (
           <View style={[styles.image, styles.imageFallback]} />
         )}
-        <View pointerEvents="none" style={styles.brandBar}>
-          <Text style={styles.brandText}>PaperBites</Text>
+        <View pointerEvents="box-none" style={styles.brandBar}>
+          <View style={styles.brandBarSpacer} pointerEvents="none" />
+          <Text style={styles.brandText} pointerEvents="none">PaperBites</Text>
+          <TouchableOpacity
+            style={styles.searchIconButton}
+            onPress={() => router.push('/search')}
+            hitSlop={10}
+          >
+            <Ionicons name="search" size={16} color={theme.surface} />
+          </TouchableOpacity>
         </View>
         <TouchableOpacity style={styles.saveButton} onPress={() => onToggleBookmark(item)}>
           <Ionicons
@@ -401,9 +409,16 @@ const styles = StyleSheet.create({
     top: 16,
     left: 0,
     right: 0,
+    flexDirection: 'row',
     alignItems: 'center',
+    paddingHorizontal: 16,
+  },
+  brandBarSpacer: {
+    width: 28,
   },
   brandText: {
+    flex: 1,
+    textAlign: 'center',
     fontFamily: theme.serif,
     fontSize: 18,
     fontWeight: 'bold',
@@ -411,6 +426,14 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0, 0, 0, 0.5)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
+  },
+  searchIconButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.35)',
   },
   saveButton: {
     position: 'absolute',
