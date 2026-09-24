@@ -1,10 +1,12 @@
 # paper/latest.py
-"""Fetch the latest research papers from free, official APIs (Semantic Scholar, OpenAlex).
+"""Fetch the latest research papers from free, official APIs for the discovery feed.
 
-This is separate from paper/search.py's query-driven search, which does Unpaywall/license
-enrichment for the video-generation pipeline. This module only surfaces metadata (title,
-authors, abstract, citation count, link) for display as cards - no PDF hosting/redistribution -
-so it does not need the open-access/license gating that search.py's pipeline requires.
+Combines Semantic Scholar, OpenAlex, and Crossref, deduped, filtered to open access. Semantic
+Scholar/OpenAlex are pre-filtered to open access at fetch time; Crossref's own open-access flag
+isn't reliable, so its results get a real open-access link resolved (or ruled out) via Unpaywall
+(`fetch_unpaywall_oa_location`) before being kept - the same service `paper/search.py`'s
+citation-lookup path uses. This module only surfaces metadata (title, authors, abstract, citation
+count, link) for display as cards - no PDF hosting/redistribution.
 """
 import asyncio
 import datetime
