@@ -1,55 +1,44 @@
 """
-Simple JSON-file-backed queue of citations/URLs the automated add-paper search (paper/citation.py)
-couldn't resolve, for manual admin review - docs/TECHNICAL_SPEC.md's fallback for the add-paper
-pipeline: "let the user submit the image/citation for manual admin review if retries don't
-resolve it." Early on this is a short queue reviewed by hand (per the spec's own build note); no
-admin UI reads this yet, but list_reviews() is here so one (or a human going through the JSON file
-directly) has somewhere to start.
+Queue of citations/URLs the automated add-paper search (paper/citation.py) couldn't resolve, for
+manual admin review - docs/TECHNICAL_SPEC.md's fallback for the add-paper pipeline: "let the user
+submit the image/citation for manual admin review if retries don't resolve it."
+
+Stored as its own MongoDB document type (the `paper_reviews` collection, alongside `papers` in
+db.py) rather than a flat JSON file like auth/bookmarks/interests/profile - those are
+account-scoped runtime stores that predate this app's MongoDB usage, but a paper review is a
+review of a paper, so it belongs next to `papers` as a real, queryable collection instead of
+another ad hoc JSON file. Early on this is a short queue reviewed by hand (per the spec's own
+build note); no admin UI reads this yet, but list_reviews() is here so one (or a human querying
+the collection directly) has somewhere to start.
 """
-import os
-import json
-import time
-import uuid
+from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
-REVIEWS_FILE = os.environ.get("PAPERBITES_PAPER_REVIEWS_FILE", "paper_reviews.json")
-
-
-def _load() -> List[Dict]:
-    if not os.path.exists(REVIEWS_FILE):
-        return []
-    try:
-        with open(REVIEWS_FILE, 'r') as f:
-            return json.load(f)
-    except Exception as e:
-        print(f"Error reading paper reviews from {REVIEWS_FILE}: {e}")
-        return []
-
-
-def _save(data: List[Dict]) -> None:
-    with open(REVIEWS_FILE, 'w') as f:
-        json.dump(data, f, indent=2)
+import db
 
 
 def submit_review(user_id: str, raw_input: str) -> Dict:
     """Queue a citation or URL the automated search couldn't match, for manual admin review."""
-    entries = _load()
-    entry = {
-        "id": str(uuid.uuid4()),
+    doc = {
         "user_id": user_id,
         "input": raw_input,
         "status": "pending",
-        "submitted_at": time.time(),
+        "submitted_at": datetime.now(timezone.utc).timestamp(),
     }
-    entries.append(entry)
-    _save(entries)
-    return entry
+    result = db.get_db().paper_reviews.insert_one(doc)
+    doc["id"] = str(result.inserted_id)
+    doc.pop("_id", None)
+    return doc
 
 
 def list_reviews(status: Optional[str] = None) -> List[Dict]:
     """All submissions, optionally filtered by status ('pending', 'resolved', 'rejected'), most
     recently submitted first."""
-    entries = _load()
-    if status:
-        entries = [e for e in entries if e.get("status") == status]
-    return sorted(entries, key=lambda e: e.get("submitted_at", 0), reverse=True)
+    query = {"status": status} if status else {}
+    cursor = db.get_db().paper_reviews.find(query).sort("submitted_at", -1)
+
+    reviews = []
+    for entry in cursor:
+        entry["id"] = str(entry.pop("_id"))
+        reviews.append(entry)
+    return reviews

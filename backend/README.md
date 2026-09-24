@@ -74,9 +74,9 @@ All routes are under `/api`. Auth-required routes take `Authorization: Bearer <t
   `summarize_and_classify_paper`). A paper Gemini can't classify (no API key, or every model
   fails) is saved uncategorized rather than guessed. → the saved paper.
 - `POST /papers/citation/review` `{input}` (auth required) - queues a citation/URL the search
-  above couldn't resolve for manual admin review (`paper_reviews.py`), per the spec's fallback
-  for when automated matching fails outright. No admin UI reads this queue yet - it's a flat
-  JSON file, read by hand for now.
+  above couldn't resolve for manual admin review (`paper_reviews.py`, stored in MongoDB's
+  `paper_reviews` collection), per the spec's fallback for when automated matching fails
+  outright. No admin UI reads this queue yet - it's queried directly for now.
 
 **Authors & journals**
 - `GET /authors/{author_id}` - an author's name and every paper of theirs.
@@ -110,12 +110,13 @@ All routes are under `/api`. Auth-required routes take `Authorization: Bearer <t
 
 ## Storage
 
-MongoDB (`db.py`) holds the `papers` collection - the only real collection. Accounts, sessions,
-bookmarks, interests, profile data, and pending manual-review submissions are all flat JSON files
-(`auth.py`, `bookmarks.py`, `interests.py`, `profile.py`, `paper_reviews.py`), matching each
-other's pattern rather than adding a second database. **These JSON files hold real account data
-(password hashes, live session tokens) and must never be committed** - see `.gitignore` and
-`SECURITY_TODO.md`.
+MongoDB (`db.py`) holds two collections: `papers` and `paper_reviews` (`paper_reviews.py`'s
+manual-review queue - a review is a review of a paper, so it's a document type alongside
+`papers` rather than another flat JSON file). Accounts, sessions, bookmarks, interests, and
+profile data are all flat JSON files instead (`auth.py`, `bookmarks.py`, `interests.py`,
+`profile.py`), matching each other's account-scoped pattern. **These JSON files hold real
+account data (password hashes, live session tokens) and must never be committed** - see
+`.gitignore` and `SECURITY_TODO.md`.
 
 ## Configuration
 
