@@ -1,156 +1,153 @@
-# PaperBites: Open Access Research Paper to TikTok Video Converter
+# PaperBites Backend
 
-PaperBites is an application that converts academic research papers into engaging short-form videos suitable for platforms like TikTok, Instagram, and YouTube. It uses AI to extract key information and generate visually appealing videos with voiceovers and relevant visuals.
+A Starlette (ASGI) API that fetches recent, open-access research papers from free academic APIs,
+stores them in MongoDB, and serves them - along with accounts, bookmarks, interests, and profile
+data - to the PaperBites mobile app.
 
-## Important Updates
+There is no video-generation pipeline anymore. This backend used to convert papers into
+narrated short-form videos (PDF download → OCR → summarize → compose video → upload to
+Cloudinary); that entire pipeline (`video/`, `utils/cloudinary_storage.py`, the CLI's
+`search`/`id`/`pdf` subcommands) was removed. The add-paper-by-citation feature (see API below)
+uses `paper/citation.py`, which is new and reuses `paper/latest.py`'s Crossref/Unpaywall/
+enrichment helpers directly rather than the older `paper/search.py` (Google Scholar-scraping-
+based query search) - `search.py`, `download.py`, and `extraction.py` predate that pivot and
+remain dormant; nothing currently calls them.
 
-This version includes significant improvements to the paper retrieval system:
-- Integration with multiple free, open APIs (arXiv, OpenAlex, Semantic Scholar)
-- Proper license checking for public display
-- Enhanced error handling
-- Better fallback mechanisms
-
-## Installation
-
-### Prerequisites
-
-- Python 3.7 or higher
-- FFmpeg (for video processing)
-- Tesseract OCR (for PDF text extraction)
-
-### Install from source
+## Setup
 
 ```bash
-# Clone the repository
-git clone https://github.com/yourusername/paperbites.git
-cd paperbites
-
-# Install dependencies
 pip install -r requirements.txt
-
-# Install the package
-pip install -e .
+cp .env.example .env
 ```
 
-## Usage
+Fill in `.env` with your own values (see `.env.example` for the full list - Mongo connection
+string, Pexels/Gemini/Semantic Scholar API keys, contact email). Anything set in `.env`
+overrides the matching value in `config.json` (see `config.py`'s `load_env()`); `config.json`'s
+own copies of these are only a fallback for setups without a `.env` yet.
 
-### Command Line Interface
+If you hit `ModuleNotFoundError: No module named 'langdetect'` on an older `pip`/`setuptools`,
+pin `pip install "setuptools<60"` first, then retry - `langdetect`'s packaging predates modern
+build isolation.
 
-Search for papers and create videos:
-
-```bash
-# Search for papers on a topic and convert to videos
-python cli.py search "machine learning" --papers 3
-
-# Process a specific paper by arXiv ID
-python cli.py id 2104.08653
-
-# Process a specific paper by DOI
-python cli.py id 10.1145/3458817.3476195
-
-# Process a local PDF
-python cli.py pdf my_paper.pdf
-```
-
-### API Server
-
-Start the API server to browse and search for papers:
+## Running
 
 ```bash
-# Start the server
+# Start the API server (serves on :8000)
 python api_server.py
+
+# Fetch/refresh papers into MongoDB - run this at least once before the app has anything to show
+python cli.py fetch-latest [--category "Physics"] [--days 7] [--limit 20] [--sort-by date|citations]
 ```
 
-The API will be available at http://localhost:8000 with the following endpoints:
+`fetch-latest` with no `--category` fetches all categories in `paper/latest.py`'s `CATEGORIES`
+list. Semantic Scholar's anonymous rate limit is low and easy to exhaust across all 8 categories
+in one run - set `PAPERBITES_SEMANTIC_SCHOLAR_KEY` in `.env` (free, see `.env.example`) if you
+hit repeated rate-limit warnings. If `PAPERBITES_GEMINI_KEY` is set, description summarization
+round-robins across several Gemini models (`paper/summarize.py`'s `_MODEL_NAMES`, overridable
+via `PAPERBITES_GEMINI_MODELS`) so no single model's free-tier cap gates the whole run - a model
+that's rate-limited or invalid is skipped immediately in favor of the next one, with no delay.
+Each paper is also embedded exactly once here (`paper/embeddings.py`, one Gemini embedding call
+per paper - not repeated on later reloads/views) for `GET /papers/search`'s semantic search.
 
-- GET `/api/videos` - List all videos
-- GET `/api/videos/{video_id}` - Get a specific video
-- GET `/api/topics` - List popular topics
-- GET `/api/search?query=keyword` - Search for papers
-- GET `/api/paper/{paper_id}` - Get paper information
+## API
+
+All routes are under `/api`. Auth-required routes take `Authorization: Bearer <token>`.
+
+**Papers**
+- `GET /papers?category=&limit=&offset=` - the feed, newest first. When authenticated and the
+  user has chosen interests, hard-filtered to papers whose categories match (see Interests below).
+- `GET /papers/search?q=&limit=` - semantic search over papers embedded at ingestion
+  (`paper/embeddings.py`), ranked by cosine similarity to the query. Brute-force in Python at
+  this app's corpus size; unrelated to and not blended with the Interests hard filter above (see
+  `paper/embeddings.py`'s module docstring for the scope decision behind that). A paper embedded
+  before this feature existed (or one Gemini couldn't embed) is simply absent from results, not
+  an error.
+- `GET /papers/{id}` - a single paper.
+- `GET /categories` - the fixed list of paper categories.
+- `POST /papers/citation/search` `{citation}` (auth required) - resolves a raw pasted citation
+  (MLA, APA, or any other style) OR a direct link to the paper's page (e.g. an open-access
+  journal's article URL) into candidate matches, each with a confirmed open-access link resolved
+  via Unpaywall. A citation is fuzzy-matched against Crossref; a URL is instead scraped for its
+  `citation_*` `<meta>` tags (the Highwire/Google-Scholar metadata standard most publishers embed)
+  to find a DOI - either from the tag itself or embedded directly in the URL - and looked up
+  exactly against Crossref, falling back to a bibliographic search on the page's title/authors if
+  no DOI can be found anywhere. → `{candidates: [{doi, title, authors, journal, published_date,
+  url, is_open_access}, ...]}`
+- `POST /papers/citation/confirm` (auth required) - takes one candidate from the search above,
+  runs it through the same enrichment pipeline `fetch-latest` uses (abstract fallback,
+  translation, card image), stores it, and auto-bookmarks it for the caller. Unlike
+  `fetch-latest` (which already knows a paper's category from the search query that found it),
+  this path has no category to start from - Gemini picks one from the fixed `/categories` list
+  in the same call that generates the summary (`paper/summarize.py`'s
+  `summarize_and_classify_paper`). A paper Gemini can't classify (no API key, or every model
+  fails) is saved uncategorized rather than guessed. → the saved paper.
+- `POST /papers/citation/review` `{input}` (auth required) - queues a citation/URL the search
+  above couldn't resolve for manual admin review (`paper_reviews.py`, stored in MongoDB's
+  `paper_reviews` collection), per the spec's fallback for when automated matching fails
+  outright. No admin UI reads this queue yet - it's queried directly for now.
+- `POST /papers/citation/scan` (auth required, multipart form with an `image` file) -
+  **experimental**: extracts a citation from a photo of a paper's title page or a poster via
+  Gemini vision (`paper/summarize.py`'s `extract_citation_text_from_image`), then resolves it
+  exactly like the `/citation/search` above (so it also gets URL-embedded-DOI/meta-tag handling
+  for free if the extracted text happens to be a URL). Tries a fixed, accuracy-first model order
+  (`gemini-2.5-pro` → `gemini-2.5-flash` → `gemini-2.5-flash-lite`, overridable via
+  `PAPERBITES_GEMINI_IMAGE_MODELS`) rather than the round-robin `fetch-latest` uses - this is one
+  interactive photo per request, not bulk throughput, so read accuracy matters more than spreading
+  load. No QR-code decoding - that would need a system `zbar` library this deployment doesn't
+  assume is installed - so this only helps when Gemini can read the title/authors directly off
+  the image. → `{candidates: [...], extracted:
+  "<citation-like string>" | null}`
+
+**Authors & journals**
+- `GET /authors/{author_id}` - an author's name and every paper of theirs.
+- `GET /journals/{journal_name}` - every paper published in that journal/venue.
+
+**Auth**
+- `POST /auth/signup` `{email, password}` → `{token, user}`
+- `POST /auth/login` `{email, password}` → `{token, user}`
+- `POST /auth/logout` (auth required)
+- `GET /auth/me` (auth required) → `{user}`
+
+**Bookmarks** (auth required)
+- `GET /bookmarks` - full paper objects for everything the user has bookmarked.
+- `POST /bookmarks` `{video_id}` - bookmark a paper (the field is still named `video_id` on
+  disk and over the wire - a holdover from before the app pivoted from videos to papers, kept
+  as-is to avoid a data migration).
+- `DELETE /bookmarks/{video_id}`
+
+**Interests** (auth required)
+- `GET /interests` → `{interests: [...]}`
+- `POST /interests` `{interests: [...]}` - replaces the user's chosen topics wholesale.
+
+**Profile** (auth required)
+- `GET /profile` → `{tier1, tier2}`
+- `PUT /profile/tier1` `{fields}` - cache-safe fields (`field_of_study`, `education_level`,
+  `general_interests`, `location`).
+- `PUT /profile/tier2` `{fields, consent}` - sensitive-context fields (`age`, `gender`, `sex`,
+  `location_precise`, `mental_disabilities`, `physical_disabilities`, `chronic_illnesses`), each
+  with its own `used_for_personalization`/`used_for_feed_relevance` consent flags. Every Tier 2
+  read/write is appended to a separate audit log.
+
+## Storage
+
+MongoDB (`db.py`) holds two collections: `papers` and `paper_reviews` (`paper_reviews.py`'s
+manual-review queue - a review is a review of a paper, so it's a document type alongside
+`papers` rather than another flat JSON file). Accounts, sessions, bookmarks, interests, and
+profile data are all flat JSON files instead (`auth.py`, `bookmarks.py`, `interests.py`,
+`profile.py`), matching each other's account-scoped pattern. **These JSON files hold real
+account data (password hashes, live session tokens) and must never be committed** - see
+`.gitignore` and `SECURITY_TODO.md`.
 
 ## Configuration
 
-Edit `config.json` to customize behavior:
+`config.py` merges, in order: hardcoded defaults → `config.json` → environment variables
+(including a gitignored `.env`, loaded via `python-dotenv`). See `.env.example` for what to set.
 
-```json
-{
-  "api": {
-    "pexels_key": "YOUR_PEXELS_API_KEY",
-    "email": "your-email@example.com"
-  },
-  "paper_search": {
-    "sources": [
-      "arxiv",
-      "openalex",
-      "semantic_scholar"
-    ],
-    "max_papers": 3,
-    "open_access_only": true
-  },
-  "video": {
-    "formats": {
-      "tiktok": {"width": 1080, "height": 1920},
-      "instagram": {"width": 1080, "height": 1080},
-      "youtube": {"width": 1920, "height": 1080}
-    },
-    "default_format": "tiktok",
-    "fps": 30
-  },
-  "storage": {
-    "cloudinary": {
-      "cloud_name": "",
-      "api_key": "",
-      "api_secret": ""
-    }
-  },
-  "paths": {
-    "temp_dir": "temp_assets",
-    "output_dir": "videos",
-    "tesseract_cmd": "path/to/tesseract" 
-  }
-}
-```
+## Not built
 
-## API Requirements
-
-1. **Email for APIs**: The application uses APIs that benefit from having a valid email address for "polite pool" access. You must provide a valid email address in the config file.
-
-2. **All APIs are Free and Unrestricted**: This version uses only free, unrestricted APIs that do not have commercial limitations:
-   - arXiv API (academic papers in physics, math, CS, etc.)
-   - OpenAlex API (comprehensive open access scholarly materials)
-   - Semantic Scholar API (AI-enhanced research paper access)
-
-3. **Pexels API Key (Optional)**: For stock videos and images, obtain a free API key from [Pexels](https://www.pexels.com/api/).
-
-## License Compliance
-
-PaperBites is designed to respect copyright and licensing:
-
-1. It only processes and displays papers with appropriate open access licenses that allow redistribution.
-2. Papers are checked against the following licenses:
-   - Creative Commons (CC-BY, CC0, CC-BY-SA)
-   - Open Access specific licenses
-   - Public Domain
-   - arXiv default license
-
-For public display, proper attribution is always included.
-
-## Supported Paper IDs
-
-The system can retrieve papers using multiple ID formats:
-- arXiv IDs (e.g., "2104.08653")
-- DOIs (e.g., "10.1145/3458817.3476195")
-- Semantic Scholar IDs (with "SS-" prefix)
-- OpenAlex IDs (usually starting with "W")
-
-## Troubleshooting
-
-If you encounter issues:
-
-1. Check that all dependencies are installed
-2. Verify that FFmpeg and Tesseract are in your PATH
-3. Ensure your email is correctly set in `config.json`
-4. Check the logs in the `logs` directory
-
-For more help, please open an issue on GitHub.
+Leveled reading (Original/Simpler/Simplest generation and caching), the embedding-based
+interest/relevance matching described as future work, screenshot/poster matching, the rating
+widget, and age-gating/parental-consent for Tier 2 profile data. A
+per-paper chat endpoint (`paper/chat.py`) exists but has no route registered in `api_server.py`
+yet, and its frontend counterpart imports a function that doesn't exist in the frontend's API
+client - both are dormant, not reachable.

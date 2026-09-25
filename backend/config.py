@@ -4,6 +4,14 @@ import json
 from typing import Any, Dict, Optional
 import logging
 
+from dotenv import load_dotenv
+
+# Loads backend/.env (gitignored) into the process environment, if present, before any
+# environment variable is read below - lets secrets (Mongo connection string, API keys) live
+# outside the committed config.json instead of in plaintext. A missing .env is not an error;
+# load_dotenv() is a no-op in that case and config.json's own values are used as-is.
+load_dotenv()
+
 class Config:
     """
     Configuration manager with defaults, file loading and environment variables.
@@ -11,18 +19,13 @@ class Config:
     
     DEFAULT_CONFIG = {
         "api": {
-            "pexels_key": "",
-            "email": "user@example.com"  # For Unpaywall API
-        },
-        "video": {
-            "formats": {
-                "tiktok": {"width": 1080, "height": 1920},
-                "instagram": {"width": 1080, "height": 1080},
-                "youtube": {"width": 1920, "height": 1080}
-            },
-            "default_format": "tiktok",
-            "fps": 30,
-            "quality": "medium"
+            "email": "user@example.com",  # For Unpaywall API
+            "pexels_key": "",  # For paper card thumbnail images (paper/latest.py)
+            "semantic_scholar_key": "",  # Optional - raises Semantic Scholar's low anonymous rate limit
+            "gemini_key": "",  # For card description summarization (paper/summarize.py)
+            "gemini_models": "",  # Optional comma-separated override of paper/summarize.py's model list
+            "gemini_image_models": "",  # Optional comma-separated override of the add-paper-by-photo model list
+            "gemini_embedding_model": ""  # Optional override of paper/embeddings.py's embedding model
         },
         "paper": {
             "max_papers": 3,
@@ -32,22 +35,8 @@ class Config:
                 "min_length": 30
             }
         },
-        "storage": {
-            "s3": {
-                "bucket_name": "paperbites-videos",
-                "region": "us-east-1",
-                "access_key_id": "",
-                "secret_access_key": ""
-            },
-            "cloudinary": {
-                "cloud_name": "dd9tsotfz",
-                "api_key": "453877466769253",
-                "api_secret": "cibm0X3UMWkTdRaRzH5Xjz7i554"
-            }
-        },
         "paths": {
             "temp_dir": "temp_assets",
-            "output_dir": "videos",
             "tesseract_cmd": ""
         }
     }
@@ -76,22 +65,38 @@ class Config:
                 logging.error(f"Error loading config file: {e}")
     
     def load_env(self) -> None:
-        """Override configuration with environment variables."""
-        # API keys
-        if os.getenv("PEXELS_API_KEY"):
-            self.set("api.pexels_key", os.getenv("PEXELS_API_KEY"))
-            
+        """Override configuration with environment variables (including a gitignored .env file
+        loaded by load_dotenv() above). Runs after load_file(), so these win over config.json -
+        the intended way to supply secrets without committing them."""
+        # Secrets - keep these out of config.json; set them in backend/.env instead (see
+        # .env.example)
+        if os.getenv("PAPERBITES_MONGODB_URI"):
+            self.set("storage.mongodb.connection_string", os.getenv("PAPERBITES_MONGODB_URI"))
+        if os.getenv("PAPERBITES_MONGODB_DB"):
+            self.set("storage.mongodb.database_name", os.getenv("PAPERBITES_MONGODB_DB"))
+        if os.getenv("PAPERBITES_PEXELS_KEY"):
+            self.set("api.pexels_key", os.getenv("PAPERBITES_PEXELS_KEY"))
+        if os.getenv("PAPERBITES_SEMANTIC_SCHOLAR_KEY"):
+            self.set("api.semantic_scholar_key", os.getenv("PAPERBITES_SEMANTIC_SCHOLAR_KEY"))
+        if os.getenv("PAPERBITES_GEMINI_KEY"):
+            self.set("api.gemini_key", os.getenv("PAPERBITES_GEMINI_KEY"))
+        if os.getenv("PAPERBITES_GEMINI_MODELS"):
+            self.set("api.gemini_models", os.getenv("PAPERBITES_GEMINI_MODELS"))
+        if os.getenv("PAPERBITES_GEMINI_IMAGE_MODELS"):
+            self.set("api.gemini_image_models", os.getenv("PAPERBITES_GEMINI_IMAGE_MODELS"))
+        if os.getenv("PAPERBITES_GEMINI_EMBEDDING_MODEL"):
+            self.set("api.gemini_embedding_model", os.getenv("PAPERBITES_GEMINI_EMBEDDING_MODEL"))
+        if os.getenv("PAPERBITES_EMAIL"):
+            self.set("api.email", os.getenv("PAPERBITES_EMAIL"))
+
         # OCR configuration
         if os.getenv("TESSERACT_CMD"):
             self.set("paths.tesseract_cmd", os.getenv("TESSERACT_CMD"))
-            
+
         # Output directories
         if os.getenv("PAPERBITES_TEMP_DIR"):
             self.set("paths.temp_dir", os.getenv("PAPERBITES_TEMP_DIR"))
-            
-        if os.getenv("PAPERBITES_OUTPUT_DIR"):
-            self.set("paths.output_dir", os.getenv("PAPERBITES_OUTPUT_DIR"))
-            
+
     def get(self, key_path: str, default: Any = None) -> Any:
         """
         Get configuration value using dot notation.

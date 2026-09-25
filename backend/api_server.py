@@ -5,314 +5,571 @@ from starlette.middleware import Middleware
 from starlette.middleware.cors import CORSMiddleware
 import uvicorn
 import os
-import json
-import glob
 from typing import List, Dict, Optional
-from starlette.requests import Request
-from bson import ObjectId
-from bson.errors import InvalidId
 
-from db import get_db
-from paper.latest import CATEGORIES
-from paper.chat import ask_about_paper
-from paper.resolve import resolve_paper
+import bookmarks as bookmarks_store
+import interests as interests_store
+import profile as profile_store
+import paper_reviews as paper_reviews_store
+import auth
+from utils.text import clean_abstract
 
-# Directory where video metadata is stored
-VIDEOS_DIR = os.environ.get("PAPERBITES_VIDEOS_DIR", "videos")
 
-def get_all_videos():
-    """Get metadata for all videos."""
-    videos = []
-    
-    # Find all JSON metadata files
-    metadata_files = glob.glob(os.path.join(VIDEOS_DIR, "*.json"))
-    
-    for metadata_file in metadata_files:
-        try:
-            with open(metadata_file, 'r') as f:
-                metadata = json.load(f)
-                # Only include videos that can be publicly displayed
-                if metadata.get("can_display_publicly", False):
-                    videos.append(metadata)
-        except Exception as e:
-            print(f"Error reading metadata from {metadata_file}: {e}")
-    
-    # Sort by timestamp (newest first)
-    videos.sort(key=lambda x: x.get("timestamp", 0), reverse=True)
-    
-    return videos
+def _serialize_paper(doc: Dict) -> Dict:
+    """Convert a MongoDB paper document into a JSON-safe dict with a plain string id.
 
-async def list_videos(request):
-    """Get a list of videos with optional filtering."""
-    videos = get_all_videos()
-    
-    # Get query parameters
-    limit = int(request.query_params.get("limit", "50"))
-    offset = int(request.query_params.get("offset", "0"))
-    keyword = request.query_params.get("keyword")
-    public_only = request.query_params.get("public_only", "True").lower() == "true"
-    
-    # Filter by public display permissions
-    if public_only:
-        videos = [v for v in videos if v.get("can_display_publicly", False)]
-    
-    # Filter by keyword if provided
-    if keyword:
-        keyword = keyword.lower()
-        filtered_videos = []
-        
-        for video in videos:
-            # Check title
-            if keyword in video.get("title", "").lower():
-                filtered_videos.append(video)
-                continue
-                
-            # Check keywords
-            video_keywords = [k.lower() for k in video.get("keywords", [])]
-            if any(keyword in k for k in video_keywords):
-                filtered_videos.append(video)
-                continue
-                
-            # Check summary
-            if keyword in video.get("summary", "").lower():
-                filtered_videos.append(video)
-                continue
-        
-        videos = filtered_videos
-    
-    # Apply pagination
-    paginated_videos = videos[offset:offset + limit]
-    
-    return JSONResponse(paginated_videos)
+    Also cleans `abstract`/`description` here (not just at ingestion in paper/latest.py) so
+    papers stored before clean_abstract() existed display cleanly too, without needing a
+    re-fetch: strips a leading "Abstract" label and inline structured-abstract section headers
+    ("Purpose:", "Findings:", etc.).
 
-async def get_video(request):
-    """Get metadata for a specific video."""
-    video_id = request.path_params["video_id"]
-    videos = get_all_videos()
-    
-    for video in videos:
-        if video.get("id") == video_id:
-            return JSONResponse(video)
-    
-    return JSONResponse({"detail": "Video not found"}, status_code=404)
-
-async def get_topics(request):
-    """Get a list of all topics/keywords across videos."""
-    videos = get_all_videos()
-    
-    # Extract all keywords from videos
-    all_keywords = []
-    for video in videos:
-        all_keywords.extend(video.get("keywords", []))
-    
-    # Count occurrences of each keyword
-    from collections import Counter
-    keyword_counts = Counter(all_keywords)
-    
-    # Return keywords with at least 2 occurrences, sorted by frequency
-    popular_keywords = [kw for kw, count in keyword_counts.most_common() if count >= 2]
-    
-    return JSONResponse(popular_keywords)
-
-def serialize_paper(paper: Dict) -> Dict:
-    """Shape a stored paper document into the card format the frontend expects.
-
-    Description is a <=200 word Gemini-generated plain-English summary of the paper (see
-    paper/summarize.py), not the raw abstract - academic abstracts are dense and, for survey
-    papers especially, long enough to feel cramped even with unlimited scroll room. Falls back to
-    the raw abstract if summarization wasn't available when the paper was fetched.
-    `relevance` is always "N/A" for now: there is no account system or profile-attribute
-    collection built yet, so there is no real user info to personalize against.
+    Papers fetched before the description/summarization step existed (or a source that never
+    got a Gemini summary) may have no `description` field at all - fall back to the raw
+    `abstract` here so every consumer of this API gets a usable description without each one
+    having to remember the fallback itself.
     """
-    categories = paper.get("categories") or []
-    description = (paper.get("description") or paper.get("abstract") or "").strip()
-    if not description:
-        description = "No description available yet."
-
-    return {
-        "id": str(paper["_id"]),
-        "title": paper.get("title", "Untitled"),
-        "authors": paper.get("authors", []),
-        "description": description,
-        "citation_count": paper.get("citation_count", 0),
-        "published_date": paper.get("published_date"),
-        "journal": paper.get("journal"),
-        "publication_type": paper.get("publication_type"),
-        "is_open_access": paper.get("is_open_access"),
-        "language": paper.get("language", "en"),
-        "image_url": paper.get("image_url"),
-        "url": paper.get("url"),
-        "doi": paper.get("doi"),
-        "category": categories[0] if categories else None,
-        "relevance": "N/A",
-    }
+    doc = dict(doc)
+    doc["id"] = str(doc.pop("_id"))
+    doc.pop("embedding", None)  # a 768-float vector the client never uses - don't ship it
+    if doc.get("abstract"):
+        doc["abstract"] = clean_abstract(doc["abstract"])
+    doc["description"] = clean_abstract(doc.get("description")) or doc.get("abstract", "")
+    return doc
 
 
-async def get_categories(request):
-    """Get the fixed list of categories papers are fetched for."""
-    return JSONResponse(CATEGORIES)
+def get_all_papers(category: Optional[str] = None) -> List[Dict]:
+    """Fetch papers (fetched via `cli.py fetch-latest`, no video generation involved) from
+    MongoDB, newest first. Returns [] if MongoDB isn't reachable/configured rather than
+    raising, so a broken DB doesn't take down the whole API - callers see an empty feed."""
+    try:
+        import db
+        query = {"categories": category} if category else {}
+        cursor = db.get_db().papers.find(query).sort("published_date", -1)
+        return [_serialize_paper(doc) for doc in cursor]
+    except Exception as e:
+        print(f"Error reading papers from MongoDB: {e}")
+        return []
+
+
+def get_paper_by_id(paper_id: str) -> Optional[Dict]:
+    try:
+        import db
+        from bson import ObjectId
+        doc = db.get_db().papers.find_one({"_id": ObjectId(paper_id)})
+        return _serialize_paper(doc) if doc else None
+    except Exception as e:
+        print(f"Error reading paper {paper_id} from MongoDB: {e}")
+        return None
+
+
+def get_papers_by_author(author_id: str) -> Optional[Dict]:
+    """All papers by an author id (e.g. 'semantic_scholar:12345'), newest first."""
+    try:
+        import db
+        cursor = db.get_db().papers.find({"authors.id": author_id}).sort("published_date", -1)
+        papers = [_serialize_paper(doc) for doc in cursor]
+        if not papers:
+            return None
+        name = next(
+            (a["name"] for p in papers for a in p.get("authors", []) if a.get("id") == author_id),
+            author_id,
+        )
+        return {"id": author_id, "name": name, "papers": papers}
+    except Exception as e:
+        print(f"Error reading author {author_id} from MongoDB: {e}")
+        return None
+
+
+def get_papers_by_journal(journal_name: str) -> Optional[Dict]:
+    """All papers published in a given journal/venue, newest first."""
+    try:
+        import db
+        cursor = db.get_db().papers.find({"journal": journal_name}).sort("published_date", -1)
+        papers = [_serialize_paper(doc) for doc in cursor]
+        if not papers:
+            return None
+        return {"name": journal_name, "papers": papers}
+    except Exception as e:
+        print(f"Error reading journal '{journal_name}' from MongoDB: {e}")
+        return None
+
+
+def get_authenticated_user_id(request) -> Optional[str]:
+    """Resolve the requesting user from an 'Authorization: Bearer <token>' header."""
+    header = request.headers.get("authorization", "")
+    if not header.lower().startswith("bearer "):
+        return None
+    token = header[7:].strip()
+    return auth.get_user_id_for_token(token)
 
 
 async def list_papers(request):
-    """Get a list of latest papers, newest first, optionally filtered by category."""
-    limit = int(request.query_params.get("limit", "20"))
+    """Get a list of papers, fetched via `cli.py fetch-latest` (no video generation).
+
+    When the request is authenticated and the user has chosen interests, the feed is hard-filtered
+    to only papers whose categories intersect those interests - a deliberate hard exclusion, not
+    a ranking signal (see search_papers_semantically below for the embedding-based feature
+    instead). A user with no interests set (skipped onboarding, or hasn't visited Interests yet)
+    sees everything, unfiltered.
+    """
+    limit = int(request.query_params.get("limit", "50"))
     offset = int(request.query_params.get("offset", "0"))
     category = request.query_params.get("category")
 
-    db = get_db()
-    query = {"categories": category} if category else {}
-    cursor = db.papers.find(query).sort("published_date", -1).skip(offset).limit(limit)
+    papers = get_all_papers(category)
 
-    papers =  JSONResponse([serialize_paper(paper) for paper in cursor])
-    return papers
+    user_id = get_authenticated_user_id(request)
+    if user_id:
+        user_interests = set(interests_store.get_interests(user_id))
+        if user_interests:
+            papers = [p for p in papers if user_interests.intersection(p.get("categories") or [])]
 
-async def resolve_saved_paper(request):
-    """Resolve a citation string or paper link/DOI into a full paper record and upsert it.
+    return JSONResponse(papers[offset:offset + limit])
 
-    Backs the "Saved" tab's add-by-citation-or-link flow. Returns the same serialized shape as
-    GET /api/papers/{id} so the frontend can save its id locally right away. Route must be
-    registered before /api/papers/{paper_id} - otherwise Starlette would match "resolve" as a
-    paper_id there instead.
+
+async def search_papers_semantically(request):
+    """Semantic search over papers embedded at ingestion (paper/embeddings.py), via cosine
+    similarity. Brute-force in Python over every embedded paper - fine at this app's corpus
+    size (a fetch-latest feed, not a web-scale index); MongoDB Atlas's native $vectorSearch is a
+    drop-in upgrade later if that stops being true. The query is embedded once per request (a
+    deliberate search action), separate from the hard interests filter above rather than
+    blending into it.
     """
+    query = (request.query_params.get("q") or "").strip()
+    if not query:
+        return JSONResponse({"detail": "q is required"}, status_code=400)
+
+    limit = int(request.query_params.get("limit", "20"))
+
+    try:
+        from paper.embeddings import embed_query, cosine_similarity
+    except ImportError as e:
+        print(f"Semantic search unavailable, paper.embeddings failed to import: {e}")
+        return JSONResponse({"detail": "Semantic search is temporarily unavailable"}, status_code=503)
+
+    query_vector = await embed_query(query)
+    if not query_vector:
+        return JSONResponse({"detail": "Semantic search is temporarily unavailable"}, status_code=503)
+
+    try:
+        import db
+        cursor = db.get_db().papers.find({"embedding": {"$exists": True}})
+        scored = [
+            (cosine_similarity(query_vector, doc.get("embedding") or []), doc)
+            for doc in cursor
+        ]
+    except Exception as e:
+        print(f"Error reading papers for semantic search from MongoDB: {e}")
+        return JSONResponse([])
+
+    scored.sort(key=lambda pair: pair[0], reverse=True)
+    top_papers = [doc for _, doc in scored[:limit]]
+    return JSONResponse([_serialize_paper(doc) for doc in top_papers])
+
+
+async def get_interests(request):
+    """Get the current user's chosen topic interests."""
+    user_id = get_authenticated_user_id(request)
+    if not user_id:
+        return JSONResponse({"detail": "Authentication required"}, status_code=401)
+
+    return JSONResponse({"interests": interests_store.get_interests(user_id)})
+
+
+async def set_interests(request):
+    """Replace the current user's chosen topic interests."""
+    user_id = get_authenticated_user_id(request)
+    if not user_id:
+        return JSONResponse({"detail": "Authentication required"}, status_code=401)
+
     try:
         body = await request.json()
     except Exception:
         return JSONResponse({"detail": "Invalid JSON body"}, status_code=400)
 
-    query = (body.get("query") or "").strip()
-    if not query:
-        return JSONResponse({"detail": "'query' is required"}, status_code=400)
+    interests = body.get("interests")
+    if not isinstance(interests, list) or not all(isinstance(i, str) for i in interests):
+        return JSONResponse({"detail": "interests must be a list of strings"}, status_code=400)
 
-    paper = await resolve_paper(query)
-    if not paper:
-        return JSONResponse(
-            {"detail": "Could not find a paper matching that citation or link"}, status_code=404
-        )
+    interests_store.set_interests(user_id, interests)
+    return JSONResponse({"interests": interests_store.get_interests(user_id)})
 
-    db = get_db()
-    db.papers.update_one(
-        {"source": paper["source"], "source_id": paper["source_id"]},
-        {"$set": paper},
-        upsert=True,
-    )
-    stored = db.papers.find_one({"source": paper["source"], "source_id": paper["source_id"]})
-    return JSONResponse(serialize_paper(stored))
+
+async def get_profile(request):
+    """Get the current user's Tier 1 (cache-safe) and Tier 2 (sensitive-context) profile fields."""
+    user_id = get_authenticated_user_id(request)
+    if not user_id:
+        return JSONResponse({"detail": "Authentication required"}, status_code=401)
+
+    return JSONResponse({
+        "tier1": profile_store.get_tier1(user_id),
+        "tier2": profile_store.get_tier2(user_id),
+    })
+
+
+async def set_profile_tier1(request):
+    """Update the current user's Tier 1 (cache-safe) profile fields."""
+    user_id = get_authenticated_user_id(request)
+    if not user_id:
+        return JSONResponse({"detail": "Authentication required"}, status_code=401)
+
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"detail": "Invalid JSON body"}, status_code=400)
+
+    fields = body.get("fields")
+    if not isinstance(fields, dict):
+        return JSONResponse({"detail": "fields must be an object"}, status_code=400)
+
+    try:
+        updated = profile_store.set_tier1(user_id, fields)
+    except ValueError as e:
+        return JSONResponse({"detail": str(e)}, status_code=400)
+
+    return JSONResponse({"tier1": updated})
+
+
+async def set_profile_tier2(request):
+    """Update the current user's Tier 2 (sensitive-context) profile fields and their per-field
+    consent flags."""
+    user_id = get_authenticated_user_id(request)
+    if not user_id:
+        return JSONResponse({"detail": "Authentication required"}, status_code=401)
+
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"detail": "Invalid JSON body"}, status_code=400)
+
+    fields = body.get("fields") or {}
+    consent = body.get("consent") or {}
+    if not isinstance(fields, dict) or not isinstance(consent, dict):
+        return JSONResponse({"detail": "fields and consent must be objects"}, status_code=400)
+
+    try:
+        updated = profile_store.set_tier2(user_id, fields, consent)
+    except ValueError as e:
+        return JSONResponse({"detail": str(e)}, status_code=400)
+
+    return JSONResponse({"tier2": updated})
 
 
 async def get_paper(request):
     """Get a single paper by id."""
-    paper_id = request.path_params["paper_id"]
-
-    try:
-        object_id = ObjectId(paper_id)
-    except InvalidId:
-        return JSONResponse({"detail": "Paper not found"}, status_code=404)
-
-    db = get_db()
-    paper = db.papers.find_one({"_id": object_id})
-
+    paper = get_paper_by_id(request.path_params["paper_id"])
     if not paper:
         return JSONResponse({"detail": "Paper not found"}, status_code=404)
+    return JSONResponse(paper)
 
-    return JSONResponse(serialize_paper(paper))
+
+async def get_author(request):
+    """Get an author's name and every paper of theirs in PaperBites."""
+    result = get_papers_by_author(request.path_params["author_id"])
+    if not result:
+        return JSONResponse({"detail": "Author not found"}, status_code=404)
+    return JSONResponse(result)
 
 
-async def chat_about_paper(request):
-    """Answer a question about a specific paper using the Gemini-backed chat agent.
+async def get_journal(request):
+    """Get every paper published in a given journal/venue."""
+    result = get_papers_by_journal(request.path_params["journal_name"])
+    if not result:
+        return JSONResponse({"detail": "Journal not found"}, status_code=404)
+    return JSONResponse(result)
 
-    Body: {"question": str, "history": [{"role": "user"|"assistant", "content": str}, ...]}.
-    History is optional and is entirely client-supplied - there is no server-side conversation
-    state, so the client must resend prior turns to keep context across a multi-turn chat.
-    """
-    paper_id = request.path_params["paper_id"]
 
+# Mirrors paper.latest.CATEGORIES. Importing that module pulls in its heavy fetch-pipeline
+# dependencies (aiohttp, langdetect) just to read a static list - if those aren't installed
+# in this deployment, fall back to this copy rather than 500ing on a trivial lookup.
+_FALLBACK_CATEGORIES = [
+    "Artificial Intelligence", "Medicine", "Physics", "Biology",
+    "Psychology", "Climate Science", "Economics", "Neuroscience",
+]
+
+
+async def get_categories(request):
+    """Get the fixed list of paper categories used both for fetching and for filtering."""
     try:
-        object_id = ObjectId(paper_id)
-    except InvalidId:
-        return JSONResponse({"detail": "Paper not found"}, status_code=404)
+        from paper.latest import CATEGORIES
+        return JSONResponse(CATEGORIES)
+    except ImportError as e:
+        print(f"Falling back to hardcoded categories, paper.latest failed to import: {e}")
+        return JSONResponse(_FALLBACK_CATEGORIES)
 
-    db = get_db()
-    paper = db.papers.find_one({"_id": object_id})
-    if not paper:
-        return JSONResponse({"detail": "Paper not found"}, status_code=404)
+
+async def search_paper_by_citation(request):
+    """Resolve a raw pasted citation (MLA, APA, or any other style) OR a direct link to the
+    paper's page (e.g. an open-access journal article URL) into candidate matches for the
+    confirm-dialog step of the add-paper-by-citation flow."""
+    user_id = get_authenticated_user_id(request)
+    if not user_id:
+        return JSONResponse({"detail": "Authentication required"}, status_code=401)
 
     try:
         body = await request.json()
     except Exception:
         return JSONResponse({"detail": "Invalid JSON body"}, status_code=400)
 
-    question = (body.get("question") or "").strip()
-    if not question:
-        return JSONResponse({"detail": "'question' is required"}, status_code=400)
-    history = body.get("history") or []
+    citation = (body.get("citation") or "").strip()
+    if not citation:
+        return JSONResponse({"detail": "citation is required"}, status_code=400)
 
-    answer = await ask_about_paper(paper, history, question)
-    if answer is None:
-        return JSONResponse({"detail": "Chat is not available right now"}, status_code=503)
+    try:
+        from paper.citation import search_citation
+    except ImportError as e:
+        print(f"Citation search unavailable, paper.citation failed to import: {e}")
+        return JSONResponse({"detail": "Citation search is temporarily unavailable"}, status_code=503)
 
-    return JSONResponse({"answer": answer})
-
-
-async def get_author(request):
-    """Get an author's name and all of their papers currently in the database."""
-    author_id = request.path_params["author_id"]
-
-    db = get_db()
-    papers = list(db.papers.find({"authors.id": author_id}).sort("published_date", -1))
-
-    if not papers:
-        return JSONResponse({"detail": "Author not found"}, status_code=404)
-
-    name = None
-    for paper in papers:
-        for author in paper.get("authors", []):
-            if author.get("id") == author_id:
-                name = author.get("name")
-                break
-        if name:
-            break
-
-    return JSONResponse({
-        "id": author_id,
-        "name": name,
-        "papers": [serialize_paper(paper) for paper in papers],
-    })
+    candidates = await search_citation(citation)
+    return JSONResponse({"candidates": candidates})
 
 
-async def get_journal(request):
-    """Get all papers published in a given journal/conference (matched by exact name)."""
-    journal_name = request.path_params["journal_name"]
+# Cap the uploaded image at Gemini vision's own reasonable size - mirrors
+# paper.summarize._MAX_IMAGE_BYTES so an oversized upload is rejected here (before ever reading
+# the whole thing into memory) rather than only after it's already been buffered.
+_MAX_SCAN_IMAGE_BYTES = 15 * 1024 * 1024
 
-    db = get_db()
-    papers = list(db.papers.find({"journal": journal_name}).sort("published_date", -1))
 
-    if not papers:
-        return JSONResponse({"detail": "Journal not found"}, status_code=404)
+async def scan_paper_photo(request):
+    """Experimental: extract a citation from a photo of a paper's title page or a poster (via
+    Gemini vision), then resolve it the same way a pasted citation is. No QR-code decoding - see
+    paper.summarize.extract_citation_text_from_image's docstring for why."""
+    user_id = get_authenticated_user_id(request)
+    if not user_id:
+        return JSONResponse({"detail": "Authentication required"}, status_code=401)
 
-    return JSONResponse({
-        "name": journal_name,
-        "papers": [serialize_paper(paper) for paper in papers],
-    })
+    try:
+        form = await request.form()
+    except Exception:
+        return JSONResponse({"detail": "Invalid form data"}, status_code=400)
+
+    image = form.get("image")
+    if image is None or not hasattr(image, "read"):
+        return JSONResponse({"detail": "image is required"}, status_code=400)
+
+    image_bytes = await image.read()
+    if not image_bytes:
+        return JSONResponse({"detail": "image is empty"}, status_code=400)
+    if len(image_bytes) > _MAX_SCAN_IMAGE_BYTES:
+        return JSONResponse({"detail": "image is too large"}, status_code=413)
+
+    try:
+        from paper.summarize import extract_citation_text_from_image
+        from paper.citation import search_citation
+    except ImportError as e:
+        print(f"Photo scan unavailable, imports failed: {e}")
+        return JSONResponse({"detail": "Scanning is temporarily unavailable"}, status_code=503)
+
+    extracted = await extract_citation_text_from_image(image_bytes, image.content_type or "image/jpeg")
+    if not extracted:
+        return JSONResponse({"candidates": [], "extracted": None})
+
+    candidates = await search_citation(extracted)
+    return JSONResponse({"candidates": candidates, "extracted": extracted})
+
+
+async def add_paper_by_citation(request):
+    """Save the citation-search candidate the user confirmed as a real paper (running it through
+    the same enrichment pipeline the discovery feed uses, including a Gemini-chosen category) and
+    bookmark it for the current user."""
+    user_id = get_authenticated_user_id(request)
+    if not user_id:
+        return JSONResponse({"detail": "Authentication required"}, status_code=401)
+
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"detail": "Invalid JSON body"}, status_code=400)
+
+    candidate = {
+        "doi": body.get("doi"),
+        "title": body.get("title"),
+        "authors": body.get("authors") or [],
+        "journal": body.get("journal"),
+        "published_date": body.get("published_date"),
+        "url": body.get("url"),
+        "is_open_access": body.get("is_open_access"),
+    }
+
+    try:
+        from paper.citation import add_paper_from_citation
+    except ImportError as e:
+        print(f"Adding papers unavailable, paper.citation failed to import: {e}")
+        return JSONResponse({"detail": "Adding papers is temporarily unavailable"}, status_code=503)
+
+    try:
+        paper = await add_paper_from_citation(candidate)
+    except ValueError as e:
+        return JSONResponse({"detail": str(e)}, status_code=400)
+
+    import db
+    db.upsert_papers([paper])
+    doc = db.get_db().papers.find_one({"source": paper["source"], "source_id": paper["source_id"]})
+    saved = _serialize_paper(doc)
+
+    bookmarks_store.add_bookmark(user_id, saved["id"])
+
+    return JSONResponse(saved, status_code=201)
+
+
+async def submit_paper_review(request):
+    """Queue a citation/URL the automated search (above) couldn't match, for manual admin
+    review - the spec's fallback for when add-paper matching fails outright."""
+    user_id = get_authenticated_user_id(request)
+    if not user_id:
+        return JSONResponse({"detail": "Authentication required"}, status_code=401)
+
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"detail": "Invalid JSON body"}, status_code=400)
+
+    raw_input = (body.get("input") or "").strip()
+    if not raw_input:
+        return JSONResponse({"detail": "input is required"}, status_code=400)
+
+    entry = paper_reviews_store.submit_review(user_id, raw_input)
+    return JSONResponse({"status": "ok", "id": entry["id"]}, status_code=201)
+
+
+async def list_bookmarked_videos(request):
+    """Get full metadata for every paper the current user has bookmarked."""
+    user_id = get_authenticated_user_id(request)
+    if not user_id:
+        return JSONResponse({"detail": "Authentication required"}, status_code=401)
+
+    entries = bookmarks_store.list_bookmarks(user_id)
+    saved_at_by_id = {e["video_id"]: e["saved_at"] for e in entries}
+
+    bookmarked = []
+    for content_id in saved_at_by_id:
+        paper = get_paper_by_id(content_id)
+        if paper:
+            bookmarked.append(paper)
+    bookmarked.sort(key=lambda item: saved_at_by_id[item["id"]], reverse=True)
+
+    return JSONResponse(bookmarked)
+
+
+async def add_bookmark(request):
+    """Bookmark a paper for the current user."""
+    user_id = get_authenticated_user_id(request)
+    if not user_id:
+        return JSONResponse({"detail": "Authentication required"}, status_code=401)
+
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"detail": "Invalid JSON body"}, status_code=400)
+
+    video_id = body.get("video_id")
+    if not video_id:
+        return JSONResponse({"detail": "video_id is required"}, status_code=400)
+
+    if not get_paper_by_id(video_id):
+        return JSONResponse({"detail": "Not found"}, status_code=404)
+
+    bookmarks_store.add_bookmark(user_id, video_id)
+    return JSONResponse({"status": "ok", "bookmarked": True}, status_code=201)
+
+
+async def remove_bookmark(request):
+    """Remove the current user's bookmark on a paper."""
+    user_id = get_authenticated_user_id(request)
+    if not user_id:
+        return JSONResponse({"detail": "Authentication required"}, status_code=401)
+
+    video_id = request.path_params["video_id"]
+    bookmarks_store.remove_bookmark(user_id, video_id)
+    return JSONResponse({"status": "ok", "bookmarked": False})
+
+
+async def signup(request):
+    """Create a new account and return a session token."""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"detail": "Invalid JSON body"}, status_code=400)
+
+    try:
+        user = auth.create_user(body.get("email", ""), body.get("password", ""))
+    except auth.AuthError as e:
+        return JSONResponse({"detail": str(e)}, status_code=400)
+
+    token = auth.create_session(user["id"])
+    return JSONResponse({"token": token, "user": user}, status_code=201)
+
+
+async def login(request):
+    """Authenticate and return a session token."""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"detail": "Invalid JSON body"}, status_code=400)
+
+    try:
+        user = auth.authenticate(body.get("email", ""), body.get("password", ""))
+    except auth.AuthError as e:
+        return JSONResponse({"detail": str(e)}, status_code=401)
+
+    token = auth.create_session(user["id"])
+    return JSONResponse({"token": token, "user": user})
+
+
+async def logout(request):
+    """Invalidate the current session token."""
+    header = request.headers.get("authorization", "")
+    if header.lower().startswith("bearer "):
+        auth.delete_session(header[7:].strip())
+    return JSONResponse({"status": "ok"})
+
+
+async def get_me(request):
+    """Return the currently authenticated user, if any."""
+    user_id = get_authenticated_user_id(request)
+    if not user_id:
+        return JSONResponse({"detail": "Authentication required"}, status_code=401)
+
+    user = auth.get_user_by_id(user_id)
+    if not user:
+        return JSONResponse({"detail": "Authentication required"}, status_code=401)
+
+    return JSONResponse({"user": user})
 
 
 # Define routes
 routes = [
-    Route("/api/videos", list_videos),
-    Route("/api/videos/{video_id}", get_video),
-    Route("/api/topics", get_topics),
-    Route("/api/categories", get_categories),
     Route("/api/papers", list_papers),
-    Route("/api/papers/resolve", resolve_saved_paper, methods=["POST"]),
+    # Must come before /api/papers/{paper_id} below - otherwise that pattern would match
+    # "search" as a paper_id and shadow this route entirely.
+    Route("/api/papers/search", search_papers_semantically),
     Route("/api/papers/{paper_id}", get_paper),
-    Route("/api/papers/{paper_id}/chat", chat_about_paper, methods=["POST"]),
     Route("/api/authors/{author_id}", get_author),
     Route("/api/journals/{journal_name}", get_journal),
+    Route("/api/categories", get_categories),
+    Route("/api/papers/citation/search", search_paper_by_citation, methods=["POST"]),
+    Route("/api/papers/citation/scan", scan_paper_photo, methods=["POST"]),
+    Route("/api/papers/citation/confirm", add_paper_by_citation, methods=["POST"]),
+    Route("/api/papers/citation/review", submit_paper_review, methods=["POST"]),
+    Route("/api/interests", get_interests, methods=["GET"]),
+    Route("/api/interests", set_interests, methods=["POST"]),
+    Route("/api/profile", get_profile, methods=["GET"]),
+    Route("/api/profile/tier1", set_profile_tier1, methods=["PUT"]),
+    Route("/api/profile/tier2", set_profile_tier2, methods=["PUT"]),
+    Route("/api/bookmarks", list_bookmarked_videos, methods=["GET"]),
+    Route("/api/bookmarks", add_bookmark, methods=["POST"]),
+    Route("/api/bookmarks/{video_id}", remove_bookmark, methods=["DELETE"]),
+    Route("/api/auth/signup", signup, methods=["POST"]),
+    Route("/api/auth/login", login, methods=["POST"]),
+    Route("/api/auth/logout", logout, methods=["POST"]),
+    Route("/api/auth/me", get_me, methods=["GET"]),
 ]
 
 # Set up middleware
 middleware = [
   Middleware(CORSMiddleware,
-    allow_origins=["*"],  
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -327,9 +584,5 @@ app = Starlette(
 )
 
 if __name__ == "__main__":
-    # Make sure the videos directory exists
-    os.makedirs(VIDEOS_DIR, exist_ok=True)
-    
-    # Start the server
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)

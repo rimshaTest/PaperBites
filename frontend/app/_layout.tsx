@@ -1,41 +1,33 @@
-import { Stack, useRouter, useSegments } from 'expo-router';
-import * as React from 'react';
+import React, { useState } from 'react';
+import { Stack } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { getAuth } from '../services/storage';
+import { AuthProvider } from '../hooks/useAuth';
+import IntroVideo from '../components/IntroVideo';
 
 export default function Layout() {
-  const router = useRouter();
-  const segments = useSegments();
-  const [checkedAuth, setCheckedAuth] = React.useState(false);
-
-  React.useEffect(() => {
-    const checkAuth = async () => {
-      const session = await getAuth();
-      const onLoginScreen = segments[0] === 'login';
-      if (!session && !onLoginScreen) {
-        router.replace('/login');
-      }
-      setCheckedAuth(true);
-    };
-    checkAuth();
-    // Only run once on mount - login.js itself handles moving past this screen.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  if (!checkedAuth) {
-    return null;
-  }
+  // The Stack (and whatever it renders underneath, e.g. Home's feed fetch) mounts immediately -
+  // the intro is just a full-screen overlay on top of it, not a route of its own, so there's
+  // nothing to navigate "back" out of once it finishes.
+  const [showIntro, setShowIntro] = useState(true);
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="login" options={{ headerShown: false }} />
-        <Stack.Screen name="settings" options={{ headerShown: false }} />
-        <Stack.Screen name="author/[id]" options={{ headerShown: false }} />
-        <Stack.Screen name="journal/[name]" options={{ headerShown: false }} />
-        <Stack.Screen name="chat/[id]" options={{ headerShown: false }} />
-      </Stack>
+      <AuthProvider>
+        <Stack screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="(tabs)" />
+          <Stack.Screen name="login" />
+          <Stack.Screen name="signup" />
+          <Stack.Screen name="paper/[id]" />
+          <Stack.Screen name="author/[id]" />
+          <Stack.Screen name="journal/[name]" />
+          <Stack.Screen name="interests-onboarding" options={{ presentation: 'modal' }} />
+          <Stack.Screen name="add-paper" options={{ presentation: 'modal' }} />
+          <Stack.Screen name="search" options={{ presentation: 'modal' }} />
+          <Stack.Screen name="settings" />
+          <Stack.Screen name="profile-details" />
+        </Stack>
+        {showIntro && <IntroVideo onFinish={() => setShowIntro(false)} />}
+      </AuthProvider>
     </GestureHandlerRootView>
   );
 }

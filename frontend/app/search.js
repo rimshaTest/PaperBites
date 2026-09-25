@@ -1,178 +1,127 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  View, 
-  Text, 
-  TextInput, 
-  FlatList, 
-  StyleSheet, 
-  TouchableOpacity, 
-  Keyboard
+import React, { useState } from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  FlatList,
+  StyleSheet,
+  ActivityIndicator,
+  SafeAreaView,
 } from 'react-native';
-import {SafeAreaView} from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import VideoCard from '../components/VideoCard';
-import LoadingIndicator from '../components/LoadingIndicator';
-import { fetchVideos } from '../services/api';
-import { saveRecentSearches, getRecentSearches } from '../services/storage';
-import Colors from '../constants/Colors';
+import PaperCard from '../components/PaperCard';
+import { searchPapersSemantically } from '../services/api';
+import { useAuth } from '../hooks/useAuth';
+import { useFavoritePapers } from '../hooks/useStorage';
+import theme from '../constants/theme';
 
+/**
+ * Semantic paper search, reached from the search icon on Home's card overlay
+ * (components/PaperFeed.tsx). Ranks by meaning via the backend's Gemini-embedded papers
+ * (backend/paper/embeddings.py), not just exact keyword matches - separate from Interests'
+ * hard category filter, not blended with it. No login required to search or view results;
+ * bookmarking a result still routes through login like anywhere else in the app.
+ */
 export default function SearchScreen() {
   const router = useRouter();
-  const [searchQuery, setSearchQuery] = useState('');
-  const [videos, setVideos] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [searchPerformed, setSearchPerformed] = useState(false);
-  const [recentSearches, setRecentSearches] = useState([]);
+  const { user, token } = useAuth();
+  const { isFavorite, toggleFavorite } = useFavoritePapers(token);
 
-  // Load recent searches from storage
-  useEffect(() => {
-    const loadRecentSearches = async () => {
-      const searches = await getRecentSearches();
-      setRecentSearches(searches);
-    };
-    
-    loadRecentSearches();
-  }, []);
+  const [query, setQuery] = useState('');
+  const [searching, setSearching] = useState(false);
+  const [results, setResults] = useState(null);
+  const [error, setError] = useState(null);
 
-  // Handle search submission
   const handleSearch = async () => {
-    if (!searchQuery.trim()) return;
-    
-    Keyboard.dismiss();
-    setLoading(true);
-    setSearchPerformed(true);
-    
+    if (!query.trim()) return;
+    setSearching(true);
+    setError(null);
     try {
-      const results = await fetchVideos({
-        keyword: searchQuery,
-        limit: 50,
-      });
-      setVideos(results);
-      
-      // Add to recent searches if not already there
-      if (!recentSearches.includes(searchQuery)) {
-        const updatedSearches = [searchQuery, ...recentSearches].slice(0, 5);
-        setRecentSearches(updatedSearches);
-        saveRecentSearches(updatedSearches);
-      }
-    } catch (error) {
-      console.error('Search error:', error);
-      setVideos([]);
+      const papers = await searchPapersSemantically(query.trim());
+      setResults(papers ?? []);
+    } catch (err) {
+      console.error('Semantic search failed:', err);
+      setError(err.message || 'Search failed. Try again.');
+      setResults([]);
     } finally {
-      setLoading(false);
+      setSearching(false);
     }
   };
 
-  // Clear search
-  const clearSearch = () => {
-    setSearchQuery('');
-    setVideos([]);
-    setSearchPerformed(false);
-  };
+  const handlePaperPress = (paper) => router.push(`/paper/${paper.id}`);
+  const handleAuthorPress = (author) => router.push(`/author/${encodeURIComponent(author.id)}`);
+  const handleJournalPress = (journal) => router.push(`/journal/${encodeURIComponent(journal)}`);
 
-  // Handle recent search tap
-  const handleRecentSearchTap = (query) => {
-    setSearchQuery(query);
-    setSearchPerformed(false);
-    
-    // Automatically search after a short delay
-    setTimeout(() => {
-      handleSearch();
-    }, 100);
+  const handleToggleBookmark = (paper) => {
+    if (!user) {
+      router.push('/login');
+      return;
+    }
+    toggleFavorite(paper);
   };
-
-  // Handle video selection
-  const handleVideoPress = (video) => {
-    router.push(`/video/${video.id}`);
-  };
-
-  // Render recent search item
-  const renderRecentSearchItem = ({ item }) => (
-    <TouchableOpacity 
-      style={styles.recentSearchItem}
-      onPress={() => handleRecentSearchTap(item)}
-    >
-      <Ionicons name="time-outline" size={16} color="#666" />
-      <Text style={styles.recentSearchText}>{item}</Text>
-    </TouchableOpacity>
-  );
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Search header */}
-      <View style={styles.searchHeader}>
-        <View style={styles.searchInputContainer}>
-          <Ionicons name="search" size={20} color="#666" style={styles.searchIcon} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search research papers..."
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            onSubmitEditing={handleSearch}
-            returnKeyType="search"
-            autoCapitalize="none"
-          />
-          {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={clearSearch} style={styles.clearButton}>
-              <Ionicons name="close-circle" size={20} color="#666" />
-            </TouchableOpacity>
-          )}
-        </View>
-        
-        <TouchableOpacity style={styles.searchButton} onPress={handleSearch}>
-          <Text style={styles.searchButtonText}>Search</Text>
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => router.back()} hitSlop={12}>
+          <Ionicons name="close" size={26} color={theme.text} />
         </TouchableOpacity>
+        <Text style={styles.headerTitle}>Search</Text>
+        <View style={{ width: 26 }} />
       </View>
 
-      {/* Content area */}
-      <View style={styles.contentContainer}>
-        {loading ? (
-          <LoadingIndicator message="Searching videos..." />
-        ) : searchPerformed ? (
-          videos.length > 0 ? (
-            <FlatList
-              data={videos}
-              renderItem={({ item }) => (
-                <VideoCard video={item} onPress={handleVideoPress} />
-              )}
-              keyExtractor={(item) => item.id}
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={styles.videosList}
-            />
-          ) : (
-            <View style={styles.centerContainer}>
-              <Text style={styles.noResultsText}>
-                No videos found for "{searchQuery}"
-              </Text>
-              <Text style={styles.suggestionsText}>
-                Try using different keywords or browse by topic
-              </Text>
-              <TouchableOpacity
-                style={styles.browseButton}
-                onPress={() => router.push('/topics')}
-              >
-                <Text style={styles.browseButtonText}>Browse Topics</Text>
-              </TouchableOpacity>
-            </View>
-          )
-        ) : (
-          // Show recent searches when not searching
-          <View style={styles.recentSearchesContainer}>
-            <Text style={styles.recentSearchesTitle}>Recent Searches</Text>
-            <FlatList
-              data={recentSearches}
-              renderItem={renderRecentSearchItem}
-              keyExtractor={(item) => item}
-              showsVerticalScrollIndicator={false}
-              ItemSeparatorComponent={() => <View style={styles.separator} />}
-              ListEmptyComponent={
-                <Text style={styles.emptyText}>No recent searches</Text>
-              }
-            />
-          </View>
-        )}
+      <View style={styles.searchBar}>
+        <Ionicons name="search" size={18} color={theme.textMuted} />
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Search papers by topic or idea..."
+          placeholderTextColor={theme.textMuted}
+          value={query}
+          onChangeText={setQuery}
+          onSubmitEditing={handleSearch}
+          returnKeyType="search"
+          autoFocus
+        />
+        {searching && <ActivityIndicator size="small" color={theme.text} />}
       </View>
+
+      {results === null ? (
+        <View style={styles.centerContainer}>
+          <Ionicons name="sparkles-outline" size={40} color={theme.textMuted} />
+          <Text style={styles.emptyText}>
+            Search matches papers by meaning, not just exact words - try describing the idea
+            you're looking for.
+          </Text>
+        </View>
+      ) : error ? (
+        <View style={styles.centerContainer}>
+          <Text style={styles.emptyText}>{error}</Text>
+        </View>
+      ) : results.length === 0 ? (
+        <View style={styles.centerContainer}>
+          <Ionicons name="search-outline" size={40} color={theme.textMuted} />
+          <Text style={styles.emptyText}>No matching papers found. Try different wording.</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={results}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => (
+            <PaperCard
+              paper={item}
+              onPress={handlePaperPress}
+              isBookmarked={isFavorite(item.id)}
+              onToggleBookmark={() => handleToggleBookmark(item)}
+              onAuthorPress={handleAuthorPress}
+              onJournalPress={handleJournalPress}
+            />
+          )}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.resultsList}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -180,109 +129,55 @@ export default function SearchScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: theme.background,
   },
-  searchHeader: {
+  header: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1.5,
+    borderBottomColor: theme.border,
+    backgroundColor: theme.surface,
   },
-  searchInputContainer: {
-    flex: 1,
+  headerTitle: {
+    fontFamily: theme.serif,
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: theme.text,
+  },
+  searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f2f2f2',
+    gap: 10,
+    margin: 20,
+    marginBottom: 10,
+    paddingHorizontal: 14,
+    height: 48,
+    borderWidth: 1.5,
+    borderColor: theme.border,
     borderRadius: 10,
-    paddingHorizontal: 10,
-    height: 40,
-  },
-  searchIcon: {
-    marginRight: 5,
+    backgroundColor: theme.surface,
   },
   searchInput: {
     flex: 1,
-    height: 40,
-    fontSize: 16,
-  },
-  clearButton: {
-    padding: 5,
-  },
-  searchButton: {
-    marginLeft: 10,
-    backgroundColor: '#4285F4',
-    paddingHorizontal: 15,
-    paddingVertical: 10,
-    borderRadius: 5,
-  },
-  searchButtonText: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 14,
-  },
-  contentContainer: {
-    flex: 1,
+    fontSize: 15,
+    color: theme.text,
   },
   centerContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
-  },
-  noResultsText: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 10,
-    textAlign: 'center',
-  },
-  suggestionsText: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 20,
-    textAlign: 'center',
-  },
-  browseButton: {
-    backgroundColor: '#4285F4',
-    paddingHorizontal: 15,
-    paddingVertical: 10,
-    borderRadius: 5,
-  },
-  browseButtonText: {
-    color: '#fff',
-    fontSize: 14,
-  },
-  videosList: {
-    paddingVertical: 10,
-  },
-  recentSearchesContainer: {
-    padding: 15,
-  },
-  recentSearchesTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 15,
-  },
-  recentSearchItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-  },
-  recentSearchText: {
-    fontSize: 16,
-    color: '#333',
-    marginLeft: 10,
-  },
-  separator: {
-    height: 1,
-    backgroundColor: '#e0e0e0',
+    padding: 30,
   },
   emptyText: {
-    fontSize: 14,
-    color: '#666',
-    fontStyle: 'italic',
+    fontSize: 15,
+    color: theme.textMuted,
     textAlign: 'center',
-    marginTop: 20,
-  }})
+    marginTop: 10,
+  },
+  resultsList: {
+    paddingVertical: 10,
+  },
+});

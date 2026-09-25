@@ -14,29 +14,33 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../hooks/useAuth';
 import theme from '../constants/theme';
 
-export default function LoginScreen() {
+export default function SignupScreen() {
   const router = useRouter();
-  const { login, error: authError } = useAuth();
+  const { signup, error: authError } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState(null);
 
-  const handleLogin = async () => {
+  const handleSignup = async () => {
     setFormError(null);
     if (!email.trim() || !password) {
-      setFormError('Enter your email and password');
+      setFormError('Enter an email and password');
+      return;
+    }
+    if (password.length < 8) {
+      setFormError('Password must be at least 8 characters');
       return;
     }
 
     setSubmitting(true);
-    const ok = await login(email.trim(), password);
+    const ok = await signup(email.trim(), password);
     setSubmitting(false);
 
     if (ok) {
-      router.back();
+      router.replace('/interests-onboarding');
     } else {
-      setFormError(authError || 'Login failed');
+      setFormError(authError || 'Signup failed');
     }
   };
 
@@ -50,7 +54,7 @@ export default function LoginScreen() {
           <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
             <Ionicons name="arrow-back" size={24} color="#333" />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Log In</Text>
+          <Text style={styles.headerTitle}>Sign Up</Text>
           <View style={styles.headerButton} />
         </View>
 
@@ -65,7 +69,7 @@ export default function LoginScreen() {
           />
           <TextInput
             style={styles.input}
-            placeholder="Password"
+            placeholder="Password (min. 8 characters)"
             value={password}
             onChangeText={setPassword}
             secureTextEntry
@@ -75,14 +79,14 @@ export default function LoginScreen() {
 
           <TouchableOpacity
             style={[styles.submitButton, submitting && styles.submitButtonDisabled]}
-            onPress={handleLogin}
+            onPress={handleSignup}
             disabled={submitting}
           >
-            <Text style={styles.submitButtonText}>{submitting ? 'Logging in...' : 'Log In'}</Text>
+            <Text style={styles.submitButtonText}>{submitting ? 'Creating account...' : 'Sign Up'}</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity onPress={() => router.replace('/signup')}>
-            <Text style={styles.switchLink}>Don't have an account? Sign up</Text>
+          <TouchableOpacity onPress={() => router.replace('/login')}>
+            <Text style={styles.switchLink}>Already have an account? Log in</Text>
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>

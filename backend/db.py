@@ -32,6 +32,9 @@ def get_db():
     _db.papers.create_index("authors.id")
     _db.papers.create_index("journal")
 
+    _db.paper_reviews.create_index([("status", 1), ("submitted_at", -1)])
+    _db.paper_reviews.create_index("user_id")
+
     logger.info(f"Connected to MongoDB database '{db_name}'")
     return _db
 

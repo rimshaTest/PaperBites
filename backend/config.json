@@ -1,16 +1,7 @@
 {
   "api": {
-    "pexels_key": "zSWN3u3WhcoUUi6yIdyQoGZWbnkOfBKWNfqKa7jU74SVFPUEVzPgrTon",
-    "email": "novelleapps@outlook.com"
-  },
-  "video": {
-    "formats": {
-      "tiktok": {"width": 1080, "height": 1920},
-      "instagram": {"width": 1080, "height": 1080},
-      "youtube": {"width": 1920, "height": 1080}
-    },
-    "default_format": "tiktok",
-    "fps": 30
+    "email": "novelleapps@outlook.com",
+    "pexels_key": "zSWN3u3WhcoUUi6yIdyQoGZWbnkOfBKWNfqKa7jU74SVFPUEVzPgrTon"
   },
   "paper_search": {
     "sources": [
@@ -22,11 +13,6 @@
     "open_access_only": true
   },
   "storage": {
-    "cloudinary": {
-      "cloud_name": "dd9tsotfz",
-      "api_key": "453877466769253",
-      "api_secret": "cibm0X3UMWkTdRaRzH5Xjz7i554"
-    },
     "mongodb": {
       "connection_string": "mongodb+srv://novelleapps_db_user:dfwlHQ92cXrf5t9V@paperbitescluster.0pwisgu.mongodb.net/",
       "database_name": "paperbites"
@@ -34,7 +20,6 @@
   },
   "paths": {
     "temp_dir": "temp_assets",
-    "output_dir": "videos",
     "tesseract_cmd": "path/to/tesseract"
   }
 }

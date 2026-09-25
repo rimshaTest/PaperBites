@@ -1,178 +1,114 @@
-# PaperBites Frontend Implementation Guide
+# PaperBites Frontend
 
-## Overview
+A React Native (Expo Router) app for the PaperBites paper feed. There's no video *content*
+feed anymore - the original TikTok-style video feed over generated summaries was fully removed
+in favor of a swipeable card feed over real research papers. The only video left is a one-time
+logo intro played on cold app start (`components/IntroVideo.js`).
 
-This guide provides detailed instructions for integrating the PaperBites frontend with your existing backend. The frontend is built using React Native and Expo, with a file-based routing system for easy navigation.
-
-## File Structure
-
-The frontend code follows this structure:
+## File structure
 
 ```
-paperbites-frontend/
-├── app/                    # Main app screens (Expo Router)
-│   ├── index.js            # Home screen
-│   ├── video/[id].js       # Video detail screen
-│   ├── topics.js           # Topics/categories screen
-│   ├── search.js           # Search screen
-│   └── _layout.js          # Layout for navigation
-├── components/             # Reusable UI components
-│   ├── VideoCard.js        # Video card component
-│   ├── VideoPlayer.js      # Video player component 
-│   ├── TopicChip.js        # Topic/keyword chip component
-│   ├── LoadingIndicator.js # Loading state component
-│   └── ErrorMessage.js     # Error state component
-├── constants/              # App constants
-│   ├── Colors.js           # Color scheme
-│   └── ApiConfig.js        # API configuration
-├── hooks/                  # Custom React hooks
-│   ├── useApi.js           # API interaction hooks
-│   └── useStorage.js       # Local storage hooks
-├── services/               # Service modules
-│   ├── api.js              # API service
-│   └── storage.js          # Local storage service
-└── utils/                  # Utility functions
-    └── formatters.js       # Text/date formatters
+frontend/
+├── app/                          # Screens (Expo Router - file-based routing)
+│   ├── (tabs)/
+│   │   ├── index.js              # Home tab - renders PaperFeed
+│   │   ├── saved.js              # Saved tab - bookmarked papers
+│   │   ├── profile.js            # Profile tab
+│   │   └── interests.tsx         # Interests editor (not a tab itself - reachable from
+│   │                              # Profile > Settings > Manage Feed)
+│   ├── author/[id].js            # Every paper by one author
+│   ├── journal/[name].js         # Every paper in one journal
+│   ├── paper/[id].js             # Paper detail screen
+│   ├── chat/[id].js              # Per-paper chat - NOT wired in, see "Known gaps" below
+│   ├── login.js / signup.js      # Auth screens
+│   ├── add-paper.js              # Add-a-paper modal, reached from Saved > "+" - citation, URL,
+│   │                              # or (experimental) a camera/screenshot photo
+│   ├── search.js                 # Semantic paper search modal, reached from Home's search icon
+│   ├── interests-onboarding.js   # One-time modal shown right after signup
+│   ├── profile-details.js        # Tier 1/2 profile fields with per-field consent toggles
+│   ├── settings.js               # Settings > Manage Feed > Interests
+│   └── _layout.tsx               # Root Stack + AuthProvider + GestureHandlerRootView + the
+│                                   # one-time IntroVideo overlay
+├── components/
+│   ├── PaperFeed.tsx             # The actual Home feed: full-screen paging cards, drag the
+│   │                              # info panel up to expand and read the full description;
+│   │                              # plays a whoosh sound on each page-to-page swipe
+│   ├── PaperCard.js              # Simpler list-row card, used by the Saved tab and Search
+│   └── IntroVideo.js             # Full-screen logo intro (assets/splash-video.mp4), played once
+│                                   # on cold app start, then never shown again that session
+├── hooks/
+│   ├── useAuth.js                # Session context (signup/login/logout, persisted + re-
+│   │                              # validated against the backend on mount)
+│   └── useStorage.js             # useFavoritePapers (account-scoped bookmarks) - also plays
+│                                   # the bookmark confirm "ding" (assets/sounds/bookmark-ding.wav)
+├── assets/
+│   ├── splash-video.mp4          # Logo intro animation (played by IntroVideo.js)
+│   ├── splash-static.png         # Poster frame shown while the video loads
+│   └── sounds/
+│       ├── bookmark-ding.wav     # Played once per bookmark add (not remove)
+│       └── swipe-whoosh.wav      # Played on each Home feed page-to-page swipe
+└── services/
+    ├── api.js                    # REST client for every /api/* endpoint
+    ├── auth.js                   # signup/login/logout/getMe
+    └── storage.js                # AsyncStorage: auth session persistence, plus a few
+                                    # device-local helpers (getInterests, isPaperSaved, etc.)
+                                    # that are currently dead code - nothing imports them since
+                                    # bookmarks/interests moved to the account-based backend
 ```
 
-## Integration Steps
-
-Follow these steps to integrate the frontend with your backend:
-
-### 1. Configure API Endpoints
-
-Update the `constants/ApiConfig.js` file to point to your backend API server:
-
-```javascript
-// For local development
-const BASE_URL = Platform.OS === 'ios' 
-  ? 'http://localhost:8000/api' 
-  : 'http://10.0.2.2:8000/api';
-
-// For production (replace with your actual backend API URL)
-// const BASE_URL = 'https://your-backend-server.com/api';
-```
-
-### 2. Install Required Dependencies
-
-Make sure all required dependencies are installed:
+## Setup
 
 ```bash
-npm install @react-navigation/native @react-navigation/bottom-tabs @react-navigation/native-stack
-npm install @react-native-async-storage/async-storage expo-video
-npm install expo-status-bar react-native-safe-area-context
-npm install react-native-screens
+npm install
+npm start
 ```
 
-### 3. Update API Service
+Then open in Expo Go, an iOS/Android simulator, or a browser.
 
-If your backend API has different endpoints or parameters, update the `services/api.js` file to match your API structure.
+## Connecting to a backend
 
-### 4. Testing with Mock Data
+`services/api.js` picks a base URL in this order:
+1. `EXPO_PUBLIC_API_URL` (set in a `.env` file, e.g. `EXPO_PUBLIC_API_URL=http://192.168.1.5:8000`
+   - no trailing `/api`). This is the recommended way to point at your backend without editing
+   code. Restart `expo start` after changing `.env` - it's only read at startup.
+2. `http://localhost:8000/api` on web.
+3. A hardcoded `TUNNEL_URL` (a Cloudflare quick tunnel) or `COMPUTER_IP` (your LAN IP) in
+   `services/api.js`, for a physical device that can't reach `localhost`. Quick tunnel URLs are
+   random and expire every time `cloudflared` restarts - update `TUNNEL_URL` (or better, use
+   `.env` instead so you're not editing code each time) when it changes.
 
-If your backend is not yet ready, you can use mock data for testing:
+## Screens
 
-1. Create a `constants/MockData.js` file with sample videos and topics
-2. Update the `services/api.js` file to use mock data when in development mode
+- **Home**: `PaperFeed` - swipe/page vertically between papers; drag a card's info panel up to
+  expand it full-screen and read the description; pull to refresh; paginates automatically. The
+  search icon next to the "PaperBites" title opens **Search** (`search.js`): free-text semantic
+  search over papers, ranked by meaning (Gemini embeddings) rather than exact keyword match.
+- **Saved**: bookmarked papers, account-scoped (requires login). The "+" button opens **Add a
+  Paper**: paste a citation (MLA, APA, or any other style) or a link to the paper's page, tap the
+  right match, and it's saved and auto-bookmarked - Gemini picks the category itself from the
+  paper's text, same as it does for the paper's summary. If nothing matches, "Submit for manual
+  review" queues it for a human to look at instead. The camera button next to the input
+  (marked with a star - tap or hover it for an "Experimental feature" note) lets you photograph
+  a title page/poster or pick an existing screenshot instead of typing; Gemini vision reads a
+  citation off it server-side and searches with that.
+- **Profile**: shows the signed-in account, with links to Profile Details and Settings, or a
+  login/signup prompt when signed out.
+- **Profile Details**: Tier 1 (cache-safe: field of study, education level, general interests,
+  location) and Tier 2 (sensitive: age, gender, sex, precise location, disabilities, chronic
+  illnesses) fields, each Tier 2 field with its own two consent toggles.
+- **Settings > Manage Feed > Interests**: pick topics to hard-filter the Home feed to. Also
+  shown once as a modal popup right after signup (Skip for now / Continue).
+- **Author / Journal pages**: reached by tapping an author or journal name anywhere in the app.
+- **Paper detail**: full description, DOI, categories, and a link to the original paper.
 
-### 5. Customizing the UI
+## Known gaps
 
-To match your branding:
-
-1. Update colors in `constants/Colors.js`
-2. Customize component styles as needed
-3. Add your logo and other brand assets to the `assets/` folder
-
-## Important Components
-
-### VideoPlayer
-
-The `VideoPlayer` component is responsible for playing videos from S3. It supports:
-
-- Autoplay
-- Custom controls
-- Error handling
-- Loading states
-
-You can customize video playback behavior in `components/VideoPlayer.js`.
-
-### Video Card
-
-The `VideoCard` component displays video previews in the feed. Customize the appearance and information shown in `components/VideoCard.js`.
-
-## Backend API Requirements
-
-The frontend expects these API endpoints:
-
-1. `/api/videos` - Get a list of videos with optional filtering
-   - Parameters: limit, offset, keyword, public_only
-   - Returns: Array of video objects
-
-2. `/api/videos/{id}` - Get a single video by ID
-   - Parameters: id (in path)
-   - Returns: Single video object with detailed information
-
-3. `/api/topics` - Get a list of all topics/keywords
-   - Returns: Array of topic strings
-
-Each video object should include:
-- id: Unique identifier
-- title: Video title
-- summary: Brief summary of the paper
-- videoUrl: URL to the video file in S3
-- thumbnailUrl: URL to the video thumbnail (optional)
-- doi: DOI of the paper (optional)
-- keywords: Array of keywords/topics
-- key_insights: Array of key insights
-- hashtags: String of hashtags (optional)
-
-## Local Storage
-
-The app uses AsyncStorage to maintain:
-- Recent searches
-- Favorite videos
-- Watch history
-- App settings
-
-These are managed through the hooks in `hooks/useStorage.js`.
-
-## Testing the Integration
-
-1. Start your backend server
-2. Run the Expo app: `npx expo start`
-3. Test the connection by navigating to the Home screen
-4. Check that videos load correctly
-5. Test search and topic filtering
-
-## Production Deployment
-
-For production deployment:
-
-1. Update `ApiConfig.js` to use your production API URL
-2. Build the app for production:
-   ```bash
-   npx expo build:android
-   npx expo build:ios
-   ```
-3. Publish to app stores following Expo's guidelines
-
-## Troubleshooting
-
-Common issues and solutions:
-
-1. **API connection errors**:
-   - Check that the backend server is running
-   - Verify network permissions in app.json
-   - Ensure API endpoints match
-
-2. **Video playback issues**:
-   - Check that S3 URLs are accessible
-   - Verify CORS settings on S3 bucket
-   - Test with different video formats
-
-3. **Slow performance**:
-   - Implement pagination for video lists
-   - Optimize video file sizes
-   - Cache API responses
-
-For any other issues, refer to the Expo documentation or open an issue in the project repository.
+- `app/chat/[id].js` exists but isn't registered in `app/_layout.tsx`'s Stack, so it's
+  unreachable - and it imports `chatAboutPaper` from `services/api.js`, which doesn't exist
+  there. Both would need fixing to actually wire this up.
+- `services/storage.js`'s `getInterests`/`saveInterests`/`isPaperSaved`/`savePaperId`/
+  `unsavePaperId` are dead code (device-local versions from before interests/bookmarks moved to
+  the account-based backend) - harmless, but worth removing in a cleanup pass.
+- `assets/sounds/bookmark-ding.wav` and `swipe-whoosh.wav` are placeholder sounds synthesized
+  programmatically (simple sine/noise envelopes), not produced sound design - swap them for
+  real assets whenever you have some; same filenames/paths, no code changes needed.

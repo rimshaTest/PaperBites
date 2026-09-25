@@ -10,12 +10,15 @@ const COMPUTER_IP = '10.212.104.176'; // Replace with your actual IP
 // isolation, where the phone can't reach the laptop directly by LAN IP. Quick tunnel URLs are
 // ephemeral (a new one is generated each time `cloudflared tunnel --url http://localhost:8000`
 // is started), so update this when it changes.
-const TUNNEL_URL = 'https://outlets-faculty-significantly-personal.trycloudflare.com';
+const TUNNEL_URL = 'https://foster-preservation-oil-unnecessary.trycloudflare.com';
 
 const getApiBaseUrl = () => {
-  // Production: use environment variable
-  if (process.env.REACT_APP_API_URL) {
-    return `${process.env.REACT_APP_API_URL}/api`;
+  // Set in a .env file as EXPO_PUBLIC_API_URL=http://<host>:8000 (no trailing /api - that's
+  // added below). Only vars prefixed EXPO_PUBLIC_ are inlined into the app bundle by Expo's
+  // Metro config; a plain REACT_APP_API_URL (the Create React App convention) is never set at
+  // runtime here and silently falls through, which is what was happening before this fix.
+  if (process.env.EXPO_PUBLIC_API_URL) {
+    return `${process.env.EXPO_PUBLIC_API_URL}/api`;
   }
 
   if (Platform.OS === 'web') {
@@ -25,110 +28,24 @@ const getApiBaseUrl = () => {
   return TUNNEL_URL ? `${TUNNEL_URL}/api` : `http://${COMPUTER_IP}:8000/api`;
 };
 
-const API_BASE_URL = getApiBaseUrl();
+export const API_BASE_URL = getApiBaseUrl();
 
 console.log(`Using API base URL: ${API_BASE_URL}`);
 
 /**
- * Fetch all videos with optional filtering
- * @param {Object} options - Filter options
- * @param {number} options.limit - Maximum number of videos to fetch
- * @param {number} options.offset - Offset for pagination
- * @param {string} options.keyword - Keyword to filter by
- * @param {boolean} options.publicOnly - Whether to fetch only public videos
- * @returns {Promise<Array>} - Promise that resolves to an array of videos
- */
-export const fetchVideos = async (options = {}) => {
-  const { limit = 50, offset = 0, keyword, publicOnly = true } = options;
-  
-  // Build query string
-  let queryParams = `?limit=${limit}&offset=${offset}&public_only=${publicOnly}`;
-  if (keyword) {
-    queryParams += `&keyword=${encodeURIComponent(keyword)}`;
-  }
-  
-  try {
-    const response = await fetch(`${API_BASE_URL}/videos${queryParams}`);
-    
-    if (!response.ok) {
-      throw new Error(`API error: ${response.status}`);
-    }
-    
-    return response.json();
-  } catch (error) {
-    console.error('Error fetching videos:', error);
-    throw error;
-  }
-};
-
-/**
- * Fetch a single video by ID
- * @param {string} videoId - ID of the video to fetch
- * @returns {Promise<Object>} - Promise that resolves to video metadata
- */
-export const fetchVideoById = async (videoId) => {
-  try {
-    const response = await fetch(`${API_BASE_URL}/videos/${videoId}`);
-    
-    if (!response.ok) {
-      throw new Error(`API error: ${response.status}`);
-    }
-    
-    return response.json();
-  } catch (error) {
-    console.error(`Error fetching video ${videoId}:`, error);
-    throw error;
-  }
-};
-
-/**
- * Fetch all available topics/keywords
- * @returns {Promise<Array>} - Promise that resolves to an array of topics
- */
-export const fetchTopics = async () => {
-  try {
-    const response = await fetch(`${API_BASE_URL}/topics`);
-
-    if (!response.ok) {
-      throw new Error(`API error: ${response.status}`);
-    }
-
-    return response.json();
-  } catch (error) {
-    console.error('Error fetching topics:', error);
-    throw error;
-  }
-};
-
-/**
- * Fetch the fixed list of paper categories
- * @returns {Promise<Array<string>>} - Promise that resolves to an array of category names
- */
-export const fetchCategories = async () => {
-  try {
-    const response = await fetch(`${API_BASE_URL}/categories`);
-
-    if (!response.ok) {
-      throw new Error(`API error: ${response.status}`);
-    }
-
-    return response.json();
-  } catch (error) {
-    console.error('Error fetching categories:', error);
-    throw error;
-  }
-};
-
-/**
- * Fetch latest research papers, optionally filtered by category
+ * Fetch the paper feed - fetched via the backend's `fetch-latest` pipeline (Semantic
+ * Scholar/OpenAlex/Crossref, no video generation involved). This is the primary feed now that
+ * video generation is a backburner feature.
  * @param {Object} options - Filter options
  * @param {number} options.limit - Maximum number of papers to fetch
  * @param {number} options.offset - Offset for pagination
  * @param {string} options.category - Category to filter by
- * @returns {Promise<Array>} - Promise that resolves to an array of papers
+ * @param {string} [options.token] - Session token; when present, the feed is hard-filtered to
+ *   the signed-in user's chosen interests (see /api/interests), if they've set any
+ * @returns {Promise<Array>} - Promise that resolves to an array of papers, newest first
  */
 export const fetchPapers = async (options = {}) => {
-  const { limit = 50, offset = 0, category } = options;
+  const { limit = 50, offset = 0, category, token } = options;
 
   let queryParams = `?limit=${limit}&offset=${offset}`;
   if (category) {
@@ -136,7 +53,9 @@ export const fetchPapers = async (options = {}) => {
   }
 
   try {
-    const response = await fetch(`${API_BASE_URL}/papers${queryParams}`);
+    const response = await fetch(`${API_BASE_URL}/papers${queryParams}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    });
 
     if (!response.ok) {
       throw new Error(`API error: ${response.status}`);
@@ -145,6 +64,33 @@ export const fetchPapers = async (options = {}) => {
     return response.json();
   } catch (error) {
     console.error('Error fetching papers:', error);
+    throw error;
+  }
+};
+
+/**
+ * Semantic search over papers embedded at ingestion (backend's paper/embeddings.py), ranked by
+ * cosine similarity to the query - matches by meaning, not just exact keywords. No auth needed;
+ * same public trust level as browsing the feed. Separate from Interests' hard category filter,
+ * not blended with it.
+ * @param {string} query - Free-text search query
+ * @param {number} [limit] - Maximum number of results
+ * @returns {Promise<Array>} - Promise that resolves to an array of matching papers, most relevant first
+ */
+export const searchPapersSemantically = async (query, limit = 20) => {
+  const params = new URLSearchParams({ q: query, limit: String(limit) });
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/papers/search?${params.toString()}`);
+
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      throw new Error(body.detail || `API error: ${response.status}`);
+    }
+
+    return response.json();
+  } catch (error) {
+    console.error('Error searching papers:', error);
     throw error;
   }
 };
@@ -170,61 +116,8 @@ export const fetchPaperById = async (paperId) => {
 };
 
 /**
- * Ask a question about a specific paper via the Gemini-backed chat agent.
- * @param {string} paperId - ID of the paper to chat about
- * @param {string} question - The question to ask
- * @param {Array<{role: 'user'|'assistant', content: string}>} history - Prior turns in this
- *   conversation - there's no server-side chat memory, so the full history must be resent.
- * @returns {Promise<string>} - Promise that resolves to the assistant's answer text
- */
-export const chatAboutPaper = async (paperId, question, history = []) => {
-  try {
-    const response = await fetch(`${API_BASE_URL}/papers/${paperId}/chat`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question, history }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    return data.answer;
-  } catch (error) {
-    console.error(`Error chatting about paper ${paperId}:`, error);
-    throw error;
-  }
-};
-
-/**
- * Resolve a citation string or paper link/DOI into a full paper record, fetching and enriching
- * it (Gemini summary, etc.) server-side if it isn't already in the database. Used by the Saved
- * tab's "add by citation or link" flow.
- * @param {string} query - A citation string, a DOI, or a paper URL
- * @returns {Promise<Object>} - Promise that resolves to the resolved paper (same shape as fetchPaperById)
- * @throws {Error} with message 'not_found' if no paper could be matched
- */
-export const resolvePaper = async (query) => {
-  const response = await fetch(`${API_BASE_URL}/papers/resolve`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query }),
-  });
-
-  if (response.status === 404) {
-    throw new Error('not_found');
-  }
-  if (!response.ok) {
-    throw new Error(`API error: ${response.status}`);
-  }
-
-  return response.json();
-};
-
-/**
- * Fetch an author's profile (name + their papers)
- * @param {string} authorId - Composite author ID, e.g. "openalex:A123..."
+ * Fetch an author's name and every paper of theirs in PaperBites
+ * @param {string} authorId - ID of the author (e.g. "semantic_scholar:12345")
  * @returns {Promise<Object>} - Promise that resolves to {id, name, papers}
  */
 export const fetchAuthor = async (authorId) => {
@@ -243,8 +136,8 @@ export const fetchAuthor = async (authorId) => {
 };
 
 /**
- * Fetch all papers published in a given journal/conference
- * @param {string} journalName - Exact journal/conference name
+ * Fetch every paper published in a given journal/venue
+ * @param {string} journalName - Name of the journal
  * @returns {Promise<Object>} - Promise that resolves to {name, papers}
  */
 export const fetchJournal = async (journalName) => {
@@ -260,4 +153,315 @@ export const fetchJournal = async (journalName) => {
     console.error(`Error fetching journal ${journalName}:`, error);
     throw error;
   }
+};
+
+/**
+ * Fetch the signed-in user's chosen topic interests
+ * @param {string} token - Session token from login/signup
+ * @returns {Promise<Array<string>>}
+ */
+export const fetchInterests = async (token) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/interests`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return data.interests;
+  } catch (error) {
+    console.error('Error fetching interests:', error);
+    throw error;
+  }
+};
+
+/**
+ * Replace the signed-in user's chosen topic interests
+ * @param {string} token - Session token from login/signup
+ * @param {Array<string>} interests
+ * @returns {Promise<Array<string>>}
+ */
+export const saveInterests = async (token, interests) => {
+  const response = await fetch(`${API_BASE_URL}/interests`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ interests }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`API error: ${response.status}`);
+  }
+
+  const data = await response.json();
+  return data.interests;
+};
+
+/**
+ * Fetch the fixed list of paper categories
+ * @returns {Promise<Array<string>>} - Promise that resolves to an array of category names
+ */
+export const fetchCategories = async () => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/categories`);
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+
+    return response.json();
+  } catch (error) {
+    console.error('Error fetching categories:', error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch full paper metadata for everything the signed-in user has bookmarked
+ * @param {string} token - Session token from login/signup
+ * @returns {Promise<Array>} - Promise that resolves to an array of bookmarked papers, newest first
+ */
+export const fetchBookmarks = async (token) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/bookmarks`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+
+    return response.json();
+  } catch (error) {
+    console.error('Error fetching bookmarks:', error);
+    throw error;
+  }
+};
+
+/**
+ * Bookmark a paper for the signed-in user
+ * @param {string} token - Session token from login/signup
+ * @param {string} paperId - ID of the paper to bookmark
+ * @returns {Promise<Object>}
+ */
+export const addBookmark = async (token, paperId) => {
+  const response = await fetch(`${API_BASE_URL}/bookmarks`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ video_id: paperId }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`API error: ${response.status}`);
+  }
+
+  return response.json();
+};
+
+/**
+ * Remove the signed-in user's bookmark on a paper
+ * @param {string} token - Session token from login/signup
+ * @param {string} paperId - ID of the paper to un-bookmark
+ * @returns {Promise<Object>}
+ */
+export const removeBookmark = async (token, paperId) => {
+  const response = await fetch(
+    `${API_BASE_URL}/bookmarks/${encodeURIComponent(paperId)}`,
+    {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(`API error: ${response.status}`);
+  }
+
+  return response.json();
+};
+
+/**
+ * Resolve a raw pasted citation (MLA, APA, or any other style) OR a direct link to the paper's
+ * page (e.g. an open-access journal article URL) into candidate matches, for the first step of
+ * the add-paper-by-citation flow.
+ * @param {string} token - Session token from login/signup
+ * @param {string} input - The raw citation text or paper URL as pasted/typed by the user
+ * @returns {Promise<Array>} - Promise that resolves to candidate matches: each
+ *   {doi, title, authors, journal, published_date, url, is_open_access}
+ */
+export const searchPaperByCitation = async (token, input) => {
+  const response = await fetch(`${API_BASE_URL}/papers/citation/search`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ citation: input }),
+  });
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(body.detail || `API error: ${response.status}`);
+  }
+
+  const data = await response.json();
+  return data.candidates;
+};
+
+/**
+ * Experimental: extract a citation from a photo of a paper's title page or a poster (via Gemini
+ * vision, server-side) and resolve it into candidate matches, same shape as
+ * searchPaperByCitation(). No QR-code decoding - see the backend's own docs for why.
+ * @param {string} token - Session token from login/signup
+ * @param {Object} image - {uri, mimeType} - a local image picked/captured via expo-image-picker
+ * @returns {Promise<{candidates: Array, extracted: string|null}>}
+ */
+export const scanPaperPhoto = async (token, image) => {
+  const formData = new FormData();
+  formData.append('image', {
+    uri: image.uri,
+    name: 'photo.jpg',
+    type: image.mimeType || 'image/jpeg',
+  });
+
+  const response = await fetch(`${API_BASE_URL}/papers/citation/scan`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(body.detail || `API error: ${response.status}`);
+  }
+
+  return response.json();
+};
+
+/**
+ * Save a confirmed citation-search candidate as a real paper (server-side it's run through the
+ * same enrichment pipeline the discovery feed uses - including a Gemini-chosen category, picked
+ * from the paper's abstract/full text in the same call that generates its summary) and bookmark
+ * it for the signed-in user.
+ * @param {string} token - Session token from login/signup
+ * @param {Object} candidate - One of the candidates returned by searchPaperByCitation
+ * @returns {Promise<Object>} - Promise that resolves to the saved paper
+ */
+export const addPaperByCitation = async (token, candidate) => {
+  const response = await fetch(`${API_BASE_URL}/papers/citation/confirm`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(candidate),
+  });
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(body.detail || `API error: ${response.status}`);
+  }
+
+  return response.json();
+};
+
+/**
+ * Queue a citation/URL the automated search couldn't match, for manual admin review - the
+ * fallback for when search/add fails outright (see add-paper.js's empty-results state).
+ * @param {string} token - Session token from login/signup
+ * @param {string} input - The citation text or URL the user originally entered
+ * @returns {Promise<Object>} - Promise that resolves to {status, id}
+ */
+export const submitPaperForReview = async (token, input) => {
+  const response = await fetch(`${API_BASE_URL}/papers/citation/review`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ input }),
+  });
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(body.detail || `API error: ${response.status}`);
+  }
+
+  return response.json();
+};
+
+/**
+ * Fetch the signed-in user's profile - Tier 1 (cache-safe) and Tier 2 (sensitive-context, with
+ * per-field consent flags) fields.
+ * @param {string} token - Session token from login/signup
+ * @returns {Promise<{tier1: Object, tier2: {fields: Object, consent: Object}}>}
+ */
+export const fetchProfile = async (token) => {
+  const response = await fetch(`${API_BASE_URL}/profile`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!response.ok) {
+    throw new Error(`API error: ${response.status}`);
+  }
+
+  return response.json();
+};
+
+/**
+ * Update the signed-in user's Tier 1 (cache-safe) profile fields.
+ * @param {string} token - Session token from login/signup
+ * @param {Object} fields - field_of_study, education_level, general_interests, location
+ * @returns {Promise<Object>} - the updated Tier 1 fields
+ */
+export const saveProfileTier1 = async (token, fields) => {
+  const response = await fetch(`${API_BASE_URL}/profile/tier1`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ fields }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`API error: ${response.status}`);
+  }
+
+  const data = await response.json();
+  return data.tier1;
+};
+
+/**
+ * Update the signed-in user's Tier 2 (sensitive-context) profile fields and their per-field
+ * consent flags (used_for_personalization, used_for_feed_relevance).
+ * @param {string} token - Session token from login/signup
+ * @param {Object} fields
+ * @param {Object} consent - {[fieldName]: {used_for_personalization, used_for_feed_relevance}}
+ * @returns {Promise<{fields: Object, consent: Object}>}
+ */
+export const saveProfileTier2 = async (token, fields, consent) => {
+  const response = await fetch(`${API_BASE_URL}/profile/tier2`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ fields, consent }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`API error: ${response.status}`);
+  }
+
+  const data = await response.json();
+  return data.tier2;
 };

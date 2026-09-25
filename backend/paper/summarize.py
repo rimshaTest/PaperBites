@@ -12,10 +12,11 @@ Uses langchain-google-genai rather than the raw google-generativeai SDK so the s
 can be reused by the per-paper chat agent (paper/chat.py).
 """
 import asyncio
+import json
 import logging
 import os
 import tempfile
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 import aiohttp
 
@@ -24,15 +25,46 @@ from config import Config
 config_instance = Config()
 logger = logging.getLogger("paperbites.summarize")
 
-_MODEL_NAME = "gemini-2.5-flash"
+# Cycled round-robin, one model per call, so each model's own separate free-tier quota absorbs
+# part of the load instead of one model's 5-requests/minute cap gating the whole run. No
+# verified guarantee every one of these model ids is live on a given account/API version - a
+# model that 404s or otherwise errors is simply skipped in favor of the next one in the list
+# (see summarize_text), so an invalid entry here just reduces the effective pool rather than
+# breaking anything.
+_MODEL_NAMES = [
+    "gemini-3.5-flash",
+    "gemini-3.5-flash-lite"
+]
 _MAX_SUMMARY_WORDS = 200
 # Cap how much extracted PDF text goes into the prompt - full papers can be tens of thousands of
 # words, and we only need enough to produce a good summary, not the whole document.
 _PDF_TEXT_CHAR_LIMIT = 15000
 
-# Bound concurrent Gemini calls - be polite to the free tier's per-minute request limit rather
-# than firing off a request per paper simultaneously.
-_summarize_semaphore = asyncio.Semaphore(3)
+_model_cycle_lock = asyncio.Lock()
+_next_model_index = 0
+_llm_cache: Dict[str, object] = {}
+
+
+def _configured_model_names() -> List[str]:
+    """api.gemini_models (a list, or a comma-separated string via PAPERBITES_GEMINI_MODELS)
+    overrides the built-in list above, if set."""
+    configured = config_instance.get("api.gemini_models")
+    if not configured:
+        return _MODEL_NAMES
+    if isinstance(configured, str):
+        return [name.strip() for name in configured.split(",") if name.strip()]
+    return list(configured)
+
+
+async def _next_model_name(models: List[str]) -> str:
+    """Advance the shared round-robin position by one and return the model at that slot -
+    concurrent summarize_text calls each get a different model instead of piling onto the same
+    one."""
+    global _next_model_index
+    async with _model_cycle_lock:
+        name = models[_next_model_index % len(models)]
+        _next_model_index += 1
+        return name
 
 _SUMMARY_PROMPT = (
     "You are writing a short, plain-English summary of a research paper for a general-audience "
@@ -45,21 +77,31 @@ _SUMMARY_PROMPT = (
 )
 
 
-def _get_llm():
-    """Lazily build the Gemini chat model. Returns None if no API key is configured, so callers
-    can fall back to the raw abstract instead of hard-failing when Gemini isn't set up."""
+def _get_llm_for_model(model_name: str):
+    """Lazily build (and cache) the Gemini chat model for one model name. Returns None if no API
+    key is configured, so callers can fall back to the raw abstract instead of hard-failing when
+    Gemini isn't set up."""
     api_key = config_instance.get("api.gemini_key")
     if not api_key:
         return None
-    from langchain_google_genai import ChatGoogleGenerativeAI
+    if model_name not in _llm_cache:
+        from langchain_google_genai import ChatGoogleGenerativeAI
 
-    return ChatGoogleGenerativeAI(model=_MODEL_NAME, google_api_key=api_key, temperature=0.3)
+        _llm_cache[model_name] = ChatGoogleGenerativeAI(
+            model=model_name, google_api_key=api_key, temperature=0.3
+        )
+    return _llm_cache[model_name]
 
 
 async def summarize_text(title: str, text: str, source_label: str = "Abstract") -> Optional[str]:
-    """Summarize arbitrary paper text (abstract or full PDF text) into a <=200 word description."""
-    llm = _get_llm()
-    if not llm or not text:
+    """Summarize arbitrary paper text (abstract or full PDF text) into a <=200 word description.
+
+    Tries each configured model in round-robin order, moving on immediately (no delay) on any
+    failure - a rate limit, an invalid/unavailable model name, or anything else - so one model's
+    free-tier cap or a bad model id doesn't stall or break the whole run. Gives up only once
+    every model in the list has failed for this call.
+    """
+    if not config_instance.get("api.gemini_key") or not text:
         return None
 
     prompt = _SUMMARY_PROMPT.format(
@@ -69,14 +111,195 @@ async def summarize_text(title: str, text: str, source_label: str = "Abstract") 
         text=text[:_PDF_TEXT_CHAR_LIMIT],
     )
 
-    async with _summarize_semaphore:
+    models = _configured_model_names()
+    for _ in range(len(models)):
+        model_name = await _next_model_name(models)
+        llm = _get_llm_for_model(model_name)
+        if not llm:
+            continue
         try:
             response = await llm.ainvoke(prompt)
             summary = (response.content or "").strip()
-            return summary or None
+            if summary:
+                return summary
         except Exception as e:
-            logger.warning(f"Gemini summarization failed for '{title}': {e}")
-            return None
+            logger.warning(f"Gemini model '{model_name}' failed for '{title}': {e}")
+
+    return None
+
+
+_SUMMARY_AND_CATEGORY_PROMPT = (
+    "You are writing a short, plain-English summary of a research paper for a general-audience "
+    "app feed, and classifying it into exactly one category.\n\n"
+    "Categories (pick exactly one): {categories}\n\n"
+    "Summarize the paper in under {max_words} words - focus on what the researchers did, what "
+    "they found, and why it matters to a non-expert reader. Write flowing prose with no headers, "
+    "bullet points, or preamble like 'This paper' - just the summary itself.\n\n"
+    'Respond with ONLY a JSON object of the exact form {{"summary": "...", "category": "..."}} - '
+    "no markdown code fences, no other text. \"category\" must be exactly one of the category "
+    "names listed above, spelled exactly as given.\n\n"
+    "Title: {title}\n\n"
+    "{source_label}:\n{text}"
+)
+
+
+async def summarize_and_classify(
+    title: str, text: str, categories: List[str], source_label: str = "Abstract"
+) -> Optional[Dict[str, str]]:
+    """Summarize paper text and classify it into one of `categories` in a single Gemini call.
+
+    Used for papers added outside the discovery feed (e.g. add-paper-by-citation), which don't
+    already know their category the way a feed fetch (keyed to a search category) does - the
+    category comes from the same read of the paper that produces the summary, rather than a
+    second LLM call.
+
+    Tries each configured model in round-robin order like summarize_text, moving on immediately
+    on any failure. Returns None if Gemini isn't configured, every model fails, or a model's
+    response can't be parsed into the expected {summary, category} shape with a valid category.
+    """
+    if not config_instance.get("api.gemini_key") or not text:
+        return None
+
+    prompt = _SUMMARY_AND_CATEGORY_PROMPT.format(
+        categories=", ".join(categories),
+        max_words=_MAX_SUMMARY_WORDS,
+        title=title,
+        source_label=source_label,
+        text=text[:_PDF_TEXT_CHAR_LIMIT],
+    )
+
+    models = _configured_model_names()
+    for _ in range(len(models)):
+        model_name = await _next_model_name(models)
+        llm = _get_llm_for_model(model_name)
+        if not llm:
+            continue
+        try:
+            response = await llm.ainvoke(prompt)
+            raw = (response.content or "").strip()
+            # Models occasionally wrap JSON in a ```json fence despite being told not to - strip
+            # it rather than failing classification over formatting alone.
+            if raw.startswith("```"):
+                raw = raw.strip("`")
+                if raw.lower().startswith("json"):
+                    raw = raw[4:]
+            parsed = json.loads(raw)
+            summary = (parsed.get("summary") or "").strip()
+            category = (parsed.get("category") or "").strip()
+            matched_category = next((c for c in categories if c.lower() == category.lower()), None)
+            if summary and matched_category:
+                return {"summary": summary, "category": matched_category}
+        except Exception as e:
+            logger.warning(f"Gemini model '{model_name}' failed to summarize+classify '{title}': {e}")
+
+    return None
+
+
+async def summarize_and_classify_paper(
+    session: aiohttp.ClientSession, paper: Dict, categories: List[str]
+) -> Optional[Dict[str, str]]:
+    """Same abstract-or-PDF-fallback source selection as summarize_paper(), but summarizing and
+    classifying in one combined call. Used by paper/citation.py's add-paper flow."""
+    title = paper.get("title") or "Untitled"
+    abstract = (paper.get("abstract") or "").strip()
+
+    if abstract:
+        return await summarize_and_classify(title, abstract, categories, source_label="Abstract")
+
+    url = paper.get("url")
+    if not url:
+        return None
+
+    full_text = await _download_pdf_text(session, url)
+    if not full_text:
+        return None
+
+    return await summarize_and_classify(title, full_text, categories, source_label="Full paper text")
+
+
+# Prioritized by vision/OCR quality, not speed - the opposite tradeoff from _MODEL_NAMES above,
+# which is tuned for cheap high-throughput bulk summarization. This is a single interactive
+# user-triggered call (one photo, one result), so a fixed best-to-worst fallback order serves it
+# better than round-robin load distribution: try the strongest vision model first, and only fall
+# back to a weaker/cheaper one if it's unavailable or errors. No verified guarantee every model
+# id here is live on a given account/API version - same as _MODEL_NAMES, an invalid or
+# unavailable one is simply skipped in favor of the next.
+_IMAGE_MODEL_NAMES = [
+    "gemini-2.5-pro",
+    "gemini-2.5-flash",
+    "gemini-2.5-flash-lite",
+]
+
+
+def _configured_image_model_names() -> List[str]:
+    """api.gemini_image_models (a list, or a comma-separated string via
+    PAPERBITES_GEMINI_IMAGE_MODELS) overrides the built-in list above, if set."""
+    configured = config_instance.get("api.gemini_image_models")
+    if not configured:
+        return _IMAGE_MODEL_NAMES
+    if isinstance(configured, str):
+        return [name.strip() for name in configured.split(",") if name.strip()]
+    return list(configured)
+
+
+_IMAGE_CITATION_PROMPT = (
+    "This image shows a research paper - its title page, a printed page, or a conference "
+    "poster. Read whatever you can make out: the title, author names, and journal/venue/year if "
+    "visible. Respond with ONLY a single-line plain-text citation-like string combining what you "
+    "read (e.g. 'Author Name. Title of the paper. Journal Name, Year.') - no JSON, no markdown, "
+    "no extra commentary, no preamble. If you cannot confidently read a title anywhere in the "
+    "image, respond with exactly: NONE"
+)
+# Hard cap on how large an uploaded photo can be before we even try sending it to Gemini - a
+# phone camera photo is typically 1-5MB; this just guards against something pathological.
+_MAX_IMAGE_BYTES = 15 * 1024 * 1024
+
+
+async def extract_citation_text_from_image(image_bytes: bytes, mime_type: str) -> Optional[str]:
+    """Experimental vision-extraction fallback for the add-paper-by-photo flow: asks Gemini to
+    read a title/authors/venue off a photographed paper page or poster and return them as a
+    single citation-like string. The caller then resolves that string the same way a pasted
+    citation is (paper/citation.py's search_citation()) - this function only replaces the "type
+    or paste the citation" step, not the bibliographic matching after it.
+
+    Deliberately skips QR-code decoding (unlike the ideal pipeline described in
+    docs/TECHNICAL_SPEC.md) - reliable QR decoding needs a system zbar library this deployment
+    doesn't assume is installed, so this only helps when Gemini can read the title/authors
+    directly off the page, not when a poster's QR code is the only readable thing on it.
+
+    Tries models in a fixed best-to-worst priority order (_IMAGE_MODEL_NAMES) rather than the
+    round-robin used elsewhere in this module - see that list's own comment for why. A model
+    that errors (including one that simply can't handle images) is skipped in favor of the next.
+    """
+    if not config_instance.get("api.gemini_key") or not image_bytes:
+        return None
+    if len(image_bytes) > _MAX_IMAGE_BYTES:
+        logger.warning(f"Rejecting image scan: {len(image_bytes)} bytes exceeds the {_MAX_IMAGE_BYTES}-byte cap")
+        return None
+
+    import base64
+
+    from langchain_core.messages import HumanMessage
+
+    b64_image = base64.b64encode(image_bytes).decode("ascii")
+    message = HumanMessage(content=[
+        {"type": "text", "text": _IMAGE_CITATION_PROMPT},
+        {"type": "image_url", "image_url": f"data:{mime_type};base64,{b64_image}"},
+    ])
+
+    for model_name in _configured_image_model_names():
+        llm = _get_llm_for_model(model_name)
+        if not llm:
+            continue
+        try:
+            response = await llm.ainvoke([message])
+            text = (response.content or "").strip()
+            if text and text.upper() != "NONE":
+                return text
+        except Exception as e:
+            logger.warning(f"Gemini model '{model_name}' failed to read image for citation extraction: {e}")
+
+    return None
 
 
 async def _download_pdf_text(session: aiohttp.ClientSession, url: str) -> Optional[str]:

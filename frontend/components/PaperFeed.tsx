@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
   TouchableOpacity,
   Linking,
+  RefreshControl,
 } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -19,10 +20,12 @@ import Animated, {
 } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { Image } from 'expo-image';
+import { useAudioPlayer } from 'expo-audio';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { fetchPapers } from '../services/api';
-import { getInterests, isPaperSaved, savePaperId, unsavePaperId } from '../services/storage';
+import { useAuth } from '../hooks/useAuth';
+import { useFavoritePapers } from '../hooks/useStorage';
 import theme from '../constants/theme';
 
 const { width, height } = Dimensions.get('window');
@@ -41,8 +44,9 @@ interface Author {
 export interface PaperItem {
   id: string;
   title: string;
-  authors: Author[];
+  authors: Author[] | null;
   description: string;
+  abstract?: string;
   citation_count: number;
   published_date: string | null;
   journal: string | null;
@@ -51,43 +55,19 @@ export interface PaperItem {
   image_url: string | null;
   url: string | null;
   doi: string | null;
-  category: string | null;
+  categories: string[] | null;
   language: string;
-  relevance: string;
 }
 
 export const PaperCard: React.FC<{
   item: PaperItem;
   onExpandedChange: (expanded: boolean) => void;
-  onUnsave?: (id: string) => void;
-}> = ({ item, onExpandedChange, onUnsave }) => {
+  isBookmarked: boolean;
+  onToggleBookmark: (item: PaperItem) => void;
+}> = ({ item, onExpandedChange, isBookmarked, onToggleBookmark }) => {
   const router = useRouter();
   const top = useSharedValue(COLLAPSED_TOP);
   const [isExpanded, setIsExpanded] = React.useState(false);
-  const [saved, setSaved] = React.useState(false);
-
-  React.useEffect(() => {
-    let cancelled = false;
-    isPaperSaved(item.id).then((value) => {
-      if (!cancelled) {
-        setSaved(value);
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [item.id]);
-
-  const toggleSave = async () => {
-    const next = !saved;
-    setSaved(next);
-    if (next) {
-      await savePaperId(item.id);
-    } else {
-      await unsavePaperId(item.id);
-      onUnsave?.(item.id);
-    }
-  };
 
   const setExpanded = React.useCallback(
     (expanded: boolean) => {
@@ -96,6 +76,8 @@ export const PaperCard: React.FC<{
     },
     [onExpandedChange]
   );
+
+  const authors = item.authors || [];
 
   const goToAuthor = (author: Author) => {
     if (author.id) {
@@ -134,17 +116,28 @@ export const PaperCard: React.FC<{
         ) : (
           <View style={[styles.image, styles.imageFallback]} />
         )}
-        <TouchableOpacity style={styles.saveButton} onPress={toggleSave}>
+        <View pointerEvents="box-none" style={styles.brandBar}>
+          <View style={styles.brandBarSpacer} pointerEvents="none" />
+          <Text style={styles.brandText} pointerEvents="none">PaperBites</Text>
+          <TouchableOpacity
+            style={styles.searchIconButton}
+            onPress={() => router.push('/search')}
+            hitSlop={10}
+          >
+            <Ionicons name="search" size={16} color={theme.surface} />
+          </TouchableOpacity>
+        </View>
+        <TouchableOpacity style={styles.saveButton} onPress={() => onToggleBookmark(item)}>
           <Ionicons
-            name={saved ? 'bookmark' : 'bookmark-outline'}
+            name={isBookmarked ? 'bookmark' : 'bookmark-outline'}
             size={20}
-            color={saved ? theme.accent : theme.surface}
+            color={isBookmarked ? theme.accent : theme.surface}
           />
         </TouchableOpacity>
         <View style={styles.badgeColumn}>
-          {item.category && (
+          {item.categories && item.categories.length > 0 && (
             <View style={styles.categoryBadge}>
-              <Text style={styles.categoryBadgeText}>{item.category}</Text>
+              <Text style={styles.categoryBadgeText}>{item.categories[0]}</Text>
             </View>
           )}
           <View style={styles.languageBadge}>
@@ -179,11 +172,11 @@ export const PaperCard: React.FC<{
           )}
 
           <View style={styles.authorsRow}>
-            {item.authors.length === 0 ? (
+            {authors.length === 0 ? (
               <Text style={styles.authorsText}>Unknown authors</Text>
             ) : (
               <Text style={styles.authorsText}>
-                {item.authors.map((author, index) => (
+                {authors.map((author, index) => (
                   <React.Fragment key={`${author.id ?? author.name}-${index}`}>
                     <Text
                       style={author.id ? styles.authorLink : styles.authorPlain}
@@ -191,7 +184,7 @@ export const PaperCard: React.FC<{
                     >
                       {author.name}
                     </Text>
-                    {index < item.authors.length - 1 && <Text style={styles.authorsText}>, </Text>}
+                    {index < authors.length - 1 && <Text style={styles.authorsText}>, </Text>}
                   </React.Fragment>
                 ))}
               </Text>
@@ -225,17 +218,7 @@ export const PaperCard: React.FC<{
             </View>
           )}
 
-          <Text style={styles.description}>{item.description}</Text>
-
-          <View style={styles.relevanceBox}>
-            {item.relevance === 'N/A' ? (
-              <TouchableOpacity onPress={() => router.push('/profile')}>
-                <Text style={styles.relevanceLink}>Update your profile for a tailored feed</Text>
-              </TouchableOpacity>
-            ) : (
-              <Text style={styles.relevanceValue}>{item.relevance}</Text>
-            )}
-          </View>
+          <Text style={styles.description}>{item.description || item.abstract}</Text>
 
           <View style={styles.actionRow}>
             {item.url && (
@@ -247,13 +230,6 @@ export const PaperCard: React.FC<{
                 <Ionicons name="open-outline" size={16} color={theme.surface} />
               </TouchableOpacity>
             )}
-            <TouchableOpacity
-              style={[styles.chatButton, styles.actionButton]}
-              onPress={() => router.push(`/chat/${item.id}` as any)}
-            >
-              <Text style={styles.chatButtonText}>Ask about this paper</Text>
-              <Ionicons name="chatbubble-ellipses-outline" size={16} color={theme.text} />
-            </TouchableOpacity>
           </View>
         </ScrollView>
       </Animated.View>
@@ -261,42 +237,107 @@ export const PaperCard: React.FC<{
   );
 };
 
+const PAGE_SIZE = 10;
+const SWIPE_SOUND = require('../assets/sounds/swipe-whoosh.wav');
+
+type FavoritePapersApi = {
+  isFavorite: (paperId: string) => boolean;
+  toggleFavorite: (paper: PaperItem) => void;
+};
+
 const PaperFeed: React.FC = () => {
+  const router = useRouter();
+  const { user, token } = useAuth();
+  const { isFavorite, toggleFavorite } = useFavoritePapers(token) as unknown as FavoritePapersApi;
   const [papers, setPapers] = React.useState<PaperItem[]>([]);
   const [loading, setLoading] = React.useState(true);
+  const [loadingMore, setLoadingMore] = React.useState(false);
+  const [refreshing, setRefreshing] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [anyExpanded, setAnyExpanded] = React.useState(false);
+  const [page, setPage] = React.useState(0);
+  const [hasMore, setHasMore] = React.useState(true);
+  const swipeSound = useAudioPlayer(SWIPE_SOUND);
+  const lastPageIndexRef = React.useRef(0);
 
-  // Fetch papers from the backend, filtered by the user's selected interests (if any)
+  // Fetch a page of papers from the backend - passing the token lets the server hard-filter to
+  // the signed-in user's chosen interests (see /api/interests), when they've set any.
+  const loadPapers = async (reset: boolean) => {
+    const pageToLoad = reset ? 0 : page;
+    if (!reset && !hasMore) return;
+    if (reset) lastPageIndexRef.current = 0;
+
+    try {
+      if (reset && papers.length === 0) setLoading(true);
+      else if (!reset) setLoadingMore(true);
+
+      const fetched: PaperItem[] = (await fetchPapers({
+        token,
+        limit: PAGE_SIZE,
+        offset: pageToLoad * PAGE_SIZE,
+        category: '',
+      })) ?? [];
+
+      setHasMore(fetched.length === PAGE_SIZE);
+      setPapers((prev) => {
+        const combined = reset ? fetched : [...prev, ...fetched];
+        // Sort newest to oldest (defensive - the backend already sorts, but this holds
+        // regardless of query order).
+        return [...combined].sort((a, b) => (b.published_date ?? '').localeCompare(a.published_date ?? ''));
+      });
+      setPage(pageToLoad + 1);
+      setError(null);
+    } catch (err) {
+      setError('Failed to load papers');
+      console.error(err);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+      setLoadingMore(false);
+    }
+  };
+
+  // Reload from the top every time Home regains focus (e.g. after logging in elsewhere).
   useFocusEffect(
     React.useCallback(() => {
-      const loadPapers = async () => {
-        try {
-          setLoading(true);
-          const [papersData, interests] = await Promise.all([fetchPapers(), getInterests()]);
-          const allPapers: PaperItem[] = papersData ?? [];
-          const filtered =
-            interests && interests.length > 0
-              ? allPapers.filter((paper) => paper.category && interests.includes(paper.category))
-              : allPapers;
-          // Sort newest to oldest (defensive - the backend already sorts, but this holds
-          // regardless of query order or the client-side interest filter above).
-          const sorted = [...filtered].sort((a, b) =>
-            (b.published_date ?? '').localeCompare(a.published_date ?? '')
-          );
-          setPapers(sorted);
-          setError(null);
-        } catch (err) {
-          setError('Failed to load papers');
-          console.error(err);
-        } finally {
-          setLoading(false);
-        }
-      };
-
-      loadPapers();
-    }, [])
+      loadPapers(true);
+    }, [token])
   );
+
+  const handleRefresh = () => {
+    setRefreshing(true);
+    loadPapers(true);
+  };
+
+  const handleEndReached = () => {
+    if (!loading && !loadingMore && hasMore) {
+      loadPapers(false);
+    }
+  };
+
+  // Plays the swipe whoosh once a page-snap settles on a new card. Using the settled index
+  // (rather than trying to detect the swipe gesture mid-flight) avoids double-firing on a
+  // bounce/overscroll that snaps back to the same page.
+  const handleMomentumScrollEnd = (event: { nativeEvent: { contentOffset: { y: number } } }) => {
+    const newIndex = Math.round(event.nativeEvent.contentOffset.y / height);
+    if (newIndex !== lastPageIndexRef.current) {
+      lastPageIndexRef.current = newIndex;
+      try {
+        swipeSound.seekTo(0);
+        swipeSound.play();
+      } catch (err) {
+        console.debug('Swipe sound failed to play:', err);
+      }
+    }
+  };
+
+  const handleToggleBookmark = (item: PaperItem) => {
+    if (!user) {
+      router.push('/login');
+      return;
+    }
+    toggleFavorite(item as any);
+  };
 
   if (loading) {
     return (
@@ -327,7 +368,18 @@ const PaperFeed: React.FC = () => {
     <FlatList
       data={papers}
       keyExtractor={(item) => item.id}
-      renderItem={({ item }) => <PaperCard item={item} onExpandedChange={setAnyExpanded} />}
+      renderItem={({ item }) => (
+        <PaperCard
+          item={item}
+          onExpandedChange={setAnyExpanded}
+          isBookmarked={isFavorite(item.id)}
+          onToggleBookmark={handleToggleBookmark}
+        />
+      )}
+      // Every card is exactly `height` tall - telling FlatList that up front via
+      // getItemLayout skips its own (comparatively expensive) dynamic measurement pass, which
+      // is what made paging feel janky rather than an instant, deterministic snap to each page.
+      getItemLayout={(_, index) => ({ length: height, offset: height * index, index })}
       pagingEnabled
       scrollEnabled={!anyExpanded}
       snapToInterval={height}
@@ -339,6 +391,12 @@ const PaperFeed: React.FC = () => {
       windowSize={5}
       removeClippedSubviews
       style={styles.list}
+      onEndReached={handleEndReached}
+      onEndReachedThreshold={0.5}
+      onMomentumScrollEnd={handleMomentumScrollEnd}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={theme.text} />
+      }
     />
   );
 };
@@ -367,6 +425,48 @@ const styles = StyleSheet.create({
   },
   imageFallback: {
     backgroundColor: '#ccc4ae',
+  },
+  brandBar: {
+    position: 'absolute',
+    top: 16,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+  },
+  brandBarSpacer: {
+    width: 28,
+  },
+  brandText: {
+    flex: 1,
+    textAlign: 'center',
+    fontFamily: theme.serif,
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: theme.surface,
+    textShadowColor: 'rgba(0, 0, 0, 0.5)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
+  searchIconButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.35)',
+  },
+  saveButton: {
+    position: 'absolute',
+    top: 50,
+    left: 16,
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.35)',
   },
   badgeColumn: {
     position: 'absolute',
@@ -508,29 +608,6 @@ const styles = StyleSheet.create({
     color: theme.text,
     marginBottom: 14,
   },
-  relevanceBox: {
-    backgroundColor: theme.surface,
-    borderWidth: 1,
-    borderColor: theme.border,
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 14,
-  },
-  relevanceLabel: {
-    fontSize: 12,
-    color: theme.textMuted,
-    marginBottom: 2,
-  },
-  relevanceValue: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: theme.text,
-  },
-  relevanceLink: {
-    fontSize: 12,
-    color: theme.textMuted,
-    textDecorationLine: 'underline',
-  },
   actionRow: {
     gap: 10,
   },
@@ -547,16 +624,6 @@ const styles = StyleSheet.create({
   },
   readButtonText: {
     color: theme.surface,
-    fontWeight: 'bold',
-    fontSize: 14,
-  },
-  chatButton: {
-    backgroundColor: theme.surface,
-    borderWidth: 1,
-    borderColor: theme.border,
-  },
-  chatButtonText: {
-    color: theme.text,
     fontWeight: 'bold',
     fontSize: 14,
   },

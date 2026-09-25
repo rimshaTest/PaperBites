@@ -56,11 +56,7 @@ const buildUrl = (endpoint, queryParams = {}) => {
 // API configuration
 const ApiConfig = {
   BASE_URL,
-  ENDPOINTS: {
-    VIDEOS: '/videos',
-    VIDEO_DETAIL: (id) => `/videos/${id}`,
-    TOPICS: '/topics',
-  },
+  ENDPOINTS: {},
   TIMEOUT: 10000, // 10 seconds
   PAGE_SIZE: 10,
   buildUrl,

@@ -1,6 +1,6 @@
 import { Platform } from 'react-native';
 
-// Shared design tokens for the "paper" theme (login, interests, profile, settings).
+// Shared design tokens for the "paper" theme (login, saved, profile).
 export const theme = {
   background: '#f3f0e9',
   surface: '#FFFFFF',
