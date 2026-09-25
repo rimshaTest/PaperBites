@@ -32,14 +32,8 @@ logger = logging.getLogger("paperbites.summarize")
 # (see summarize_text), so an invalid entry here just reduces the effective pool rather than
 # breaking anything.
 _MODEL_NAMES = [
-    "gemini-2.5-flash",
-    "gemini-2.5-flash-lite",
-    "gemini-3-flash",
-    "gemini-3.1-flash-lite",
-    "gemini-3.5-flash-lite",
-    "gemini-3.6-flash",
-    "gemini-3.7-flash",
-    "gemini-3.8-flash",
+    "gemini-3.5-flash",
+    "gemini-3.5-flash-lite"
 ]
 _MAX_SUMMARY_WORDS = 200
 # Cap how much extracted PDF text goes into the prompt - full papers can be tens of thousands of
