@@ -28,6 +28,12 @@ export default function ProfileScreen() {
             <Text style={styles.email}>{user.email}</Text>
           </View>
 
+          <TouchableOpacity style={styles.row} onPress={() => router.push('/saved')}>
+            <Ionicons name="bookmark-outline" size={22} color={theme.text} />
+            <Text style={styles.rowText}>Saved</Text>
+            <Ionicons name="chevron-forward" size={20} color={theme.textMuted} />
+          </TouchableOpacity>
+
           <TouchableOpacity style={styles.row} onPress={() => router.push('/profile-details')}>
             <Ionicons name="person-circle-outline" size={22} color={theme.text} />
             <Text style={styles.rowText}>Profile Details</Text>

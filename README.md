@@ -9,7 +9,12 @@ detailed history).
 ## What's actually built
 
 - **Home feed**: full-screen paging cards (`components/PaperFeed.tsx`) - drag the info panel up
-  to expand it and read the full description; paginated with pull-to-refresh.
+  to expand it and read the full description; paginated with pull-to-refresh; a whoosh sound
+  plays right as you release each swipe, and a one-time logo intro video plays on cold app start.
+- **Visualize tab**: a pannable bubble map (`frontend/app/(tabs)/visualizations.js`) of every
+  paper you've clicked "View Original Paper" for, connected by cosine similarity of their stored
+  embeddings (`GET /api/papers/viewed/graph`) - not by shared category tags. Replaced the old
+  middle Saved tab; Saved is now reached from Profile instead.
 - **Papers pipeline**: `backend/cli.py fetch-latest` pulls recent open-access papers from
   Semantic Scholar, OpenAlex, and Crossref (with Unpaywall resolving a real open-access link for
   Crossref results), dedupes them, generates a plain-English description (Gemini, when

@@ -96,6 +96,48 @@ export const searchPapersSemantically = async (query, limit = 20) => {
 };
 
 /**
+ * Record that the signed-in user clicked "View Original Paper" - the source data for the
+ * Visualizations tab's paper-relationship bubble map. Fire-and-forget from the caller's
+ * perspective; failures are logged but not surfaced, since this is a background signal, not
+ * something the user is waiting on.
+ * @param {string} token - Session token from login/signup
+ * @param {string} paperId - ID of the paper the user viewed
+ */
+export const recordPaperView = async (token, paperId) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/papers/${encodeURIComponent(paperId)}/view`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+  } catch (error) {
+    console.error('Error recording paper view:', error);
+  }
+};
+
+/**
+ * Fetch the paper-relationship graph for the Visualizations tab: every paper the signed-in user
+ * has clicked "View Original Paper" for, connected pairwise by embedding similarity computed
+ * server-side (backend/paper/embeddings.py) - the raw embeddings never reach the client.
+ * @param {string} token - Session token from login/signup
+ * @returns {Promise<{nodes: Array, edges: Array}>}
+ */
+export const fetchViewedPapersGraph = async (token) => {
+  const response = await fetch(`${API_BASE_URL}/papers/viewed/graph`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(body.detail || `API error: ${response.status}`);
+  }
+
+  return response.json();
+};
+
+/**
  * Fetch a single paper by ID
  * @param {string} paperId - ID of the paper to fetch
  * @returns {Promise<Object>} - Promise that resolves to paper metadata

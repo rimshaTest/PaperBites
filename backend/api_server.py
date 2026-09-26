@@ -11,6 +11,7 @@ import bookmarks as bookmarks_store
 import interests as interests_store
 import profile as profile_store
 import paper_reviews as paper_reviews_store
+import paper_views as paper_views_store
 import auth
 from utils.text import clean_abstract
 
@@ -261,6 +262,85 @@ async def get_paper(request):
     if not paper:
         return JSONResponse({"detail": "Paper not found"}, status_code=404)
     return JSONResponse(paper)
+
+
+async def record_paper_view(request):
+    """Record that the current user clicked "View Original Paper" for this paper - the source
+    data for the Visualizations tab's bubble map (see get_viewed_papers_graph below)."""
+    user_id = get_authenticated_user_id(request)
+    if not user_id:
+        return JSONResponse({"detail": "Authentication required"}, status_code=401)
+
+    paper_id = request.path_params["paper_id"]
+    if not get_paper_by_id(paper_id):
+        return JSONResponse({"detail": "Not found"}, status_code=404)
+
+    paper_views_store.record_view(user_id, paper_id)
+    return JSONResponse({"status": "ok"}, status_code=201)
+
+
+# Papers connect on the bubble map only above this cosine-similarity threshold - high enough that
+# an edge means "these are genuinely about similar things," not just "both are academic papers."
+_GRAPH_SIMILARITY_THRESHOLD = 0.75
+
+
+async def get_viewed_papers_graph(request):
+    """Build the paper-relationship graph for every paper the current user has clicked "View
+    Original Paper" for for the Visualizations tab: nodes are the papers themselves, edges
+    connect pairs whose stored embeddings (paper/embeddings.py) are similar enough. Only the
+    resulting similarity score is returned per edge - the embedding vectors themselves never
+    leave the server, same as everywhere else in the API.
+    """
+    user_id = get_authenticated_user_id(request)
+    if not user_id:
+        return JSONResponse({"detail": "Authentication required"}, status_code=401)
+
+    paper_ids = paper_views_store.list_viewed_paper_ids(user_id)
+    if not paper_ids:
+        return JSONResponse({"nodes": [], "edges": []})
+
+    try:
+        import db
+        from bson import ObjectId
+        from paper.embeddings import cosine_similarity
+
+        object_ids = []
+        for pid in paper_ids:
+            try:
+                object_ids.append(ObjectId(pid))
+            except Exception:
+                continue
+
+        docs_by_id = {str(doc["_id"]): doc for doc in db.get_db().papers.find({"_id": {"$in": object_ids}})}
+    except Exception as e:
+        print(f"Error building viewed-papers graph from MongoDB: {e}")
+        return JSONResponse({"nodes": [], "edges": []})
+
+    nodes = []
+    embeddings_by_id = {}
+    for pid in paper_ids:
+        doc = docs_by_id.get(pid)
+        if not doc:
+            continue
+        nodes.append({
+            "id": pid,
+            "title": doc.get("title") or "Untitled",
+            "categories": doc.get("categories") or [],
+            "journal": doc.get("journal"),
+        })
+        if doc.get("embedding"):
+            embeddings_by_id[pid] = doc["embedding"]
+
+    embedded_ids = list(embeddings_by_id.keys())
+    edges = []
+    for i in range(len(embedded_ids)):
+        for j in range(i + 1, len(embedded_ids)):
+            a_id, b_id = embedded_ids[i], embedded_ids[j]
+            similarity = cosine_similarity(embeddings_by_id[a_id], embeddings_by_id[b_id])
+            if similarity >= _GRAPH_SIMILARITY_THRESHOLD:
+                edges.append({"source": a_id, "target": b_id, "similarity": round(similarity, 3)})
+
+    return JSONResponse({"nodes": nodes, "edges": edges})
 
 
 async def get_author(request):
@@ -544,7 +624,9 @@ routes = [
     # Must come before /api/papers/{paper_id} below - otherwise that pattern would match
     # "search" as a paper_id and shadow this route entirely.
     Route("/api/papers/search", search_papers_semantically),
+    Route("/api/papers/viewed/graph", get_viewed_papers_graph),
     Route("/api/papers/{paper_id}", get_paper),
+    Route("/api/papers/{paper_id}/view", record_paper_view, methods=["POST"]),
     Route("/api/authors/{author_id}", get_author),
     Route("/api/journals/{journal_name}", get_journal),
     Route("/api/categories", get_categories),

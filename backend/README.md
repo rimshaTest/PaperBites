@@ -63,6 +63,13 @@ All routes are under `/api`. Auth-required routes take `Authorization: Bearer <t
   before this feature existed (or one Gemini couldn't embed) is simply absent from results, not
   an error.
 - `GET /papers/{id}` - a single paper.
+- `POST /papers/{id}/view` (auth required) - records that the user clicked "View Original Paper"
+  (`paper_views.py`) - the source data for the Visualizations tab's bubble map below.
+- `GET /papers/viewed/graph` (auth required) - every paper the user has clicked through to read,
+  connected pairwise by cosine similarity of their stored embeddings (≥0.75 - `paper/embeddings.py`,
+  same helper `GET /papers/search` uses). → `{nodes: [{id, title, categories, journal}, ...],
+  edges: [{source, target, similarity}, ...]}`. Embedding vectors never leave the server - only
+  the resulting score per edge does.
 - `GET /categories` - the fixed list of paper categories.
 - `POST /papers/citation/search` `{citation}` (auth required) - resolves a raw pasted citation
   (MLA, APA, or any other style) OR a direct link to the paper's page (e.g. an open-access
@@ -132,11 +139,11 @@ All routes are under `/api`. Auth-required routes take `Authorization: Bearer <t
 
 MongoDB (`db.py`) holds two collections: `papers` and `paper_reviews` (`paper_reviews.py`'s
 manual-review queue - a review is a review of a paper, so it's a document type alongside
-`papers` rather than another flat JSON file). Accounts, sessions, bookmarks, interests, and
-profile data are all flat JSON files instead (`auth.py`, `bookmarks.py`, `interests.py`,
-`profile.py`), matching each other's account-scoped pattern. **These JSON files hold real
-account data (password hashes, live session tokens) and must never be committed** - see
-`.gitignore` and `SECURITY_TODO.md`.
+`papers` rather than another flat JSON file). Accounts, sessions, bookmarks, interests, profile
+data, and "viewed full paper" clicks are all flat JSON files instead (`auth.py`, `bookmarks.py`,
+`interests.py`, `profile.py`, `paper_views.py`), matching each other's account-scoped pattern.
+**These JSON files hold real account data (password hashes, live session tokens) and must never
+be committed** - see `.gitignore` and `SECURITY_TODO.md`.
 
 ## Configuration
 

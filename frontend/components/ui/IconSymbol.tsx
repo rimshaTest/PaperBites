@@ -18,6 +18,7 @@ const MAPPING = {
   'paperplane.fill': 'send',
   'bookmark.fill': 'bookmark',
   'person.fill': 'person',
+  'circle.grid.2x2.fill': 'bubble-chart',
   'chevron.left.forwardslash.chevron.right': 'code',
   'chevron.right': 'chevron-right',
 } as IconMapping;

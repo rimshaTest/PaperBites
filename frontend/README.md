@@ -12,13 +12,15 @@ frontend/
 ├── app/                          # Screens (Expo Router - file-based routing)
 │   ├── (tabs)/
 │   │   ├── index.js              # Home tab - renders PaperFeed
-│   │   ├── saved.js              # Saved tab - bookmarked papers
+│   │   ├── visualizations.js     # Visualize tab - the paper-relationship bubble map
 │   │   ├── profile.js            # Profile tab
+│   │   ├── saved.js              # Saved papers (not a tab itself - reachable from Profile)
 │   │   └── interests.tsx         # Interests editor (not a tab itself - reachable from
 │   │                              # Profile > Settings > Manage Feed)
 │   ├── author/[id].js            # Every paper by one author
 │   ├── journal/[name].js         # Every paper in one journal
-│   ├── paper/[id].js             # Paper detail screen
+│   ├── paper/[id].js             # Paper detail screen - "View Original Paper" here also
+│   │                              # records the click for the Visualize tab's bubble map
 │   ├── chat/[id].js              # Per-paper chat - NOT wired in, see "Known gaps" below
 │   ├── login.js / signup.js      # Auth screens
 │   ├── add-paper.js              # Add-a-paper modal, reached from Saved > "+" - citation, URL,
@@ -83,16 +85,24 @@ Then open in Expo Go, an iOS/Android simulator, or a browser.
   expand it full-screen and read the description; pull to refresh; paginates automatically. The
   search icon next to the "PaperBites" title opens **Search** (`search.js`): free-text semantic
   search over papers, ranked by meaning (Gemini embeddings) rather than exact keyword match.
-- **Saved**: bookmarked papers, account-scoped (requires login). The "+" button opens **Add a
-  Paper**: paste a citation (MLA, APA, or any other style) or a link to the paper's page, tap the
-  right match, and it's saved and auto-bookmarked - Gemini picks the category itself from the
-  paper's text, same as it does for the paper's summary. If nothing matches, "Submit for manual
-  review" queues it for a human to look at instead. The camera button next to the input
-  (marked with a star - tap or hover it for an "Experimental feature" note) lets you photograph
-  a title page/poster or pick an existing screenshot instead of typing; Gemini vision reads a
-  citation off it server-side and searches with that.
-- **Profile**: shows the signed-in account, with links to Profile Details and Settings, or a
-  login/signup prompt when signed out.
+- **Visualize**: a pannable bubble map (`visualizations.js`, `react-native-svg` + `d3-force`) of
+  every paper you've clicked "View Original Paper" for on the paper detail screen - connected to
+  each other by cosine similarity of their stored embeddings (backend's `paper/embeddings.py`),
+  not by shared category tags. Two economics papers you've read cluster together; a paper that
+  spans economics and biology bridges both clusters. The layout is computed once per load (d3-force
+  run to convergence, not a live simulation) and rendered as static SVG you drag around; tap a
+  bubble to open that paper. Empty until you've viewed a few papers' originals.
+- **Profile**: shows the signed-in account, with links to Saved, Profile Details, and Settings,
+  or a login/signup prompt when signed out.
+- **Saved**: bookmarked papers, account-scoped (requires login), reached from Profile > Saved
+  (not a tab anymore). The "+" button opens **Add a Paper**: paste a citation (MLA, APA, or any
+  other style) or a link to the paper's page, tap the right match, and it's saved and
+  auto-bookmarked - Gemini picks the category itself from the paper's text, same as it does for
+  the paper's summary. If nothing matches, "Submit for manual review" queues it for a human to
+  look at instead. The camera button next to the input (marked with a star - tap or hover it for
+  an "Experimental feature" note) lets you photograph a title page/poster or pick an existing
+  screenshot instead of typing; Gemini vision reads a citation off it server-side and searches
+  with that.
 - **Profile Details**: Tier 1 (cache-safe: field of study, education level, general interests,
   location) and Tier 2 (sensitive: age, gender, sex, precise location, disabilities, chronic
   illnesses) fields, each Tier 2 field with its own two consent toggles.

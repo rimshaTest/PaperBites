@@ -42,7 +42,12 @@ export default function SavedScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Saved</Text>
+        <View style={styles.headerLeft}>
+          <TouchableOpacity onPress={() => router.back()} hitSlop={12}>
+            <Ionicons name="chevron-back" size={26} color={theme.text} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Saved</Text>
+        </View>
         {user && (
           <TouchableOpacity onPress={() => router.push('/add-paper')} hitSlop={12}>
             <Ionicons name="add" size={26} color={theme.text} />
@@ -105,6 +110,11 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1.5,
     borderBottomColor: theme.border,
     backgroundColor: theme.surface,
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   headerTitle: {
     fontFamily: theme.serif,

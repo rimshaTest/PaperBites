@@ -315,20 +315,46 @@ const PaperFeed: React.FC = () => {
     }
   };
 
-  // Plays the swipe whoosh once a page-snap settles on a new card. Using the settled index
-  // (rather than trying to detect the swipe gesture mid-flight) avoids double-firing on a
-  // bounce/overscroll that snaps back to the same page.
-  const handleMomentumScrollEnd = (event: { nativeEvent: { contentOffset: { y: number } } }) => {
-    const newIndex = Math.round(event.nativeEvent.contentOffset.y / height);
-    if (newIndex !== lastPageIndexRef.current) {
-      lastPageIndexRef.current = newIndex;
-      try {
-        swipeSound.seekTo(0);
-        swipeSound.play();
-      } catch (err) {
-        console.debug('Swipe sound failed to play:', err);
-      }
+  const playSwipeSound = () => {
+    try {
+      swipeSound.seekTo(0);
+      swipeSound.play();
+    } catch (err) {
+      console.debug('Swipe sound failed to play:', err);
     }
+  };
+
+  // Plays the whoosh right as the user releases the swipe, not after the settle animation
+  // finishes - waiting for onMomentumScrollEnd made it feel noticeably delayed. iOS hands us
+  // targetContentOffset (exactly where the release will land); Android doesn't, so fall back to
+  // predicting the next page from the release velocity's direction.
+  const handleScrollEndDrag = (event: {
+    nativeEvent: {
+      contentOffset: { y: number };
+      targetContentOffset?: { y: number };
+      velocity?: { y: number };
+    };
+  }) => {
+    const { contentOffset, targetContentOffset, velocity } = event.nativeEvent;
+    let predictedOffset = contentOffset.y;
+    if (targetContentOffset) {
+      predictedOffset = targetContentOffset.y;
+    } else if (velocity && Math.abs(velocity.y) > 0.3) {
+      predictedOffset = contentOffset.y + (velocity.y > 0 ? height : -height);
+    }
+
+    const predictedIndex = Math.max(0, Math.round(predictedOffset / height));
+    if (predictedIndex !== lastPageIndexRef.current) {
+      lastPageIndexRef.current = predictedIndex;
+      playSwipeSound();
+    }
+  };
+
+  // Safety-net resync only (no sound here) - corrects lastPageIndexRef if the release-time
+  // prediction above was wrong (e.g. a swipe too weak to actually change pages, which snaps
+  // back), so it doesn't drift out of sync with where the feed actually ends up.
+  const handleMomentumScrollEnd = (event: { nativeEvent: { contentOffset: { y: number } } }) => {
+    lastPageIndexRef.current = Math.round(event.nativeEvent.contentOffset.y / height);
   };
 
   const handleToggleBookmark = (item: PaperItem) => {
@@ -393,6 +419,7 @@ const PaperFeed: React.FC = () => {
       style={styles.list}
       onEndReached={handleEndReached}
       onEndReachedThreshold={0.5}
+      onScrollEndDrag={handleScrollEndDrag}
       onMomentumScrollEnd={handleMomentumScrollEnd}
       refreshControl={
         <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={theme.text} />

@@ -14,7 +14,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import LoadingIndicator from '../../components/LoadingIndicator';
 import ErrorMessage from '../../components/ErrorMessage';
-import { fetchPaperById } from '../../services/api';
+import { fetchPaperById, recordPaperView } from '../../services/api';
 import { useFavoritePapers } from '../../hooks/useStorage';
 import { useAuth } from '../../hooks/useAuth';
 import theme from '../../constants/theme';
@@ -73,6 +73,11 @@ export default function PaperDetailScreen() {
   const handleOpenLink = () => {
     if (paper?.url) {
       Linking.openURL(paper.url);
+      // Feeds the Visualizations tab's bubble map - fire-and-forget, only for signed-in users
+      // since the graph is account-scoped like bookmarks.
+      if (token) {
+        recordPaperView(token, paper.id);
+      }
     }
   };
 
