@@ -470,6 +470,7 @@ async def add_paper_by_citation(request):
         "published_date": body.get("published_date"),
         "url": body.get("url"),
         "is_open_access": body.get("is_open_access"),
+        "language": body.get("language"),
     }
 
     try:

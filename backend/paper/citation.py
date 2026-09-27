@@ -131,6 +131,10 @@ async def _candidate_from_crossref_item(session: aiohttp.ClientSession, item: Di
         "published_date": _crossref_published_date(item),
         "url": item.get("URL"),
         "is_open_access": None,
+        # Crossref's own reported language of record - carried through confirm so
+        # add_paper_from_citation can apply the same "trust a non-English source claim over our
+        # own text detection" override paper/latest.py's discovery feed already does.
+        "language": item.get("language"),
     }
 
     if doi:
@@ -253,6 +257,9 @@ async def add_paper_from_citation(candidate: Dict) -> Dict:
         "is_open_access": candidate.get("is_open_access"),
         "doi": doi,
         "url": candidate.get("url"),
+        # Transient hint for _apply_language_and_translation below - popped and turned into the
+        # real `language` field there, same as the discovery feed's fetch_latest_crossref.
+        "source_language": candidate.get("language"),
     }
 
     combined = [paper]
