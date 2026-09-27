@@ -713,6 +713,66 @@ async def _apply_language_and_translation(papers: List[Dict]) -> None:
         await asyncio.gather(*(translate_paper(p) for p in non_english))
 
 
+async def backfill_language_and_translation(batch_size: int = 20) -> Dict[str, int]:
+    """One-time (re-run-safe) backfill for papers already in MongoDB whose language was
+    misdetected by a fixed bug in _detect_language(): it used to run langdetect on the combined
+    title+abstract text, so a non-English paper submitted with an English abstract for
+    international indexing (common practice) had its native-language title's signal washed out by
+    the much longer English abstract, misdetecting the whole paper as English and never
+    translating it. _detect_language() now checks the title alone first, which catches this, but
+    that only takes effect for papers processed *after* the fix - existing documents keep whatever
+    `language`/`title`/`abstract` were computed under the old, buggy logic until re-processed here.
+
+    Only reprocesses documents tagged "en" that were never translated (no `title_original` set,
+    meaning they were never flagged as non-English by the old logic either) - a document that
+    already has `title_original` was correctly identified as non-English before this fix and
+    doesn't need touching. Safe to re-run: an already-correct "en" document just gets re-detected
+    as "en" again and is left alone (no write).
+    """
+    import db
+
+    collection = db.get_db().papers
+    candidates = list(collection.find(
+        {"language": "en", "title_original": {"$exists": False}},
+        {"title": 1, "abstract": 1, "journal": 1},
+    ))
+
+    corrected = 0
+    unchanged = 0
+
+    async with aiohttp.ClientSession(timeout=_HTTP_TIMEOUT) as session:
+        async def recheck(doc: Dict) -> None:
+            nonlocal corrected, unchanged
+            paper = {"title": doc.get("title", ""), "abstract": doc.get("abstract", "")}
+            detected = _detect_language(paper)
+            if detected == "en":
+                unchanged += 1
+                return
+
+            updates = {
+                "language": detected,
+                "title_original": doc.get("title"),
+                "journal_original": doc.get("journal"),
+            }
+            updates["title"] = await _translate_to_english(session, doc.get("title"), detected) or doc.get("title")
+            if doc.get("journal"):
+                updates["journal"] = (
+                    await _translate_to_english(session, doc.get("journal"), detected) or doc.get("journal")
+                )
+            updates["abstract"] = (
+                await _translate_to_english(session, doc.get("abstract"), detected) or doc.get("abstract")
+            )
+
+            collection.update_one({"_id": doc["_id"]}, {"$set": updates})
+            corrected += 1
+
+        for i in range(0, len(candidates), batch_size):
+            batch = candidates[i:i + batch_size]
+            await asyncio.gather(*(recheck(doc) for doc in batch))
+
+    return {"total_checked": len(candidates), "corrected": corrected, "unchanged": unchanged}
+
+
 async def _apply_summaries(papers: List[Dict]) -> None:
     """Generate each paper's UI description via Gemini in place.
 

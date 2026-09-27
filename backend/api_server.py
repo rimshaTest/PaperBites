@@ -377,6 +377,46 @@ async def get_reading_stats(request):
     })
 
 
+def _check_admin_key(request) -> bool:
+    """Shared-secret check for the one-off /api/admin/* backfill endpoints below - these exist
+    so a deployment without shell/SSH access to run cli.py's equivalent commands directly against
+    its database can still trigger them over plain HTTP. Unconfigured (no PAPERBITES_ADMIN_KEY)
+    means these routes always refuse, rather than defaulting to open."""
+    from config import Config
+    admin_key = Config().get("api.admin_key")
+    if not admin_key:
+        return False
+    return request.headers.get("x-admin-key") == admin_key
+
+
+async def admin_backfill_embeddings(request):
+    """One-off: compute embeddings for papers already in MongoDB that predate semantic search.
+    See paper/embeddings.py's backfill_missing_embeddings - same operation as
+    `python cli.py backfill-embeddings`, exposed over HTTP for deployments without shell access
+    to run that directly against their database. Requires the X-Admin-Key header to match
+    PAPERBITES_ADMIN_KEY."""
+    if not _check_admin_key(request):
+        return JSONResponse({"detail": "Not found"}, status_code=404)
+
+    from paper.embeddings import backfill_missing_embeddings
+    result = await backfill_missing_embeddings()
+    return JSONResponse(result)
+
+
+async def admin_backfill_language(request):
+    """One-off: re-check the language of papers already in MongoDB tagged 'en' but never
+    translated, using the fixed title-first detection. See paper/latest.py's
+    backfill_language_and_translation - same operation as `python cli.py backfill-language`,
+    exposed over HTTP for deployments without shell access. Requires the X-Admin-Key header to
+    match PAPERBITES_ADMIN_KEY."""
+    if not _check_admin_key(request):
+        return JSONResponse({"detail": "Not found"}, status_code=404)
+
+    from paper.latest import backfill_language_and_translation
+    result = await backfill_language_and_translation()
+    return JSONResponse(result)
+
+
 # Papers connect on the bubble map only above this cosine-similarity threshold - high enough that
 # an edge means "these are genuinely about similar things," not just "both are academic papers."
 _GRAPH_SIMILARITY_THRESHOLD = 0.75
@@ -763,6 +803,8 @@ routes = [
     Route("/api/papers/{paper_id}", get_paper),
     Route("/api/papers/{paper_id}/view", record_paper_view, methods=["POST"]),
     Route("/api/stats/reading", get_reading_stats),
+    Route("/api/admin/backfill-embeddings", admin_backfill_embeddings, methods=["POST"]),
+    Route("/api/admin/backfill-language", admin_backfill_language, methods=["POST"]),
     Route("/api/authors/{author_id}", get_author),
     Route("/api/journals/{journal_name}", get_journal),
     Route("/api/categories", get_categories),

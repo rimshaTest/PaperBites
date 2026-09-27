@@ -7,7 +7,7 @@ from typing import Optional
 
 from config import Config
 from utils.logging import setup_logging
-from paper.latest import get_latest_papers, CATEGORIES
+from paper.latest import get_latest_papers, CATEGORIES, backfill_language_and_translation
 from paper.embeddings import backfill_missing_embeddings
 from db import upsert_papers
 
@@ -49,6 +49,13 @@ def main():
     )
     backfill_parser.add_argument("--config", "-c", help="Path to config file", default="config.json")
 
+    backfill_language_parser = subparsers.add_parser(
+        "backfill-language",
+        help="Re-check the language of papers already in MongoDB tagged 'en' but never "
+             "translated, using the fixed title-first detection - safe to re-run",
+    )
+    backfill_language_parser.add_argument("--config", "-c", help="Path to config file", default="config.json")
+
     args = parser.parse_args()
 
     logger = setup_logging()
@@ -61,6 +68,9 @@ def main():
             logger.info(f"Upserted {total} papers total")
         elif args.command == "backfill-embeddings":
             result = await backfill_missing_embeddings()
+            logger.info(f"Backfill complete: {result}")
+        elif args.command == "backfill-language":
+            result = await backfill_language_and_translation()
             logger.info(f"Backfill complete: {result}")
         else:
             parser.print_help()
