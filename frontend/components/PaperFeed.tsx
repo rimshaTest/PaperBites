@@ -19,6 +19,7 @@ import Animated, {
   runOnJS,
 } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { useAudioPlayer } from 'expo-audio';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -32,10 +33,13 @@ import { useTheme } from '../hooks/useTheme';
 const { width, height } = Dimensions.get('window');
 
 // The card rests showing only its bottom portion (image visible above it); dragging the handle
-// up slides it over the full screen, covering the image. Only once fully expanded does its
+// up slides it over most of the screen, covering the image. Only once fully expanded does its
 // content become scrollable - while collapsed, dragging elsewhere still pages between papers.
+// It stops short of true 0 (see BRAND_BAR_RESERVED_HEIGHT below) so the "PaperBites" brand bar
+// stays visible and tappable even when a card is fully expanded.
 const COLLAPSED_TOP = height * 0.42;
-const EXPANDED_TOP = 0;
+const BRAND_BAR_TOP_OFFSET = 8;
+const BRAND_BAR_RESERVED_HEIGHT = 44;
 
 interface Author {
   id: string | null;
@@ -70,6 +74,10 @@ export const PaperCard: React.FC<{
   const router = useRouter();
   const { theme } = useTheme();
   const styles = React.useMemo(() => createStyles(theme), [theme]);
+  const insets = useSafeAreaInsets();
+  const brandBarTop = insets.top + BRAND_BAR_TOP_OFFSET;
+  const controlsTop = brandBarTop + BRAND_BAR_RESERVED_HEIGHT;
+  const expandedTop = brandBarTop + BRAND_BAR_RESERVED_HEIGHT;
   const top = useSharedValue(COLLAPSED_TOP);
   const [isExpanded, setIsExpanded] = React.useState(false);
 
@@ -109,13 +117,13 @@ export const PaperCard: React.FC<{
 
   const panGesture = Gesture.Pan()
     .onUpdate((event) => {
-      const base = isExpanded ? EXPANDED_TOP : COLLAPSED_TOP;
+      const base = isExpanded ? expandedTop : COLLAPSED_TOP;
       const next = base + event.translationY;
-      top.value = Math.min(COLLAPSED_TOP, Math.max(EXPANDED_TOP, next));
+      top.value = Math.min(COLLAPSED_TOP, Math.max(expandedTop, next));
     })
     .onEnd((event) => {
       const shouldExpand = top.value < COLLAPSED_TOP / 2 || event.velocityY < -500;
-      const target = shouldExpand ? EXPANDED_TOP : COLLAPSED_TOP;
+      const target = shouldExpand ? expandedTop : COLLAPSED_TOP;
       top.value = withTiming(target, { duration: 220 });
       runOnJS(setExpanded)(shouldExpand);
     });
@@ -132,7 +140,7 @@ export const PaperCard: React.FC<{
         ) : (
           <View style={[styles.image, styles.imageFallback]} />
         )}
-        <View pointerEvents="box-none" style={styles.brandBar}>
+        <View pointerEvents="box-none" style={[styles.brandBar, { top: brandBarTop }]}>
           <View style={styles.brandBarSpacer} pointerEvents="none" />
           <Text style={styles.brandText} pointerEvents="none">PaperBites</Text>
           <TouchableOpacity
@@ -144,7 +152,7 @@ export const PaperCard: React.FC<{
           </TouchableOpacity>
         </View>
         <TouchableOpacity
-          style={styles.saveButton}
+          style={[styles.saveButton, { top: controlsTop }]}
           onPress={() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
             onToggleBookmark(item);
@@ -156,7 +164,7 @@ export const PaperCard: React.FC<{
             color={isBookmarked ? theme.accent : theme.surface}
           />
         </TouchableOpacity>
-        <View style={styles.badgeColumn}>
+        <View style={[styles.badgeColumn, { top: controlsTop }]}>
           {item.trending_category && (
             <View style={styles.trendingBadge}>
               <Ionicons name="flame" size={12} color="#FFFFFF" />
