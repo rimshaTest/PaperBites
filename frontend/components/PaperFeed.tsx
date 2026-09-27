@@ -140,17 +140,6 @@ export const PaperCard: React.FC<{
         ) : (
           <View style={[styles.image, styles.imageFallback]} />
         )}
-        <View pointerEvents="box-none" style={[styles.brandBar, { top: brandBarTop }]}>
-          <View style={styles.brandBarSpacer} pointerEvents="none" />
-          <Text style={styles.brandText} pointerEvents="none">PaperBites</Text>
-          <TouchableOpacity
-            style={styles.searchIconButton}
-            onPress={() => router.push('/search')}
-            hitSlop={10}
-          >
-            <Ionicons name="search" size={16} color={theme.surface} />
-          </TouchableOpacity>
-        </View>
         <TouchableOpacity
           style={[styles.saveButton, { top: controlsTop }]}
           onPress={() => {
@@ -313,6 +302,8 @@ const PaperFeed: React.FC = () => {
   const { user, token } = useAuth();
   const { theme } = useTheme();
   const styles = React.useMemo(() => createStyles(theme), [theme]);
+  const insets = useSafeAreaInsets();
+  const brandBarTop = insets.top + BRAND_BAR_TOP_OFFSET;
   const { isFavorite, toggleFavorite } = useFavoritePapers(token) as unknown as FavoritePapersApi;
   const [papers, setPapers] = React.useState<PaperItem[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -430,70 +421,103 @@ const PaperFeed: React.FC = () => {
     toggleFavorite(item as any);
   };
 
+  // Rendered once here, as a sibling on top of the FlatList (not inside each per-item card), so
+  // it stays visually frozen in place while paging between papers - previously this lived inside
+  // PaperCard itself, so during the page-to-page drag gesture it moved along with whichever card
+  // was being dragged, instead of reading as a persistent app header.
+  const fixedHeader = (
+    <View pointerEvents="box-none" style={[styles.brandBar, { top: brandBarTop }]}>
+      <View style={styles.brandBarSpacer} pointerEvents="none" />
+      <Text style={styles.brandText} pointerEvents="none">PaperBites</Text>
+      <TouchableOpacity
+        style={styles.searchIconButton}
+        onPress={() => router.push('/search')}
+        hitSlop={10}
+      >
+        <Ionicons name="search" size={16} color={theme.surface} />
+      </TouchableOpacity>
+    </View>
+  );
+
   if (loading) {
     return (
-      <View style={styles.centerContainer}>
-        <ActivityIndicator size="large" color={theme.text} />
-        <Text style={styles.loadingText}>Loading papers...</Text>
+      <View style={styles.flexContainer}>
+        {fixedHeader}
+        <View style={styles.centerContainer}>
+          <ActivityIndicator size="large" color={theme.text} />
+          <Text style={styles.loadingText}>Loading papers...</Text>
+        </View>
       </View>
     );
   }
 
   if (error) {
     return (
-      <View style={styles.centerContainer}>
-        <Text style={styles.errorText}>{error}</Text>
+      <View style={styles.flexContainer}>
+        {fixedHeader}
+        <View style={styles.centerContainer}>
+          <Text style={styles.errorText}>{error}</Text>
+        </View>
       </View>
     );
   }
 
   if (papers.length === 0) {
     return (
-      <View style={styles.centerContainer}>
-        <Text style={styles.messageText}>No papers found</Text>
+      <View style={styles.flexContainer}>
+        {fixedHeader}
+        <View style={styles.centerContainer}>
+          <Text style={styles.messageText}>No papers found</Text>
+        </View>
       </View>
     );
   }
 
   return (
-    <FlatList
-      data={papers}
-      keyExtractor={(item) => item.id}
-      renderItem={({ item }) => (
-        <PaperCard
-          item={item}
-          onExpandedChange={setAnyExpanded}
-          isBookmarked={isFavorite(item.id)}
-          onToggleBookmark={handleToggleBookmark}
-        />
-      )}
-      // Every card is exactly `height` tall - telling FlatList that up front via
-      // getItemLayout skips its own (comparatively expensive) dynamic measurement pass, which
-      // is what made paging feel janky rather than an instant, deterministic snap to each page.
-      getItemLayout={(_, index) => ({ length: height, offset: height * index, index })}
-      pagingEnabled
-      scrollEnabled={!anyExpanded}
-      snapToInterval={height}
-      snapToAlignment="start"
-      decelerationRate="fast"
-      showsVerticalScrollIndicator={false}
-      initialNumToRender={2}
-      maxToRenderPerBatch={3}
-      windowSize={5}
-      removeClippedSubviews
-      style={styles.list}
-      onEndReached={handleEndReached}
-      onEndReachedThreshold={0.5}
-      onScrollEndDrag={handleScrollEndDrag}
-      onMomentumScrollEnd={handleMomentumScrollEnd}
-      refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={theme.text} />
-      }
-    />
+    <View style={styles.flexContainer}>
+      <FlatList
+        data={papers}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item }) => (
+          <PaperCard
+            item={item}
+            onExpandedChange={setAnyExpanded}
+            isBookmarked={isFavorite(item.id)}
+            onToggleBookmark={handleToggleBookmark}
+          />
+        )}
+        // Every card is exactly `height` tall - telling FlatList that up front via
+        // getItemLayout skips its own (comparatively expensive) dynamic measurement pass, which
+        // is what made paging feel janky rather than an instant, deterministic snap to each page.
+        getItemLayout={(_, index) => ({ length: height, offset: height * index, index })}
+        pagingEnabled
+        scrollEnabled={!anyExpanded}
+        snapToInterval={height}
+        snapToAlignment="start"
+        decelerationRate="fast"
+        showsVerticalScrollIndicator={false}
+        initialNumToRender={2}
+        maxToRenderPerBatch={3}
+        windowSize={5}
+        removeClippedSubviews
+        style={styles.list}
+        onEndReached={handleEndReached}
+        onEndReachedThreshold={0.5}
+        onScrollEndDrag={handleScrollEndDrag}
+        onMomentumScrollEnd={handleMomentumScrollEnd}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={theme.text} />
+        }
+      />
+      {fixedHeader}
+    </View>
   );
 };
 
 const createStyles = (theme: any) => StyleSheet.create({
+  flexContainer: {
+    flex: 1,
+  },
   list: {
     flex: 1,
     backgroundColor: theme.background,
@@ -605,7 +629,13 @@ const createStyles = (theme: any) => StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    height,
+    // Anchored to the screen bottom (rather than a fixed `height` paired with an animated `top`)
+    // so its actual height always shrinks to fit between wherever `top` currently is and the
+    // bottom of the screen. With a fixed height and `top` allowed to land above 0 (see
+    // expandedTop), the card would overflow past the bottom of the screen by that same amount -
+    // pushing its own "Read Original Paper" button/footer off-screen and letting the image
+    // layer's brand bar peek through underneath.
+    bottom: 0,
     backgroundColor: theme.background,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
