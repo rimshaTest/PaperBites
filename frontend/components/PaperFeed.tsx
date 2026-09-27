@@ -79,6 +79,18 @@ export const PaperCard: React.FC<{
 
   const authors = item.authors || [];
 
+  // "Original" is the raw abstract; "Simpler" is the Gemini rewrite at a lower reading level
+  // (paper/summarize.py - genuine simplification, not a condensed summary). Original is the
+  // default per-card state. Papers with no abstract at all (rare - only when a source gave us
+  // neither an abstract nor enough text to keep one, and description was generated from the PDF
+  // full text instead) have nothing to toggle to, so the toggle itself is hidden for those.
+  const hasOriginalAbstract = !!item.abstract && item.abstract.trim().length > 0;
+  const [descriptionMode, setDescriptionMode] = React.useState<'original' | 'simpler'>('original');
+  const displayedDescription =
+    descriptionMode === 'original' && hasOriginalAbstract
+      ? item.abstract
+      : item.description || item.abstract;
+
   const goToAuthor = (author: Author) => {
     if (author.id) {
       router.push(`/author/${encodeURIComponent(author.id)}`);
@@ -218,7 +230,28 @@ export const PaperCard: React.FC<{
             </View>
           )}
 
-          <Text style={styles.description}>{item.description || item.abstract}</Text>
+          {hasOriginalAbstract && (
+            <View style={styles.descriptionToggle}>
+              <TouchableOpacity
+                style={[styles.toggleOption, descriptionMode === 'original' && styles.toggleOptionActive]}
+                onPress={() => setDescriptionMode('original')}
+              >
+                <Text style={[styles.toggleText, descriptionMode === 'original' && styles.toggleTextActive]}>
+                  Original
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.toggleOption, descriptionMode === 'simpler' && styles.toggleOptionActive]}
+                onPress={() => setDescriptionMode('simpler')}
+              >
+                <Text style={[styles.toggleText, descriptionMode === 'simpler' && styles.toggleTextActive]}>
+                  Simpler
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          <Text style={styles.description}>{displayedDescription}</Text>
 
           <View style={styles.actionRow}>
             {item.url && (
@@ -628,6 +661,31 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: theme.textMuted,
     textDecorationLine: 'underline',
+  },
+  descriptionToggle: {
+    flexDirection: 'row',
+    alignSelf: 'flex-start',
+    borderWidth: 1.5,
+    borderColor: theme.border,
+    borderRadius: 20,
+    overflow: 'hidden',
+    marginBottom: 10,
+  },
+  toggleOption: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+  },
+  toggleOptionActive: {
+    backgroundColor: theme.accent,
+  },
+  toggleText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: theme.textMuted,
+  },
+  toggleTextActive: {
+    color: theme.surface,
+    fontWeight: 'bold',
   },
   description: {
     fontSize: 12,
