@@ -11,34 +11,32 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useAuth } from '../hooks/useAuth';
+import * as authApi from '../services/auth';
 import { useTheme } from '../hooks/useTheme';
 
-export default function LoginScreen() {
+export default function ForgotPasswordScreen() {
   const router = useRouter();
-  const { login, error: authError } = useAuth();
   const { theme } = useTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState(null);
 
-  const handleLogin = async () => {
+  const handleSubmit = async () => {
     setFormError(null);
-    if (!email.trim() || !password) {
-      setFormError('Enter your email and password');
+    if (!email.trim()) {
+      setFormError('Enter your email');
       return;
     }
 
     setSubmitting(true);
-    const ok = await login(email.trim(), password);
-    setSubmitting(false);
-
-    if (ok) {
-      router.back();
-    } else {
-      setFormError(authError || 'Login failed');
+    try {
+      await authApi.forgotPassword(email.trim());
+      router.push({ pathname: '/reset-password', params: { email: email.trim() } });
+    } catch (err) {
+      setFormError(err.message || 'Something went wrong');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -52,11 +50,15 @@ export default function LoginScreen() {
           <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
             <Ionicons name="arrow-back" size={24} color={theme.text} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Log In</Text>
+          <Text style={styles.headerTitle}>Reset Password</Text>
           <View style={styles.headerButton} />
         </View>
 
         <View style={styles.form}>
+          <Text style={styles.description}>
+            Enter your account email and we'll send you a code to reset your password.
+          </Text>
+
           <TextInput
             style={styles.input}
             placeholder="Email"
@@ -66,30 +68,15 @@ export default function LoginScreen() {
             autoCapitalize="none"
             keyboardType="email-address"
           />
-          <TextInput
-            style={styles.input}
-            placeholder="Password"
-            placeholderTextColor={theme.textMuted}
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-          />
 
           {formError && <Text style={styles.error}>{formError}</Text>}
 
           <TouchableOpacity
             style={[styles.submitButton, submitting && styles.submitButtonDisabled]}
-            onPress={handleLogin}
+            onPress={handleSubmit}
             disabled={submitting}
           >
-            <Text style={styles.submitButtonText}>{submitting ? 'Logging in...' : 'Log In'}</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity onPress={() => router.replace('/signup')}>
-            <Text style={styles.switchLink}>Don't have an account? Sign up</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => router.push('/forgot-password')}>
-            <Text style={styles.switchLink}>Forgot password?</Text>
+            <Text style={styles.submitButtonText}>{submitting ? 'Sending...' : 'Send Code'}</Text>
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -113,6 +100,12 @@ const createStyles = (theme) => StyleSheet.create({
   headerButton: { width: 34, padding: 5 },
   headerTitle: { fontSize: 18, fontWeight: 'bold', color: theme.text },
   form: { padding: 20 },
+  description: {
+    fontSize: 14,
+    color: theme.textMuted,
+    marginBottom: 20,
+    lineHeight: 20,
+  },
   input: {
     borderWidth: 1,
     borderColor: theme.border,
@@ -145,5 +138,4 @@ const createStyles = (theme) => StyleSheet.create({
     fontWeight: 'bold',
   },
   submitButtonDisabled: { opacity: 0.6 },
-  switchLink: { color: theme.accent, textAlign: 'center', fontSize: 14, marginTop: 10 },
 });

@@ -21,3 +21,4 @@ dnspython==2.4.2
 python-dotenv
 langdetect
 langchain-google-genai
+sentry-sdk

@@ -14,7 +14,12 @@ import profile as profile_store
 import paper_reviews as paper_reviews_store
 import paper_views as paper_views_store
 import auth
+import email_sender
+from rate_limit import RateLimitMiddleware
+from monitoring import init_monitoring
 from utils.text import clean_abstract
+
+init_monitoring()
 
 
 def _serialize_paper(doc: Dict) -> Dict:
@@ -699,6 +704,42 @@ async def logout(request):
     return JSONResponse({"status": "ok"})
 
 
+async def forgot_password(request):
+    """Request a password reset code. Always returns the same generic response whether or not
+    the email is registered, so this endpoint can't be used to enumerate accounts."""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"detail": "Invalid JSON body"}, status_code=400)
+
+    email = (body.get("email") or "").strip()
+    if email:
+        code = auth.create_password_reset_code(email)
+        if code:
+            email_sender.send_password_reset_code(email, code)
+
+    return JSONResponse({"status": "ok", "detail": "If that email is registered, a reset code has been sent."})
+
+
+async def reset_password(request):
+    """Consume a reset code (from forgot_password above) and set a new password."""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"detail": "Invalid JSON body"}, status_code=400)
+
+    try:
+        auth.reset_password(
+            body.get("email", ""),
+            body.get("code", ""),
+            body.get("new_password", ""),
+        )
+    except auth.AuthError as e:
+        return JSONResponse({"detail": str(e)}, status_code=400)
+
+    return JSONResponse({"status": "ok"})
+
+
 async def get_me(request):
     """Return the currently authenticated user, if any."""
     user_id = get_authenticated_user_id(request)
@@ -740,6 +781,8 @@ routes = [
     Route("/api/auth/signup", signup, methods=["POST"]),
     Route("/api/auth/login", login, methods=["POST"]),
     Route("/api/auth/logout", logout, methods=["POST"]),
+    Route("/api/auth/forgot-password", forgot_password, methods=["POST"]),
+    Route("/api/auth/reset-password", reset_password, methods=["POST"]),
     Route("/api/auth/me", get_me, methods=["GET"]),
 ]
 
@@ -750,7 +793,8 @@ middleware = [
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-  )
+  ),
+  Middleware(RateLimitMiddleware),
 ]
 
 # Create app

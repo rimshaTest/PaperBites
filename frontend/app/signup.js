@@ -54,7 +54,7 @@ export default function SignupScreen() {
       >
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
-            <Ionicons name="arrow-back" size={24} color="#333" />
+            <Ionicons name="arrow-back" size={24} color={theme.text} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Sign Up</Text>
           <View style={styles.headerButton} />
@@ -64,6 +64,7 @@ export default function SignupScreen() {
           <TextInput
             style={styles.input}
             placeholder="Email"
+            placeholderTextColor={theme.textMuted}
             value={email}
             onChangeText={setEmail}
             autoCapitalize="none"
@@ -72,6 +73,7 @@ export default function SignupScreen() {
           <TextInput
             style={styles.input}
             placeholder="Password (min. 8 characters)"
+            placeholderTextColor={theme.textMuted}
             value={password}
             onChangeText={setPassword}
             secureTextEntry
@@ -97,7 +99,7 @@ export default function SignupScreen() {
 }
 
 const createStyles = (theme) => StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
+  container: { flex: 1, backgroundColor: theme.background },
   flex: { flex: 1 },
   header: {
     flexDirection: 'row',
@@ -106,22 +108,25 @@ const createStyles = (theme) => StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
+    borderBottomColor: theme.border,
+    backgroundColor: theme.surface,
   },
   headerButton: { width: 34, padding: 5 },
-  headerTitle: { fontSize: 18, fontWeight: 'bold', color: '#333' },
+  headerTitle: { fontSize: 18, fontWeight: 'bold', color: theme.text },
   form: { padding: 20 },
   input: {
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: theme.border,
     borderRadius: 8,
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontSize: 16,
     marginBottom: 14,
+    color: theme.text,
+    backgroundColor: theme.surface,
   },
   error: {
-    color: '#E53935',
+    color: theme.danger,
     marginBottom: 14,
     fontSize: 14,
   },
@@ -141,5 +146,5 @@ const createStyles = (theme) => StyleSheet.create({
     fontWeight: 'bold',
   },
   submitButtonDisabled: { opacity: 0.6 },
-  switchLink: { color: '#c5b590', textAlign: 'center', fontSize: 14 },
+  switchLink: { color: theme.accent, textAlign: 'center', fontSize: 14 },
 });

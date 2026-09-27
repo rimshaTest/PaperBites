@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { AuthProvider } from '../hooks/useAuth';
 import { ThemeProvider, useTheme } from '../hooks/useTheme';
+import { installGlobalErrorHandler } from '../services/monitoring';
+import ErrorBoundary from '../components/ErrorBoundary';
 import IntroVideo from '../components/IntroVideo';
 import ReadConfirmationGate from '../components/ReadConfirmationGate';
 
@@ -21,6 +23,8 @@ function AppShell() {
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="login" />
         <Stack.Screen name="signup" />
+        <Stack.Screen name="forgot-password" />
+        <Stack.Screen name="reset-password" />
         <Stack.Screen name="paper/[id]" />
         <Stack.Screen name="author/[id]" />
         <Stack.Screen name="journal/[name]" />
@@ -37,13 +41,19 @@ function AppShell() {
 }
 
 export default function Layout() {
+  useEffect(() => {
+    installGlobalErrorHandler();
+  }, []);
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <ThemeProvider>
-        <AuthProvider>
-          <AppShell />
-        </AuthProvider>
-      </ThemeProvider>
+      <ErrorBoundary>
+        <ThemeProvider>
+          <AuthProvider>
+            <AppShell />
+          </AuthProvider>
+        </ThemeProvider>
+      </ErrorBoundary>
     </GestureHandlerRootView>
   );
 }
