@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAudioPlayer } from 'expo-audio';
 import { fetchBookmarks, addBookmark, removeBookmark } from '../services/api';
+import { playWhenReady } from '../utils/sound';
 
 const BOOKMARK_SOUND = require('../assets/sounds/bookmark-ding.wav');
 
@@ -80,8 +81,7 @@ export const useFavoritePapers = (token) => {
 
     // Play the confirm chime on add only, not remove - matches the common "saved!" pattern.
     try {
-      bookmarkSound.seekTo(0);
-      bookmarkSound.play();
+      playWhenReady(bookmarkSound);
     } catch (err) {
       console.debug('Bookmark sound failed to play:', err);
     }

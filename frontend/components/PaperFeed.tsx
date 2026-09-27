@@ -29,6 +29,7 @@ import { fetchPapers } from '../services/api';
 import { useAuth } from '../hooks/useAuth';
 import { useFavoritePapers } from '../hooks/useStorage';
 import { useTheme } from '../hooks/useTheme';
+import { playWhenReady } from '../utils/sound';
 
 const { width, height } = Dimensions.get('window');
 
@@ -373,8 +374,7 @@ const PaperFeed: React.FC = () => {
 
   const playSwipeSound = () => {
     try {
-      swipeSound.seekTo(0);
-      swipeSound.play();
+      playWhenReady(swipeSound);
     } catch (err) {
       console.debug('Swipe sound failed to play:', err);
     }
