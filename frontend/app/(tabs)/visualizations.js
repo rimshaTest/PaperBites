@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -12,7 +12,7 @@ import Svg, { Circle, Line, Text as SvgText } from 'react-native-svg';
 import Animated, { useSharedValue, useAnimatedStyle } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { forceSimulation, forceManyBody, forceLink, forceCenter, forceCollide } from 'd3-force';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { fetchViewedPapersGraph } from '../../services/api';
 import { useAuth } from '../../hooks/useAuth';
@@ -89,30 +89,37 @@ export default function VisualizationsScreen() {
   const [error, setError] = useState(null);
   const [graph, setGraph] = useState(null);
 
-  useEffect(() => {
-    if (!token) {
-      setLoading(false);
-      return;
-    }
-
-    let cancelled = false;
-    const load = async () => {
-      try {
-        setLoading(true);
-        const data = await fetchViewedPapersGraph(token);
-        if (!cancelled) setGraph(data);
-      } catch (err) {
-        console.error('Failed to load paper graph:', err);
-        if (!cancelled) setError('Failed to load your paper map.');
-      } finally {
-        if (!cancelled) setLoading(false);
+  // Reload every time this tab regains focus - not just on mount/token change - so a paper
+  // viewed just before switching tabs shows up immediately, the same staleness fix already
+  // applied to the Saved tab.
+  useFocusEffect(
+    useCallback(() => {
+      if (!token) {
+        setLoading(false);
+        setGraph(null);
+        return;
       }
-    };
-    load();
-    return () => {
-      cancelled = true;
-    };
-  }, [token]);
+
+      let cancelled = false;
+      const load = async () => {
+        try {
+          setLoading(true);
+          setError(null);
+          const data = await fetchViewedPapersGraph(token);
+          if (!cancelled) setGraph(data);
+        } catch (err) {
+          console.error('Failed to load paper graph:', err);
+          if (!cancelled) setError('Failed to load your paper map.');
+        } finally {
+          if (!cancelled) setLoading(false);
+        }
+      };
+      load();
+      return () => {
+        cancelled = true;
+      };
+    }, [token])
+  );
 
   const laidOutNodes = useMemo(() => {
     if (!graph || graph.nodes.length === 0) return [];
