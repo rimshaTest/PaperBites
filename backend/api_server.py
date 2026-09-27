@@ -430,6 +430,19 @@ async def admin_diagnose_language(request):
     return JSONResponse(diagnose_language(limit=limit))
 
 
+async def admin_list_non_english_papers(request):
+    """Read-only: every paper currently tagged with a non-English language, showing both its
+    translated title and title_original - confirms non-English papers exist and were actually
+    translated, without checking documents one by one. See paper/latest.py's
+    list_non_english_papers. Requires the X-Admin-Key header to match PAPERBITES_ADMIN_KEY."""
+    if not _check_admin_key(request):
+        return JSONResponse({"detail": "Not found"}, status_code=404)
+
+    limit = int(request.query_params.get("limit", "50"))
+    from paper.latest import list_non_english_papers
+    return JSONResponse(list_non_english_papers(limit=limit))
+
+
 # Papers connect on the bubble map only above this cosine-similarity threshold - high enough that
 # an edge means "these are genuinely about similar things," not just "both are academic papers."
 _GRAPH_SIMILARITY_THRESHOLD = 0.75
@@ -819,6 +832,7 @@ routes = [
     Route("/api/admin/backfill-embeddings", admin_backfill_embeddings, methods=["POST"]),
     Route("/api/admin/backfill-language", admin_backfill_language, methods=["POST"]),
     Route("/api/admin/diagnose-language", admin_diagnose_language),
+    Route("/api/admin/non-english-papers", admin_list_non_english_papers),
     Route("/api/authors/{author_id}", get_author),
     Route("/api/journals/{journal_name}", get_journal),
     Route("/api/categories", get_categories),

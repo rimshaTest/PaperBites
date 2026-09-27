@@ -823,6 +823,31 @@ def diagnose_language(limit: int = 50) -> List[Dict]:
     return results
 
 
+def list_non_english_papers(limit: int = 50) -> List[Dict]:
+    """Read-only: every paper currently tagged with a non-English language, showing both its
+    (translated) displayed title and title_original - lets you directly confirm a non-English
+    paper both exists and was actually translated, without inspecting documents one by one."""
+    import db
+
+    collection = db.get_db().papers
+    docs = list(collection.find(
+        {"language": {"$ne": "en"}},
+        {"title": 1, "title_original": 1, "journal": 1, "journal_original": 1, "language": 1},
+    ).limit(limit))
+
+    return [
+        {
+            "id": str(doc["_id"]),
+            "language": doc.get("language"),
+            "title": doc.get("title"),
+            "title_original": doc.get("title_original"),
+            "journal": doc.get("journal"),
+            "journal_original": doc.get("journal_original"),
+        }
+        for doc in docs
+    ]
+
+
 async def _apply_summaries(papers: List[Dict]) -> None:
     """Generate each paper's UI description via Gemini in place.
 

@@ -8,7 +8,13 @@ from typing import Optional
 
 from config import Config
 from utils.logging import setup_logging
-from paper.latest import get_latest_papers, CATEGORIES, backfill_language_and_translation, diagnose_language
+from paper.latest import (
+    get_latest_papers,
+    CATEGORIES,
+    backfill_language_and_translation,
+    diagnose_language,
+    list_non_english_papers,
+)
 from paper.embeddings import backfill_missing_embeddings
 from db import upsert_papers
 
@@ -65,6 +71,15 @@ def main():
     diagnose_parser.add_argument("--limit", help="Max papers to inspect", type=int, default=50)
     diagnose_parser.add_argument("--config", "-c", help="Path to config file", default="config.json")
 
+    non_english_parser = subparsers.add_parser(
+        "list-non-english",
+        help="Read-only: show every paper currently tagged with a non-English language, with "
+             "both its translated title and title_original - confirms non-English papers exist "
+             "and were actually translated, without checking documents one by one",
+    )
+    non_english_parser.add_argument("--limit", help="Max papers to list", type=int, default=50)
+    non_english_parser.add_argument("--config", "-c", help="Path to config file", default="config.json")
+
     args = parser.parse_args()
 
     logger = setup_logging()
@@ -84,6 +99,10 @@ def main():
         elif args.command == "diagnose-language":
             results = diagnose_language(limit=args.limit)
             print(json.dumps(results, indent=2))
+        elif args.command == "list-non-english":
+            results = list_non_english_papers(limit=args.limit)
+            print(json.dumps(results, indent=2))
+            logger.info(f"Found {len(results)} non-English paper(s)")
         else:
             parser.print_help()
 
