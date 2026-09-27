@@ -6,8 +6,8 @@ import {
   StyleSheet,
   ScrollView,
   ActivityIndicator,
-  SafeAreaView,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { fetchCategories, saveInterests } from '../services/api';
 import { useAuth } from '../hooks/useAuth';
@@ -160,6 +160,7 @@ const createStyles = (theme) => StyleSheet.create({
   },
   chipText: {
     fontSize: 14,
+    lineHeight: 19,
     color: theme.text,
   },
   chipTextSelected: {

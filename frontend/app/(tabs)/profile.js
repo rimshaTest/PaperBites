@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useMemo } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../hooks/useAuth';
@@ -167,6 +168,7 @@ const createStyles = (theme) => StyleSheet.create({
   },
   email: {
     fontSize: 15,
+    lineHeight: 20,
     color: theme.textMuted,
     marginBottom: 20,
     maxWidth: '85%',
@@ -189,6 +191,7 @@ const createStyles = (theme) => StyleSheet.create({
   secondaryLink: {
     color: theme.text,
     fontSize: 15,
+    lineHeight: 20,
     textDecorationLine: 'underline',
   },
   row: {

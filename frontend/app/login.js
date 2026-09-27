@@ -5,10 +5,10 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  SafeAreaView,
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../hooks/useAuth';
@@ -145,5 +145,5 @@ const createStyles = (theme) => StyleSheet.create({
     fontWeight: 'bold',
   },
   submitButtonDisabled: { opacity: 0.6 },
-  switchLink: { color: theme.accent, textAlign: 'center', fontSize: 14, marginTop: 10 },
+  switchLink: { color: theme.accent, textAlign: 'center', fontSize: 14, lineHeight: 19, marginTop: 10 },
 });

@@ -188,6 +188,7 @@ const createStyles = (theme: any) => StyleSheet.create({
   },
   chipText: {
     fontSize: 14,
+    lineHeight: 19,
     color: theme.text,
     flexShrink: 1,
   },

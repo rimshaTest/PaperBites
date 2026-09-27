@@ -18,10 +18,18 @@ export default function TabLayout() {
         tabBarButton: HapticTab,
         tabBarBackground: TabBarBackground,
         tabBarStyle: Platform.select({
+          // iOS gets a translucent blur (see TabBarBackground.ios.tsx) tinted to match our own
+          // light/dark scheme, so it stays transparent here.
           ios: {
             position: 'absolute',
           },
-          default: {},
+          // Android/web have no blur backdrop (TabBarBackground.tsx renders nothing) and
+          // otherwise fall back to React Navigation's default light background regardless of
+          // theme - set it explicitly so the tab bar actually follows dark mode there too.
+          default: {
+            backgroundColor: theme.surface,
+            borderTopColor: theme.border,
+          },
         }),
       }}>
       <Tabs.Screen
