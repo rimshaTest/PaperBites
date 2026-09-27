@@ -168,6 +168,7 @@ const createStyles = (theme) => StyleSheet.create({
   },
   categoryText: {
     fontSize: 12,
+    lineHeight: 16,
     color: theme.textMuted,
   },
 });
