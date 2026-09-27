@@ -527,8 +527,26 @@ def _detect_language(paper: Dict) -> str:
     false positives on English academic text (acronyms, jargon, proper nouns) misread as another
     language. Require high confidence before accepting a non-English result; otherwise assume
     English, which is the overwhelmingly common case for indexed research papers.
+
+    Checks the title alone first. Non-English journals commonly submit an English-translated
+    abstract for international indexing while leaving the title in its original language (the
+    title is what a human reader actually sees first, so it's far less likely to have been
+    independently translated) - combining title+abstract text before detecting would let that
+    much-longer English abstract dominate and wash out a non-English title's signal entirely,
+    misclassifying the whole paper as English. Only falls back to the combined text (the original
+    behavior) when the title alone isn't a confident enough signal - short titles are noisier for
+    langdetect than a full title+abstract block.
     """
-    text = f"{paper.get('title', '')} {paper.get('abstract', '')}".strip()
+    title = (paper.get('title') or '').strip()
+    if title:
+        try:
+            best_title = detect_langs(title)[0]
+            if best_title.lang != "en" and best_title.prob >= _NON_ENGLISH_CONFIDENCE_THRESHOLD:
+                return best_title.lang
+        except LangDetectException:
+            pass
+
+    text = f"{title} {paper.get('abstract', '')}".strip()
     if not text:
         return "en"
     try:
@@ -662,19 +680,18 @@ async def _apply_language_and_translation(papers: List[Dict]) -> None:
     non_english = []
     for paper in papers:
         detected_language = _detect_language(paper)
-        # Translation is driven by what the indexed text actually needs - if it detected as
-        # English, it doesn't need translating, full stop, regardless of what the tag below ends
-        # up showing. Only the *displayed* language tag gets Crossref's override; translating an
-        # already-English abstract using a wrong non-English source-language hint would risk
-        # MyMemory mangling perfectly good text for no reason.
-        needs_translation = detected_language != "en"
 
         source_language = paper.pop("source_language", None)
         if detected_language == "en" and source_language and source_language != "en":
             detected_language = source_language
 
+        # Computed from the *final* detected_language (after Crossref's override above), not
+        # the pre-override guess - a paper Crossref confirms is non-English needs its
+        # title/abstract translated too, not just its displayed language tag corrected. This was
+        # previously checked before the override ran, so an overridden paper's language tag would
+        # correctly show non-English while its title/abstract silently stayed untranslated.
         paper["language"] = detected_language
-        if needs_translation:
+        if detected_language != "en":
             non_english.append(paper)
 
     if not non_english:
