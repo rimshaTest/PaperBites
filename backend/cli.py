@@ -14,6 +14,7 @@ from paper.latest import (
     backfill_language_and_translation,
     diagnose_language,
     list_non_english_papers,
+    backfill_doi_and_url,
 )
 from paper.embeddings import backfill_missing_embeddings
 from db import upsert_papers
@@ -80,6 +81,14 @@ def main():
     non_english_parser.add_argument("--limit", help="Max papers to list", type=int, default=50)
     non_english_parser.add_argument("--config", "-c", help="Path to config file", default="config.json")
 
+    backfill_doi_parser = subparsers.add_parser(
+        "backfill-doi-url",
+        help="Clear malformed DOIs (e.g. a bare 'DOI: 10.61132/' with no suffix) and fill in a "
+             "doi.org fallback URL for papers with a valid DOI but no url - without a url, "
+             "'Read Original Paper' doesn't render at all - safe to re-run",
+    )
+    backfill_doi_parser.add_argument("--config", "-c", help="Path to config file", default="config.json")
+
     args = parser.parse_args()
 
     logger = setup_logging()
@@ -103,6 +112,9 @@ def main():
             results = list_non_english_papers(limit=args.limit)
             print(json.dumps(results, indent=2))
             logger.info(f"Found {len(results)} non-English paper(s)")
+        elif args.command == "backfill-doi-url":
+            result = backfill_doi_and_url()
+            logger.info(f"Backfill complete: {result}")
         else:
             parser.print_help()
 

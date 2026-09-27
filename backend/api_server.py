@@ -443,6 +443,19 @@ async def admin_list_non_english_papers(request):
     return JSONResponse(list_non_english_papers(limit=limit))
 
 
+async def admin_backfill_doi_url(request):
+    """One-off: clear malformed DOIs and fill in a doi.org fallback URL for papers already in
+    MongoDB with a valid DOI but no url - without a url, "Read Original Paper" doesn't render at
+    all on the frontend. See paper/latest.py's backfill_doi_and_url - same operation as
+    `python cli.py backfill-doi-url`. Requires the X-Admin-Key header to match
+    PAPERBITES_ADMIN_KEY."""
+    if not _check_admin_key(request):
+        return JSONResponse({"detail": "Not found"}, status_code=404)
+
+    from paper.latest import backfill_doi_and_url
+    return JSONResponse(backfill_doi_and_url())
+
+
 # Papers connect on the bubble map only above this cosine-similarity threshold - high enough that
 # an edge means "these are genuinely about similar things," not just "both are academic papers."
 _GRAPH_SIMILARITY_THRESHOLD = 0.75
@@ -833,6 +846,7 @@ routes = [
     Route("/api/admin/backfill-language", admin_backfill_language, methods=["POST"]),
     Route("/api/admin/diagnose-language", admin_diagnose_language),
     Route("/api/admin/non-english-papers", admin_list_non_english_papers),
+    Route("/api/admin/backfill-doi-url", admin_backfill_doi_url, methods=["POST"]),
     Route("/api/authors/{author_id}", get_author),
     Route("/api/journals/{journal_name}", get_journal),
     Route("/api/categories", get_categories),
