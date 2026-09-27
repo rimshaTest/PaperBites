@@ -12,11 +12,13 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { fetchCategories, fetchInterests, saveInterests } from '../../services/api';
 import { useAuth } from '../../hooks/useAuth';
-import theme from '../../constants/theme';
+import { useTheme } from '../../hooks/useTheme';
 
 export default function InterestsScreen() {
   const router = useRouter();
   const { user, token, loading: authLoading } = useAuth();
+  const { theme } = useTheme();
+  const styles = React.useMemo(() => createStyles(theme), [theme]);
   const [topics, setTopics] = React.useState<string[]>([]);
   const [selected, setSelected] = React.useState<string[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -114,7 +116,7 @@ export default function InterestsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: any) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.background,

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -18,12 +18,14 @@ import { fetchPaperById } from '../../services/api';
 import { setPendingReadConfirmation } from '../../services/storage';
 import { useFavoritePapers } from '../../hooks/useStorage';
 import { useAuth } from '../../hooks/useAuth';
-import theme from '../../constants/theme';
+import { useTheme } from '../../hooks/useTheme';
 
 export default function PaperDetailScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams();
   const { user, token } = useAuth();
+  const { theme } = useTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const { isFavorite: isFavoriteFn, toggleFavorite: toggleFavoriteFn } = useFavoritePapers(token);
   const [paper, setPaper] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -195,7 +197,7 @@ export default function PaperDetailScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.background,

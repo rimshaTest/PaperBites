@@ -16,7 +16,7 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { fetchViewedPapersGraph } from '../../services/api';
 import { useAuth } from '../../hooks/useAuth';
-import theme from '../../constants/theme';
+import { useTheme } from '../../hooks/useTheme';
 
 const { width, height } = Dimensions.get('window');
 const CANVAS_SIZE = Math.max(width, height) * 1.6; // bigger than the viewport - that's what makes panning meaningful
@@ -28,8 +28,8 @@ const SIMULATION_TICKS = 300;
 // so the same category always gets the same color across sessions.
 const CATEGORY_PALETTE = ['#c5b590', '#8fa8a3', '#c98a6b', '#7f9cc4', '#b98fb3', '#9fb37a', '#c47f7f', '#7fb3ab'];
 
-function hashCategoryColor(category) {
-  if (!category) return theme.textMuted;
+function hashCategoryColor(category, fallbackColor) {
+  if (!category) return fallbackColor;
   let hash = 0;
   for (let i = 0; i < category.length; i++) {
     hash = (hash * 31 + category.charCodeAt(i)) | 0;
@@ -84,6 +84,8 @@ function computeLayout(nodes, edges) {
 export default function VisualizationsScreen() {
   const router = useRouter();
   const { user, token, loading: authLoading } = useAuth();
+  const { theme } = useTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -216,7 +218,7 @@ export default function VisualizationsScreen() {
                       cx={node.x}
                       cy={node.y}
                       r={node.radius}
-                      fill={hashCategoryColor(node.categories?.[0])}
+                      fill={hashCategoryColor(node.categories?.[0], theme.textMuted)}
                       stroke={theme.border}
                       strokeWidth={1.5}
                       onPress={() => handleNodePress(node.id)}
@@ -243,7 +245,7 @@ export default function VisualizationsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.background,

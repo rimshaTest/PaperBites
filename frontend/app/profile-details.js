@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -13,7 +13,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { fetchProfile, saveProfileTier1, saveProfileTier2 } from '../services/api';
 import { useAuth } from '../hooks/useAuth';
-import theme from '../constants/theme';
+import { useTheme } from '../hooks/useTheme';
 
 const TIER2_FIELDS = [
   { key: 'age', label: 'Age' },
@@ -28,6 +28,8 @@ const TIER2_FIELDS = [
 export default function ProfileDetailsScreen() {
   const router = useRouter();
   const { user, token, loading: authLoading } = useAuth();
+  const { theme } = useTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -244,7 +246,7 @@ export default function ProfileDetailsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.background,

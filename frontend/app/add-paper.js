@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -22,7 +22,7 @@ import {
   scanPaperPhoto,
 } from '../services/api';
 import { useAuth } from '../hooks/useAuth';
-import theme from '../constants/theme';
+import { useTheme } from '../hooks/useTheme';
 
 /**
  * Add-a-paper-by-citation flow (docs/TECHNICAL_SPEC.md's "Add-Paper Ingestion Pipeline"),
@@ -43,6 +43,8 @@ import theme from '../constants/theme';
 export default function AddPaperScreen() {
   const router = useRouter();
   const { token } = useAuth();
+  const { theme } = useTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
 
   const [citation, setCitation] = useState('');
   const [searching, setSearching] = useState(false);
@@ -330,7 +332,7 @@ export default function AddPaperScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.background,

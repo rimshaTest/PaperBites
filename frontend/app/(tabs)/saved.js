@@ -12,11 +12,13 @@ import { Ionicons } from '@expo/vector-icons';
 import PaperCard from '../../components/PaperCard';
 import { useFavoritePapers } from '../../hooks/useStorage';
 import { useAuth } from '../../hooks/useAuth';
-import theme from '../../constants/theme';
+import { useTheme } from '../../hooks/useTheme';
 
 export default function SavedScreen() {
   const router = useRouter();
   const { user, token, loading: authLoading } = useAuth();
+  const { theme } = useTheme();
+  const styles = React.useMemo(() => createStyles(theme), [theme]);
   const { favorites, loading, isFavorite, removeFavorite, refetch } = useFavoritePapers(token);
 
   // Reload whenever the Saved tab regains focus, so bookmarks added/removed
@@ -96,7 +98,7 @@ export default function SavedScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.background,

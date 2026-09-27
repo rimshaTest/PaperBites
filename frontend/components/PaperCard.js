@@ -1,12 +1,14 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, Image, StyleSheet, TouchableOpacity, Dimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import theme from '../constants/theme';
+import { useTheme } from '../hooks/useTheme';
 
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = width * 0.9;
 
 const PaperCard = ({ paper, onPress, isBookmarked = false, onToggleBookmark, onAuthorPress, onJournalPress }) => {
+  const { theme } = useTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const authors = paper.authors || [];
   const visibleAuthors = authors.slice(0, 2);
   const extraCount = authors.length - visibleAuthors.length;
@@ -89,7 +91,7 @@ const PaperCard = ({ paper, onPress, isBookmarked = false, onToggleBookmark, onA
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (theme) => StyleSheet.create({
   container: {
     width: CARD_WIDTH,
     marginHorizontal: width * 0.05,

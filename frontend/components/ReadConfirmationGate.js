@@ -1,11 +1,11 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AppState, Modal, StyleSheet, Text, TouchableOpacity, View, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { getPendingReadConfirmation, clearPendingReadConfirmation } from '../services/storage';
 import { recordPaperView } from '../services/api';
 import { useAuth } from '../hooks/useAuth';
-import theme from '../constants/theme';
+import { useTheme } from '../hooks/useTheme';
 
 /**
  * Libby-style "Did you read this paper?" prompt. Paper/[id]'s "View Original Paper" button only
@@ -16,6 +16,8 @@ import theme from '../constants/theme';
  */
 export default function ReadConfirmationGate() {
   const { token } = useAuth();
+  const { theme } = useTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const [pending, setPending] = useState(null);
   const [milestone, setMilestone] = useState(null);
   const appState = useRef(AppState.currentState);
@@ -113,7 +115,7 @@ export default function ReadConfirmationGate() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme) => StyleSheet.create({
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',

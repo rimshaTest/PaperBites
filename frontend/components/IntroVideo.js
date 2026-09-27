@@ -1,7 +1,7 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { View, Image, StyleSheet } from 'react-native';
 import { useVideoPlayer, VideoView } from 'expo-video';
-import theme from '../constants/theme';
+import { useTheme } from '../hooks/useTheme';
 
 const VIDEO_SOURCE = require('../assets/splash-video.mp4');
 const POSTER_SOURCE = require('../assets/splash-static.png');
@@ -16,6 +16,8 @@ const MAX_INTRO_MS = 6000;
  * that unmounts itself via onFinish, so there's no navigation history entry to back out of.
  */
 export default function IntroVideo({ onFinish }) {
+  const { theme } = useTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const finishedRef = useRef(false);
 
   const finish = () => {
@@ -52,7 +54,7 @@ export default function IntroVideo({ onFinish }) {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme) => StyleSheet.create({
   container: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: theme.background,
