@@ -10,21 +10,21 @@ export const lightTheme = {
   background: '#f3f0e9',
   surface: '#FFFFFF',
   text: '#1A1A1A',
-  textMuted: '#6B6B6B',
+  textMuted: '#5e5e5e',
   border: '#1A1A1A',
-  accent: '#c5b590',
+  accent: '#cf9e2c',
   danger: '#E53935',
   serif,
 };
 
 export const darkTheme = {
   mode: 'dark',
-  background: '#15130f',
-  surface: '#211f1a',
+  background: '#2a261e',
+  surface: '#2a261e',
   text: '#EDEAE3',
-  textMuted: '#9C9689',
-  border: '#3A362E',
-  accent: '#c5b590',
+  textMuted: '#ffe2a4',
+  border: '#cbbda1',
+  accent: '#a17919',
   danger: '#FF6B60',
   serif,
 };

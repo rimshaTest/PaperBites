@@ -167,7 +167,6 @@ export default function PaperDetailScreen() {
 
         {paper.doi && (
           <View style={styles.infoRow}>
-            <Ionicons name="link-outline" size={16} color={theme.textMuted} />
             <Text style={styles.infoText}>DOI: {paper.doi}</Text>
           </View>
         )}

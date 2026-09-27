@@ -45,9 +45,6 @@ export default function SavedScreen() {
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <View style={styles.headerLeft}>
-          <TouchableOpacity onPress={() => router.back()} hitSlop={12}>
-            <Ionicons name="chevron-back" size={26} color={theme.text} />
-          </TouchableOpacity>
           <Text style={styles.headerTitle}>Saved</Text>
         </View>
         {user && (

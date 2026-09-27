@@ -219,7 +219,6 @@ export const PaperCard: React.FC<{
 
           <View style={styles.statsRow}>
             <View style={styles.statItem}>
-              <Ionicons name="git-branch-outline" size={16} color={theme.text} />
               <Text style={styles.statValue}>{item.citation_count}</Text>
               <Text style={styles.statLabel}>Citations</Text>
             </View>
@@ -236,8 +235,7 @@ export const PaperCard: React.FC<{
           {item.doi && (
             <View style={styles.metaRow}>
               <Text
-                style={styles.metaLink}
-                onPress={() => Linking.openURL(`https://doi.org/${item.doi}`)}
+                style={styles.statLabel}
               >
                 DOI: {item.doi}
               </Text>

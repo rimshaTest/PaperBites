@@ -46,6 +46,13 @@ export default function TabLayout() {
           tabBarIcon: ({ color }) => <IconSymbol size={26} name="circle.grid.2x2.fill" color={color} />,
         }}
       />
+      <Tabs.Screen 
+        name="saved" 
+        options={{ 
+          title: 'Saved',
+          tabBarIcon: ({ color }) => <IconSymbol size={26} name="bookmark.fill" color={color} />
+        }}
+      />
       <Tabs.Screen
         name="profile"
         options={{
@@ -53,8 +60,6 @@ export default function TabLayout() {
           tabBarIcon: ({ color }) => <IconSymbol size={26} name="person.fill" color={color} />,
         }}
       />
-      {/* Reachable from Profile > Saved, not a tab of its own anymore. */}
-      <Tabs.Screen name="saved" options={{ href: null }} />
       {/* Reachable from Profile > Settings > Manage Feed, and shown once as an onboarding
           popup right after signup - not a tab of its own. */}
       <Tabs.Screen name="interests" options={{ href: null }} />
