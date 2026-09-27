@@ -1,20 +1,44 @@
-import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView } from 'react-native';
-import { useRouter } from 'expo-router';
+import React, { useState, useCallback } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, ScrollView } from 'react-native';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../hooks/useAuth';
+import { fetchReadingStats } from '../../services/api';
+import { MILESTONES } from '../../constants/milestones';
 import theme from '../../constants/theme';
 
 export default function ProfileScreen() {
   const router = useRouter();
-  const { user, loading, logout } = useAuth();
+  const { user, token, loading, logout } = useAuth();
+  const [stats, setStats] = useState(null);
+
+  // Reload every time the tab regains focus, same staleness fix as Saved/Visualize, so a
+  // just-confirmed read's milestone/stats show up immediately after switching tabs.
+  useFocusEffect(
+    useCallback(() => {
+      if (!token) {
+        setStats(null);
+        return;
+      }
+      let cancelled = false;
+      fetchReadingStats(token).then((result) => {
+        if (!cancelled) setStats(result);
+      });
+      return () => { cancelled = true; };
+    }, [token])
+  );
 
   const handleLogout = async () => {
     await logout();
   };
 
+  const topCategories = stats
+    ? Object.entries(stats.by_category).sort((a, b) => b[1] - a[1]).slice(0, 5)
+    : [];
+
   return (
     <SafeAreaView style={styles.container}>
+      <ScrollView showsVerticalScrollIndicator={false}>
       <Text style={styles.headerTitle}>Profile</Text>
 
       {loading ? (
@@ -27,6 +51,42 @@ export default function ProfileScreen() {
             </View>
             <Text style={styles.email}>{user.email}</Text>
           </View>
+
+          {stats && stats.total_read > 0 && (
+            <View style={styles.statsCard}>
+              <Text style={styles.statsHeading}>{stats.total_read} papers read</Text>
+
+              <View style={styles.badgeRow}>
+                {MILESTONES.map((m) => {
+                  const earned = stats.milestones_reached.includes(m);
+                  return (
+                    <View key={m} style={styles.badgeItem}>
+                      <View style={[styles.badgeCircle, earned && styles.badgeCircleEarned]}>
+                        <Ionicons
+                          name="flame"
+                          size={20}
+                          color={earned ? '#FFFFFF' : theme.textMuted}
+                        />
+                      </View>
+                      <Text style={[styles.badgeCount, earned && styles.badgeCountEarned]}>{m}</Text>
+                    </View>
+                  );
+                })}
+              </View>
+
+              {topCategories.length > 0 && (
+                <View style={styles.categorySection}>
+                  <Text style={styles.categoryHeading}>Top topics</Text>
+                  {topCategories.map(([category, count]) => (
+                    <View key={category} style={styles.categoryRow}>
+                      <Text style={styles.categoryName}>{category}</Text>
+                      <Text style={styles.categoryCount}>{count}</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+            </View>
+          )}
 
           <TouchableOpacity style={styles.row} onPress={() => router.push('/saved')}>
             <Ionicons name="bookmark-outline" size={22} color={theme.text} />
@@ -66,6 +126,7 @@ export default function ProfileScreen() {
           </TouchableOpacity>
         </View>
       )}
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -148,5 +209,77 @@ const styles = StyleSheet.create({
   logoutRow: {
     marginTop: 20,
     borderColor: theme.danger,
+  },
+  statsCard: {
+    backgroundColor: theme.surface,
+    borderWidth: 1.5,
+    borderColor: theme.border,
+    borderRadius: 10,
+    padding: 16,
+    marginBottom: 20,
+  },
+  statsHeading: {
+    fontFamily: theme.serif,
+    fontSize: 17,
+    fontWeight: 'bold',
+    color: theme.text,
+    marginBottom: 12,
+  },
+  badgeRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  badgeItem: {
+    alignItems: 'center',
+  },
+  badgeCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: theme.background,
+    borderWidth: 1,
+    borderColor: theme.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  badgeCircleEarned: {
+    backgroundColor: '#FF7A00',
+    borderColor: '#FF7A00',
+  },
+  badgeCount: {
+    fontSize: 11,
+    color: theme.textMuted,
+  },
+  badgeCountEarned: {
+    color: theme.text,
+    fontWeight: '600',
+  },
+  categorySection: {
+    marginTop: 16,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: theme.background,
+  },
+  categoryHeading: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: theme.textMuted,
+    marginBottom: 8,
+    textTransform: 'uppercase',
+  },
+  categoryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 4,
+  },
+  categoryName: {
+    fontSize: 14,
+    color: theme.text,
+  },
+  categoryCount: {
+    fontSize: 14,
+    color: theme.textMuted,
+    fontWeight: '600',
   },
 });

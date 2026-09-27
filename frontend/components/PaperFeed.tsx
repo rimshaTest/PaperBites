@@ -23,6 +23,7 @@ import { Image } from 'expo-image';
 import { useAudioPlayer } from 'expo-audio';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { fetchPapers } from '../services/api';
 import { useAuth } from '../hooks/useAuth';
 import { useFavoritePapers } from '../hooks/useStorage';
@@ -57,6 +58,7 @@ export interface PaperItem {
   doi: string | null;
   categories: string[] | null;
   language: string;
+  trending_category?: string | null;
 }
 
 export const PaperCard: React.FC<{
@@ -139,7 +141,13 @@ export const PaperCard: React.FC<{
             <Ionicons name="search" size={16} color={theme.surface} />
           </TouchableOpacity>
         </View>
-        <TouchableOpacity style={styles.saveButton} onPress={() => onToggleBookmark(item)}>
+        <TouchableOpacity
+          style={styles.saveButton}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+            onToggleBookmark(item);
+          }}
+        >
           <Ionicons
             name={isBookmarked ? 'bookmark' : 'bookmark-outline'}
             size={20}
@@ -147,6 +155,12 @@ export const PaperCard: React.FC<{
           />
         </TouchableOpacity>
         <View style={styles.badgeColumn}>
+          {item.trending_category && (
+            <View style={styles.trendingBadge}>
+              <Ionicons name="flame" size={12} color="#FFFFFF" />
+              <Text style={styles.trendingBadgeText}>Trending in {item.trending_category}</Text>
+            </View>
+          )}
           {item.categories && item.categories.length > 0 && (
             <View style={styles.categoryBadge}>
               <Text style={styles.categoryBadgeText}>{item.categories[0]}</Text>
@@ -234,7 +248,10 @@ export const PaperCard: React.FC<{
             <View style={styles.descriptionToggle}>
               <TouchableOpacity
                 style={[styles.toggleOption, descriptionMode === 'original' && styles.toggleOptionActive]}
-                onPress={() => setDescriptionMode('original')}
+                onPress={() => {
+                  Haptics.selectionAsync().catch(() => {});
+                  setDescriptionMode('original');
+                }}
               >
                 <Text style={[styles.toggleText, descriptionMode === 'original' && styles.toggleTextActive]}>
                   Original
@@ -242,7 +259,10 @@ export const PaperCard: React.FC<{
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.toggleOption, descriptionMode === 'simpler' && styles.toggleOptionActive]}
-                onPress={() => setDescriptionMode('simpler')}
+                onPress={() => {
+                  Haptics.selectionAsync().catch(() => {});
+                  setDescriptionMode('simpler');
+                }}
               >
                 <Text style={[styles.toggleText, descriptionMode === 'simpler' && styles.toggleTextActive]}>
                   Simpler
@@ -548,6 +568,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 10,
+  },
+  trendingBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#FF7A00',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 16,
+  },
+  trendingBadgeText: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
   },
   categoryBadgeText: {
     fontSize: 12,
