@@ -27,7 +27,7 @@ import * as Haptics from 'expo-haptics';
 import { fetchPapers } from '../services/api';
 import { useAuth } from '../hooks/useAuth';
 import { useFavoritePapers } from '../hooks/useStorage';
-import theme from '../constants/theme';
+import { useTheme } from '../hooks/useTheme';
 
 const { width, height } = Dimensions.get('window');
 
@@ -68,6 +68,8 @@ export const PaperCard: React.FC<{
   onToggleBookmark: (item: PaperItem) => void;
 }> = ({ item, onExpandedChange, isBookmarked, onToggleBookmark }) => {
   const router = useRouter();
+  const { theme } = useTheme();
+  const styles = React.useMemo(() => createStyles(theme), [theme]);
   const top = useSharedValue(COLLAPSED_TOP);
   const [isExpanded, setIsExpanded] = React.useState(false);
 
@@ -301,6 +303,8 @@ type FavoritePapersApi = {
 const PaperFeed: React.FC = () => {
   const router = useRouter();
   const { user, token } = useAuth();
+  const { theme } = useTheme();
+  const styles = React.useMemo(() => createStyles(theme), [theme]);
   const { isFavorite, toggleFavorite } = useFavoritePapers(token) as unknown as FavoritePapersApi;
   const [papers, setPapers] = React.useState<PaperItem[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -481,7 +485,7 @@ const PaperFeed: React.FC = () => {
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (theme: any) => StyleSheet.create({
   list: {
     flex: 1,
     backgroundColor: theme.background,

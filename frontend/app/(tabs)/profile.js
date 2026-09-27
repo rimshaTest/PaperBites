@@ -1,15 +1,17 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, ScrollView } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../hooks/useAuth';
+import { useTheme } from '../../hooks/useTheme';
 import { fetchReadingStats } from '../../services/api';
 import { MILESTONES } from '../../constants/milestones';
-import theme from '../../constants/theme';
 
 export default function ProfileScreen() {
   const router = useRouter();
   const { user, token, loading, logout } = useAuth();
+  const { theme } = useTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const [stats, setStats] = useState(null);
 
   // Reload every time the tab regains focus, same staleness fix as Saved/Visualize, so a
@@ -131,7 +133,7 @@ export default function ProfileScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.background,

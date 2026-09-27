@@ -5,9 +5,10 @@ import { Platform } from 'react-native';
 import { HapticTab } from '../../components/HapticTab';
 import { IconSymbol } from '../../components/ui/IconSymbol';
 import TabBarBackground from '../../components/ui/TabBarBackground';
-import theme from '../../constants/theme';
+import { useTheme } from '../../hooks/useTheme';
 
 export default function TabLayout() {
+  const { theme } = useTheme();
   return (
     <Tabs
       screenOptions={{
