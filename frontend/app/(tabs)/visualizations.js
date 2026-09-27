@@ -184,7 +184,7 @@ export default function VisualizationsScreen() {
         </View>
       ) : laidOutNodes.length === 0 ? (
         <View style={styles.centerContainer}>
-          <Ionicons name="bubble-chart" size={40} color={theme.textMuted} />
+          <Ionicons name="git-network-outline" size={40} color={theme.textMuted} />
           <Text style={styles.emptyText}>
             Tap "View Original Paper" on a few papers you read, and they'll show up here -
             connected to each other by how similar they are.

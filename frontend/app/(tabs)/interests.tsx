@@ -190,7 +190,6 @@ const createStyles = (theme: any) => StyleSheet.create({
     fontSize: 14,
     lineHeight: 19,
     color: theme.text,
-    flexShrink: 1,
   },
   chipTextSelected: {
     fontWeight: 'bold',
