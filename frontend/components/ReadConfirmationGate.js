@@ -20,7 +20,6 @@ export default function ReadConfirmationGate() {
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [pending, setPending] = useState(null);
   const [milestone, setMilestone] = useState(null);
-  const appState = useRef(AppState.currentState);
   const badgeScale = useRef(new Animated.Value(0)).current;
   const badgeOpacity = useRef(new Animated.Value(0)).current;
 
@@ -35,11 +34,16 @@ export default function ReadConfirmationGate() {
     // AppState transition, since a killed app never fires 'change'.
     checkPending();
 
+    // Checking on every transition *to* 'active' (rather than only when the *previous* state
+    // exactly matched /inactive|background/) is deliberately more permissive: on some
+    // platforms/devices the state right before backgrounding for an external link isn't
+    // reliably 'inactive' or 'background' by the time this fires, and checkPending() is a
+    // harmless no-op when nothing is actually pending, so there's no real cost to checking more
+    // often.
     const subscription = AppState.addEventListener('change', (nextState) => {
-      if (appState.current.match(/inactive|background/) && nextState === 'active') {
+      if (nextState === 'active') {
         checkPending();
       }
-      appState.current = nextState;
     });
 
     return () => subscription.remove();
