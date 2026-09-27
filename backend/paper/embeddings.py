@@ -15,8 +15,9 @@ Uses langchain-google-genai's GoogleGenerativeAIEmbeddings (same package paper/s
 paper/chat.py already depend on for the chat/summarization models) rather than the raw
 google-generativeai SDK, for the same reason those modules do: one dependency, consistent config.
 """
+import asyncio
 import logging
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from config import Config
 
@@ -81,6 +82,51 @@ async def embed_query(text: str) -> Optional[List[float]]:
     except Exception as e:
         logger.warning(f"Embedding a search query failed: {e}")
         return None
+
+
+async def backfill_missing_embeddings(batch_size: int = 20) -> Dict[str, int]:
+    """One-time (re-run-safe) backfill for papers already in MongoDB from before this app started
+    computing embeddings at ingestion (see paper/latest.py's _apply_embeddings). That function
+    only ever runs on papers a *fresh* fetch-latest call actually returns from the external APIs
+    for its category/days_back window - a paper fetched before the embeddings feature existed, or
+    one that has since aged outside every later fetch-latest run's window, never passes through
+    it again and so never gets an `embedding` field, silently dropping out of semantic search
+    (search_papers_semantically only looks at documents where `embedding` exists) without
+    anything actually being broken. Safe to run repeatedly: it only touches documents still
+    missing `embedding`, in small concurrent batches to stay within Gemini's embedding rate limit.
+    """
+    import db
+
+    collection = db.get_db().papers
+    docs = list(collection.find({"embedding": {"$exists": False}}, {"description": 1}))
+
+    embedded = 0
+    skipped_no_description = 0
+    failed = 0
+
+    async def embed_one(doc: Dict) -> None:
+        nonlocal embedded, skipped_no_description, failed
+        description = (doc.get("description") or "").strip()
+        if not description:
+            skipped_no_description += 1
+            return
+        vector = await embed_document(description)
+        if vector:
+            collection.update_one({"_id": doc["_id"]}, {"$set": {"embedding": vector}})
+            embedded += 1
+        else:
+            failed += 1
+
+    for i in range(0, len(docs), batch_size):
+        batch = docs[i:i + batch_size]
+        await asyncio.gather(*(embed_one(doc) for doc in batch))
+
+    return {
+        "total_missing": len(docs),
+        "embedded": embedded,
+        "skipped_no_description": skipped_no_description,
+        "failed": failed,
+    }
 
 
 def cosine_similarity(a: List[float], b: List[float]) -> float:

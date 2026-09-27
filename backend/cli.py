@@ -8,6 +8,7 @@ from typing import Optional
 from config import Config
 from utils.logging import setup_logging
 from paper.latest import get_latest_papers, CATEGORIES
+from paper.embeddings import backfill_missing_embeddings
 from db import upsert_papers
 
 
@@ -41,6 +42,13 @@ def main():
     )
     fetch_parser.add_argument("--config", "-c", help="Path to config file", default="config.json")
 
+    backfill_parser = subparsers.add_parser(
+        "backfill-embeddings",
+        help="Compute embeddings for papers already in MongoDB that predate semantic search "
+             "(or fell outside every fetch-latest run's days_back window since) - safe to re-run",
+    )
+    backfill_parser.add_argument("--config", "-c", help="Path to config file", default="config.json")
+
     args = parser.parse_args()
 
     logger = setup_logging()
@@ -51,6 +59,9 @@ def main():
         if args.command == "fetch-latest":
             total = await fetch_latest_command(args.category, args.days, args.limit, sort_by=args.sort_by)
             logger.info(f"Upserted {total} papers total")
+        elif args.command == "backfill-embeddings":
+            result = await backfill_missing_embeddings()
+            logger.info(f"Backfill complete: {result}")
         else:
             parser.print_help()
 
