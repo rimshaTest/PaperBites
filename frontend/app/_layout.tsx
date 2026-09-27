@@ -3,6 +3,7 @@ import { Stack } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { AuthProvider } from '../hooks/useAuth';
 import IntroVideo from '../components/IntroVideo';
+import ReadConfirmationGate from '../components/ReadConfirmationGate';
 
 export default function Layout() {
   // The Stack (and whatever it renders underneath, e.g. Home's feed fetch) mounts immediately -
@@ -27,6 +28,7 @@ export default function Layout() {
           <Stack.Screen name="profile-details" />
         </Stack>
         {showIntro && <IntroVideo onFinish={() => setShowIntro(false)} />}
+        <ReadConfirmationGate />
       </AuthProvider>
     </GestureHandlerRootView>
   );

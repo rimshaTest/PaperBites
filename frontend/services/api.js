@@ -112,8 +112,31 @@ export const recordPaperView = async (token, paperId) => {
     if (!response.ok) {
       throw new Error(`API error: ${response.status}`);
     }
+    return response.json();
   } catch (error) {
     console.error('Error recording paper view:', error);
+    return null;
+  }
+};
+
+/**
+ * Fetch the signed-in user's confirmed-read stats: total reads, per-category breakdown, and
+ * which 1/5/10/25/50/100 milestones have been earned - powers the Profile screen's stats/badges.
+ * @param {string} token
+ * @returns {Promise<{total_read: number, by_category: Object, milestones_reached: Array<number>}|null>}
+ */
+export const fetchReadingStats = async (token) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/stats/reading`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+    return response.json();
+  } catch (error) {
+    console.error('Error fetching reading stats:', error);
+    return null;
   }
 };
 

@@ -5,6 +5,7 @@ from starlette.middleware import Middleware
 from starlette.middleware.cors import CORSMiddleware
 import uvicorn
 import os
+import time
 from typing import List, Dict, Optional
 
 import bookmarks as bookmarks_store
@@ -104,6 +105,42 @@ def get_authenticated_user_id(request) -> Optional[str]:
     return auth.get_user_id_for_token(token)
 
 
+# A paper only gets the "Trending" badge if more than one person actually confirmed reading it
+# this week - a single lucky read isn't a trend. One trending paper per category, the most-read.
+_TRENDING_WINDOW_DAYS = 7
+_TRENDING_MIN_READS = 2
+
+
+def _trending_category_by_paper_id(papers: List[Dict]) -> Dict[str, str]:
+    """{paper_id: category} for the single most-confirmed-read paper in each category over the
+    trailing week. Recomputed on every feed request rather than cached - fine at this app's
+    read volume (a flat JSON scan), worth revisiting if that stops being true.
+    """
+    cutoff = time.time() - _TRENDING_WINDOW_DAYS * 86400
+    read_counts: Dict[str, int] = {}
+    for entries in paper_views_store.all_entries():
+        for entry in entries:
+            if entry.get("viewed_at", 0) >= cutoff:
+                pid = entry["paper_id"]
+                read_counts[pid] = read_counts.get(pid, 0) + 1
+
+    if not read_counts:
+        return {}
+
+    categories_by_paper = {p["id"]: (p.get("categories") or []) for p in papers}
+
+    best_per_category: Dict[str, tuple] = {}
+    for paper_id, count in read_counts.items():
+        if count < _TRENDING_MIN_READS:
+            continue
+        for category in categories_by_paper.get(paper_id, []):
+            current = best_per_category.get(category)
+            if not current or count > current[1]:
+                best_per_category[category] = (paper_id, count)
+
+    return {paper_id: category for category, (paper_id, _count) in best_per_category.items()}
+
+
 async def list_papers(request):
     """Get a list of papers, fetched via `cli.py fetch-latest` (no video generation).
 
@@ -112,6 +149,9 @@ async def list_papers(request):
     a ranking signal (see search_papers_semantically below for the embedding-based feature
     instead). A user with no interests set (skipped onboarding, or hasn't visited Interests yet)
     sees everything, unfiltered.
+
+    Each paper is also tagged `trending_category` (the category it's trending in, or null) - see
+    _trending_category_by_paper_id above.
     """
     limit = int(request.query_params.get("limit", "50"))
     offset = int(request.query_params.get("offset", "0"))
@@ -124,6 +164,10 @@ async def list_papers(request):
         user_interests = set(interests_store.get_interests(user_id))
         if user_interests:
             papers = [p for p in papers if user_interests.intersection(p.get("categories") or [])]
+
+    trending_by_paper = _trending_category_by_paper_id(papers)
+    for p in papers:
+        p["trending_category"] = trending_by_paper.get(p["id"])
 
     return JSONResponse(papers[offset:offset + limit])
 
@@ -265,8 +309,12 @@ async def get_paper(request):
 
 
 async def record_paper_view(request):
-    """Record that the current user clicked "View Original Paper" for this paper - the source
-    data for the Visualizations tab's bubble map (see get_viewed_papers_graph below)."""
+    """Record that the current user *confirmed* reading this paper - called from the frontend's
+    Libby-style "Did you read this paper?" prompt (shown when the app returns to the foreground
+    after the user opened "View Original Paper"), not from the button tap itself. This is the
+    source data for the Visualizations tab's bubble map (see get_viewed_papers_graph below),
+    per-topic reading stats (get_reading_stats), and milestone badges.
+    """
     user_id = get_authenticated_user_id(request)
     if not user_id:
         return JSONResponse({"detail": "Authentication required"}, status_code=401)
@@ -275,8 +323,53 @@ async def record_paper_view(request):
     if not get_paper_by_id(paper_id):
         return JSONResponse({"detail": "Not found"}, status_code=404)
 
-    paper_views_store.record_view(user_id, paper_id)
-    return JSONResponse({"status": "ok"}, status_code=201)
+    result = paper_views_store.record_view(user_id, paper_id)
+    milestone = paper_views_store.milestone_reached(result["total_read"], result["is_new"])
+    return JSONResponse(
+        {"status": "ok", "total_read": result["total_read"], "milestone_reached": milestone},
+        status_code=201,
+    )
+
+
+async def get_reading_stats(request):
+    """Per-topic reading stats for the current user (Profile screen): total confirmed reads,
+    a breakdown by category, and which milestone badges have been earned so far."""
+    user_id = get_authenticated_user_id(request)
+    if not user_id:
+        return JSONResponse({"detail": "Authentication required"}, status_code=401)
+
+    paper_ids = paper_views_store.list_viewed_paper_ids(user_id)
+    total_read = len(paper_ids)
+    milestones_reached = [m for m in paper_views_store.MILESTONES if total_read >= m]
+
+    if not paper_ids:
+        return JSONResponse({"total_read": 0, "by_category": {}, "milestones_reached": milestones_reached})
+
+    try:
+        import db
+        from bson import ObjectId
+
+        object_ids = []
+        for pid in paper_ids:
+            try:
+                object_ids.append(ObjectId(pid))
+            except Exception:
+                continue
+        docs = db.get_db().papers.find({"_id": {"$in": object_ids}})
+    except Exception as e:
+        print(f"Error building reading stats from MongoDB: {e}")
+        return JSONResponse({"total_read": total_read, "by_category": {}, "milestones_reached": milestones_reached})
+
+    by_category: Dict[str, int] = {}
+    for doc in docs:
+        for category in doc.get("categories") or []:
+            by_category[category] = by_category.get(category, 0) + 1
+
+    return JSONResponse({
+        "total_read": total_read,
+        "by_category": by_category,
+        "milestones_reached": milestones_reached,
+    })
 
 
 # Papers connect on the bubble map only above this cosine-similarity threshold - high enough that
@@ -628,6 +721,7 @@ routes = [
     Route("/api/papers/viewed/graph", get_viewed_papers_graph),
     Route("/api/papers/{paper_id}", get_paper),
     Route("/api/papers/{paper_id}/view", record_paper_view, methods=["POST"]),
+    Route("/api/stats/reading", get_reading_stats),
     Route("/api/authors/{author_id}", get_author),
     Route("/api/journals/{journal_name}", get_journal),
     Route("/api/categories", get_categories),
