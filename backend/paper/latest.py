@@ -454,6 +454,30 @@ async def _fill_open_access_links(papers: List[Dict]) -> None:
         await asyncio.gather(*(resolve(p) for p in candidates))
 
 
+_DOI_RE = re.compile(r"^10\.\d{4,9}/\S+$")
+
+
+def _normalize_doi_and_url(paper: Dict) -> None:
+    """Guards against malformed DOI values seen from some sources - a bare registrant prefix
+    with no suffix (e.g. "10.61132/", "10.1140/epjs/") rather than a real DOI - which otherwise
+    showed as a broken "DOI: 10.61132/" line with nothing useful after it, and could also corrupt
+    _dedupe()'s DOI-based matching if two unrelated papers both carried the same bare-prefix
+    non-value. Also gives a paper a fallback URL when its source didn't provide one directly (seen
+    on some Crossref results with no URL field and no Unpaywall-confirmed OA location) - any valid
+    DOI can always be dereferenced via doi.org, so that's strictly better than leaving "Read
+    Original Paper" with nowhere to go and no button rendered at all.
+    """
+    doi = (paper.get("doi") or "").strip()
+    # A DOI ending in "/" (with nothing after it, or nothing but the registrant prefix before
+    # it) is truncated/incomplete, not a real identifier - reject it even though it otherwise
+    # matches the general 10.xxxx/suffix shape.
+    is_valid = bool(_DOI_RE.match(doi)) and not doi.endswith("/")
+    paper["doi"] = doi if is_valid else None
+
+    if not paper.get("url") and paper["doi"]:
+        paper["url"] = f"https://doi.org/{paper['doi']}"
+
+
 def _dedupe(papers: List[Dict]) -> List[Dict]:
     seen_dois = set()
     seen_titles = set()
@@ -848,6 +872,41 @@ def list_non_english_papers(limit: int = 50) -> List[Dict]:
     ]
 
 
+def backfill_doi_and_url() -> Dict[str, int]:
+    """One-time (re-run-safe) backfill applying _normalize_doi_and_url()'s validation/fallback to
+    papers already in MongoDB - fetched before that check existed, some carry a malformed DOI (a
+    bare registrant prefix with no real suffix, e.g. "10.61132/") that shows as a broken
+    "DOI: 10.61132/" line, and/or have no `url` at all despite having a valid DOI, meaning "Read
+    Original Paper" doesn't even render (the frontend only shows that button when a paper has a
+    url) - which also meant the Libby-style "did you read this paper?" flow could never trigger
+    for those papers, since there was never anything to tap through to in the first place.
+    """
+    import db
+
+    collection = db.get_db().papers
+    docs = list(collection.find({}, {"doi": 1, "url": 1}))
+
+    doi_cleared = 0
+    url_added = 0
+
+    for doc in docs:
+        paper = {"doi": doc.get("doi"), "url": doc.get("url")}
+        _normalize_doi_and_url(paper)
+
+        updates = {}
+        if paper["doi"] != doc.get("doi"):
+            updates["doi"] = paper["doi"]
+            doi_cleared += 1
+        if paper["url"] != doc.get("url"):
+            updates["url"] = paper["url"]
+            url_added += 1
+
+        if updates:
+            collection.update_one({"_id": doc["_id"]}, {"$set": updates})
+
+    return {"total_checked": len(docs), "doi_cleared": doi_cleared, "url_added": url_added}
+
+
 async def _apply_summaries(papers: List[Dict]) -> None:
     """Generate each paper's UI description via Gemini in place.
 
@@ -946,7 +1005,11 @@ async def get_latest_papers(
         fetch_latest_crossref(category, since, limit),
     )
 
-    combined = _dedupe(semantic_scholar_papers + openalex_papers + crossref_papers)
+    all_papers = semantic_scholar_papers + openalex_papers + crossref_papers
+    for paper in all_papers:
+        _normalize_doi_and_url(paper)
+
+    combined = _dedupe(all_papers)
     if sort_by == "citations":
         combined.sort(key=lambda p: p.get("citation_count") or 0, reverse=True)
     else:

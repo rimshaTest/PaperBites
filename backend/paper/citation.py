@@ -236,7 +236,12 @@ async def add_paper_from_citation(candidate: Dict) -> Dict:
     no usable description/category from any source).
     """
     doi = (candidate or {}).get("doi")
-    if not doi:
+    # Guards against a malformed DOI from Crossref - a bare registrant prefix with no suffix
+    # (e.g. "10.61132/") rather than a real DOI - which would otherwise show as a broken
+    # "DOI: 10.61132/" line with nothing useful after it (same issue paper/latest.py's discovery
+    # feed guards against for fetched papers).
+    doi = (doi or "").strip()
+    if not doi or not _DOI_RE.fullmatch(doi) or doi.endswith("/"):
         raise ValueError("A DOI is required to add a paper by citation")
 
     async with aiohttp.ClientSession(timeout=_HTTP_TIMEOUT) as session:
@@ -256,7 +261,11 @@ async def add_paper_from_citation(candidate: Dict) -> Dict:
         "publication_type": "journal",
         "is_open_access": candidate.get("is_open_access"),
         "doi": doi,
-        "url": candidate.get("url"),
+        # Any valid DOI can always be dereferenced via doi.org, so this is a safe fallback when
+        # the candidate itself didn't carry a direct URL - better than "Read Original Paper"
+        # having nowhere to go (and the button not even rendering at all, since the frontend only
+        # shows it when a url is present).
+        "url": candidate.get("url") or f"https://doi.org/{doi}",
         # Transient hint for _apply_language_and_translation below - popped and turned into the
         # real `language` field there, same as the discovery feed's fetch_latest_crossref.
         "source_language": candidate.get("language"),
