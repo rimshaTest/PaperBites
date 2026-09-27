@@ -51,7 +51,8 @@ export const ThemeProvider = ({ children }) => {
 };
 
 /**
- * @returns {{theme: object, scheme: 'light'|'dark', preference: 'light'|'dark'|'system', setThemePreference: (pref: string) => void}}
+ * @typedef {{mode: string, background: string, surface: string, text: string, textMuted: string, border: string, accent: string, danger: string, serif: string}} Theme
+ * @returns {{theme: Theme, scheme: 'light'|'dark', preference: 'light'|'dark'|'system', setThemePreference: (pref: string) => void}}
  */
 export const useTheme = () => {
   const context = useContext(ThemeContext);
