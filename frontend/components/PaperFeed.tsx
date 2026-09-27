@@ -29,6 +29,7 @@ import { fetchPapers } from '../services/api';
 import { useAuth } from '../hooks/useAuth';
 import { useFavoritePapers } from '../hooks/useStorage';
 import { useTheme } from '../hooks/useTheme';
+import { languageName } from '../constants/languages';
 import { playWhenReady } from '../utils/sound';
 
 const { width, height } = Dimensions.get('window');
@@ -167,7 +168,7 @@ export const PaperCard: React.FC<{
             </View>
           )}
           <View style={styles.languageBadge}>
-            <Text style={styles.categoryBadgeText}>{item.language}</Text>
+            <Text style={styles.categoryBadgeText}>{languageName(item.language)}</Text>
           </View>
         </View>
       </View>

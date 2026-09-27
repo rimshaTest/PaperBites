@@ -171,7 +171,7 @@ const createStyles = (theme) => StyleSheet.create({
     lineHeight: 20,
     color: theme.textMuted,
     marginBottom: 20,
-    maxWidth: '85%',
+    paddingHorizontal: 24,
     textAlign: 'center',
   },
   primaryButton: {
