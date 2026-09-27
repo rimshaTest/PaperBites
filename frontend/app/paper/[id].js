@@ -73,15 +73,18 @@ export default function PaperDetailScreen() {
     }
   };
 
-  const handleOpenLink = () => {
-    if (paper?.url) {
-      Linking.openURL(paper.url);
-      // Don't record the read yet - only signed-in users get the Libby-style "Did you read
-      // this paper?" prompt on return, since the graph/stats are account-scoped like bookmarks.
-      if (token) {
-        setPendingReadConfirmation({ id: paper.id, title: paper.title });
-      }
+  const handleOpenLink = async () => {
+    if (!paper?.url) return;
+
+    // Write the pending-confirmation flag to storage *before* opening the link, not after -
+    // opening an external URL can background this app almost immediately, and an unawaited
+    // AsyncStorage write racing against that could lose, leaving nothing for the read
+    // confirmation gate to find on return (only signed-in users get the Libby-style "Did you
+    // read this paper?" prompt, since the graph/stats are account-scoped like bookmarks).
+    if (token) {
+      await setPendingReadConfirmation({ id: paper.id, title: paper.title });
     }
+    Linking.openURL(paper.url);
   };
 
   const handleAuthorPress = (author) => {
