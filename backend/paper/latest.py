@@ -393,6 +393,10 @@ async def fetch_latest_crossref(category: str, since: datetime.date, limit: int)
             "is_open_access": None,  # resolved by fetch_unpaywall_oa_location below
             "doi": item.get("DOI"),
             "url": item.get("URL"),
+            # Crossref's own reported language of record for the work - a transient hint used
+            # (and discarded) by _apply_language_and_translation below, not part of the stored
+            # paper schema.
+            "source_language": item.get("language"),
         })
 
     return results[:limit]
@@ -634,8 +638,18 @@ async def _apply_language_and_translation(papers: List[Dict]) -> None:
     """Tag each paper with its language, translating title/journal/abstract to English if needed.
 
     Detects language from the actual title/abstract text rather than trusting a source-provided
-    language field - OpenAlex's own `language` metadata turned out to be unreliable in testing
-    (it mislabeled clearly-English titles as Afrikaans).
+    language field by default - OpenAlex's own `language` metadata turned out to be unreliable in
+    testing (it mislabeled clearly-English titles as Afrikaans), so it's never used.
+
+    One narrow exception: many non-English journals submit an English-translated title/abstract
+    for international indexing even though the paper itself isn't in English - our text-based
+    detector, which only ever sees that (English) title/abstract text, has no way to tell the
+    difference and will confidently call it "en". Crossref separately reports a work's actual
+    language of record (`fetch_latest_crossref`'s `source_language`, a raw ISO code, not derived
+    from abstract text), so when it explicitly says non-English and our own detection said "en"
+    anyway, trust Crossref's claim instead. This is a one-directional override: a source claiming
+    "en" is never trusted over our own detection (that's the exact failure mode that made
+    OpenAlex's field unreliable), only a source's *non-English* claim can override an "en" guess.
 
     Detection runs sequentially, not concurrently: langdetect draws from a shared, seeded
     DetectorFactory singleton that isn't thread-safe, and calling detect_langs() concurrently
@@ -647,8 +661,20 @@ async def _apply_language_and_translation(papers: List[Dict]) -> None:
     """
     non_english = []
     for paper in papers:
-        paper["language"] = _detect_language(paper)
-        if paper["language"] != "en":
+        detected_language = _detect_language(paper)
+        # Translation is driven by what the indexed text actually needs - if it detected as
+        # English, it doesn't need translating, full stop, regardless of what the tag below ends
+        # up showing. Only the *displayed* language tag gets Crossref's override; translating an
+        # already-English abstract using a wrong non-English source-language hint would risk
+        # MyMemory mangling perfectly good text for no reason.
+        needs_translation = detected_language != "en"
+
+        source_language = paper.pop("source_language", None)
+        if detected_language == "en" and source_language and source_language != "en":
+            detected_language = source_language
+
+        paper["language"] = detected_language
+        if needs_translation:
             non_english.append(paper)
 
     if not non_english:
