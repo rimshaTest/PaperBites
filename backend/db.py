@@ -35,6 +35,19 @@ def get_db():
     _db.paper_reviews.create_index([("status", 1), ("submitted_at", -1)])
     _db.paper_reviews.create_index("user_id")
 
+    _db.users.create_index("email", unique=True)
+    _db.users.create_index("id", unique=True)
+    # TTLs mirror auth.py's RESET_CODE_TTL_SECONDS (15 min) and SESSION_TTL_SECONDS (30 days) -
+    # duplicated here as literals rather than imported, since auth.py imports this module and a
+    # reverse import would be circular. Mongo's background TTL sweep is a backstop cleanup;
+    # auth.py's own expiry checks on read are what actually enforce these windows.
+    _db.password_resets.create_index("created_at", expireAfterSeconds=15 * 60)
+    _db.sessions.create_index("created_at", expireAfterSeconds=30 * 24 * 60 * 60)
+    _db.sessions.create_index("user_id")
+
+    _db.bookmarks.create_index([("user_id", 1), ("video_id", 1)], unique=True)
+    _db.profile_tier2_audit.create_index("user_id")
+
     logger.info(f"Connected to MongoDB database '{db_name}'")
     return _db
 
