@@ -417,6 +417,19 @@ async def admin_backfill_language(request):
     return JSONResponse(result)
 
 
+async def admin_diagnose_language(request):
+    """Read-only: for papers still tagged 'en', show exactly what langdetect saw/decided for
+    the title alone and for the combined title+abstract, so a paper that still looks wrong after
+    backfill-language can be understood instead of guessed at. See paper/latest.py's
+    diagnose_language. Requires the X-Admin-Key header to match PAPERBITES_ADMIN_KEY."""
+    if not _check_admin_key(request):
+        return JSONResponse({"detail": "Not found"}, status_code=404)
+
+    limit = int(request.query_params.get("limit", "50"))
+    from paper.latest import diagnose_language
+    return JSONResponse(diagnose_language(limit=limit))
+
+
 # Papers connect on the bubble map only above this cosine-similarity threshold - high enough that
 # an edge means "these are genuinely about similar things," not just "both are academic papers."
 _GRAPH_SIMILARITY_THRESHOLD = 0.75
@@ -805,6 +818,7 @@ routes = [
     Route("/api/stats/reading", get_reading_stats),
     Route("/api/admin/backfill-embeddings", admin_backfill_embeddings, methods=["POST"]),
     Route("/api/admin/backfill-language", admin_backfill_language, methods=["POST"]),
+    Route("/api/admin/diagnose-language", admin_diagnose_language),
     Route("/api/authors/{author_id}", get_author),
     Route("/api/journals/{journal_name}", get_journal),
     Route("/api/categories", get_categories),

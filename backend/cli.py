@@ -1,13 +1,14 @@
 # cli.py
 import argparse
 import asyncio
+import json
 import logging
 import os
 from typing import Optional
 
 from config import Config
 from utils.logging import setup_logging
-from paper.latest import get_latest_papers, CATEGORIES, backfill_language_and_translation
+from paper.latest import get_latest_papers, CATEGORIES, backfill_language_and_translation, diagnose_language
 from paper.embeddings import backfill_missing_embeddings
 from db import upsert_papers
 
@@ -56,6 +57,14 @@ def main():
     )
     backfill_language_parser.add_argument("--config", "-c", help="Path to config file", default="config.json")
 
+    diagnose_parser = subparsers.add_parser(
+        "diagnose-language",
+        help="Read-only: show exactly what langdetect saw/decided for papers still tagged 'en', "
+             "to see why backfill-language didn't flag them as non-English",
+    )
+    diagnose_parser.add_argument("--limit", help="Max papers to inspect", type=int, default=50)
+    diagnose_parser.add_argument("--config", "-c", help="Path to config file", default="config.json")
+
     args = parser.parse_args()
 
     logger = setup_logging()
@@ -72,6 +81,9 @@ def main():
         elif args.command == "backfill-language":
             result = await backfill_language_and_translation()
             logger.info(f"Backfill complete: {result}")
+        elif args.command == "diagnose-language":
+            results = diagnose_language(limit=args.limit)
+            print(json.dumps(results, indent=2))
         else:
             parser.print_help()
 

@@ -773,6 +773,56 @@ async def backfill_language_and_translation(batch_size: int = 20) -> Dict[str, i
     return {"total_checked": len(candidates), "corrected": corrected, "unchanged": unchanged}
 
 
+def diagnose_language(limit: int = 50) -> List[Dict]:
+    """Read-only diagnostic: for each paper currently tagged "en" (up to `limit`), show exactly
+    what langdetect saw and decided, so a paper that still looks wrong after
+    backfill_language_and_translation() can be understood instead of guessed at - e.g. whether
+    its title-only detection actually returned a low-confidence non-English guess (falling
+    through to the combined-text check, which an English abstract can dominate) versus genuinely
+    being detected as English throughout.
+    """
+    import db
+
+    collection = db.get_db().papers
+    docs = list(collection.find(
+        {"language": "en"},
+        {"title": 1, "abstract": 1, "journal": 1},
+    ).limit(limit))
+
+    results = []
+    for doc in docs:
+        title = (doc.get('title') or '').strip()
+        abstract = (doc.get('abstract') or '').strip()
+
+        title_guess = None
+        try:
+            best_title = detect_langs(title)[0] if title else None
+            if best_title:
+                title_guess = {"lang": best_title.lang, "prob": round(best_title.prob, 4)}
+        except LangDetectException:
+            title_guess = {"error": "LangDetectException"}
+
+        combined_guess = None
+        text = f"{title} {abstract}".strip()
+        try:
+            best_combined = detect_langs(text)[0] if text else None
+            if best_combined:
+                combined_guess = {"lang": best_combined.lang, "prob": round(best_combined.prob, 4)}
+        except LangDetectException:
+            combined_guess = {"error": "LangDetectException"}
+
+        results.append({
+            "id": str(doc["_id"]),
+            "title": title[:100],
+            "journal": doc.get("journal"),
+            "title_only_guess": title_guess,
+            "combined_guess": combined_guess,
+            "final_decision": _detect_language({"title": title, "abstract": abstract}),
+        })
+
+    return results
+
+
 async def _apply_summaries(papers: List[Dict]) -> None:
     """Generate each paper's UI description via Gemini in place.
 
