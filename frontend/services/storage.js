@@ -6,7 +6,6 @@ const KEYS = {
   AUTH_USER: 'paperbites_auth_user',
   INTERESTS: 'paperbites_interests',
   SAVED_PAPERS: 'paperbites_saved_papers',
-  PENDING_READ_CONFIRMATION: 'paperbites_pending_read_confirmation',
 };
 
 /**
@@ -122,45 +121,5 @@ export const unsavePaperId = async (paperId) => {
     );
   } catch (error) {
     console.error('Error unsaving paper id:', error);
-  }
-};
-
-/**
- * Libby-style "Did you read this paper?" flow: when the user taps "View Original Paper" and
- * leaves the app, we record which paper they left for here (not that they read it - that only
- * happens if they answer "Yes" when they come back). Persisted rather than kept in memory,
- * since the app can be backgrounded long enough on iOS to have its JS context reclaimed before
- * the user returns. Only one paper is tracked at a time - opening a second link before answering
- * the first prompt simply replaces it, same one-at-a-time model as Libby's own return prompt.
- */
-export const setPendingReadConfirmation = async (paper) => {
-  try {
-    await AsyncStorage.setItem(
-      KEYS.PENDING_READ_CONFIRMATION,
-      JSON.stringify({ id: paper.id, title: paper.title })
-    );
-  } catch (error) {
-    console.error('Error saving pending read confirmation:', error);
-  }
-};
-
-/**
- * @returns {Promise<{id: string, title: string}|null>}
- */
-export const getPendingReadConfirmation = async () => {
-  try {
-    const jsonValue = await AsyncStorage.getItem(KEYS.PENDING_READ_CONFIRMATION);
-    return jsonValue != null ? JSON.parse(jsonValue) : null;
-  } catch (error) {
-    console.error('Error loading pending read confirmation:', error);
-    return null;
-  }
-};
-
-export const clearPendingReadConfirmation = async () => {
-  try {
-    await AsyncStorage.removeItem(KEYS.PENDING_READ_CONFIRMATION);
-  } catch (error) {
-    console.error('Error clearing pending read confirmation:', error);
   }
 };

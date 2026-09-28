@@ -7,15 +7,15 @@ import {
   ScrollView,
   TouchableOpacity,
   Share,
-  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import * as WebBrowser from 'expo-web-browser';
 import LoadingIndicator from '../../components/LoadingIndicator';
 import ErrorMessage from '../../components/ErrorMessage';
+import ReadConfirmationModal from '../../components/ReadConfirmationModal';
 import { fetchPaperById } from '../../services/api';
-import { setPendingReadConfirmation } from '../../services/storage';
 import { useFavoritePapers } from '../../hooks/useStorage';
 import { useAuth } from '../../hooks/useAuth';
 import { useTheme } from '../../hooks/useTheme';
@@ -30,6 +30,7 @@ export default function PaperDetailScreen() {
   const [paper, setPaper] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [confirmingRead, setConfirmingRead] = useState(false);
 
   useEffect(() => {
     const loadPaper = async () => {
@@ -76,15 +77,19 @@ export default function PaperDetailScreen() {
   const handleOpenLink = async () => {
     if (!paper?.url) return;
 
-    // Write the pending-confirmation flag to storage *before* opening the link, not after -
-    // opening an external URL can background this app almost immediately, and an unawaited
-    // AsyncStorage write racing against that could lose, leaving nothing for the read
-    // confirmation gate to find on return (only signed-in users get the Libby-style "Did you
-    // read this paper?" prompt, since the graph/stats are account-scoped like bookmarks).
+    // Opens an in-app browser (SFSafariViewController/Chrome Custom Tabs) rather than handing
+    // off to a fully separate app via Linking.openURL - that keeps this screen's JS alive the
+    // whole time, and openBrowserAsync's promise resolves deterministically the instant the user
+    // closes it, which is what actually makes "did you read this paper?" reliable: no dependency
+    // on AppState ever noticing a background/foreground transition (which is what the previous,
+    // unreliable version of this feature depended on).
+    await WebBrowser.openBrowserAsync(paper.url);
+
+    // Only signed-in users get the Libby-style prompt, since the graph/stats are account-scoped
+    // like bookmarks.
     if (token) {
-      await setPendingReadConfirmation({ id: paper.id, title: paper.title });
+      setConfirmingRead(true);
     }
-    Linking.openURL(paper.url);
   };
 
   const handleAuthorPress = (author) => {
@@ -195,6 +200,13 @@ export default function PaperDetailScreen() {
           </TouchableOpacity>
         )}
       </ScrollView>
+
+      <ReadConfirmationModal
+        visible={confirmingRead}
+        paper={paper}
+        token={token}
+        onDismiss={() => setConfirmingRead(false)}
+      />
     </SafeAreaView>
   );
 }

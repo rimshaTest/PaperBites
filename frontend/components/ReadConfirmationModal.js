@@ -1,53 +1,24 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { AppState, Modal, StyleSheet, Text, TouchableOpacity, View, Animated } from 'react-native';
+import React, { useRef, useState } from 'react';
+import { Modal, StyleSheet, Text, TouchableOpacity, View, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { getPendingReadConfirmation, clearPendingReadConfirmation } from '../services/storage';
 import { recordPaperView } from '../services/api';
-import { useAuth } from '../hooks/useAuth';
 import { useTheme } from '../hooks/useTheme';
 
 /**
- * Libby-style "Did you read this paper?" prompt. Paper/[id]'s "View Original Paper" button only
- * stashes the paper as *pending* (services/storage.js); it's this gate, watching for the app
- * coming back to the foreground, that turns a pending paper into a confirmed read (or discards it
- * on "No") - confirmed reads are what count for the Visualize graph, per-topic stats, and
- * milestone badges. Lives at the root of the app (see _layout.tsx) so it can fire over any screen.
+ * Libby-style "Did you read this paper?" prompt - but unlike the AppState-based approach this
+ * replaced, it's triggered directly by the caller (paper/[id].js) right after
+ * WebBrowser.openBrowserAsync() resolves, i.e. the moment the in-app browser showing the paper
+ * closes and control returns to this screen. That's a deterministic signal (a resolved promise),
+ * not a guess at an OS-level app-foreground transition - see paper/[id].js's handleOpenLink for
+ * why that AppState approach was unreliable and got replaced.
  */
-export default function ReadConfirmationGate() {
-  const { token } = useAuth();
+export default function ReadConfirmationModal({ visible, paper, token, onDismiss }) {
   const { theme } = useTheme();
-  const styles = useMemo(() => createStyles(theme), [theme]);
-  const [pending, setPending] = useState(null);
+  const styles = React.useMemo(() => createStyles(theme), [theme]);
   const [milestone, setMilestone] = useState(null);
   const badgeScale = useRef(new Animated.Value(0)).current;
   const badgeOpacity = useRef(new Animated.Value(0)).current;
-
-  const checkPending = async () => {
-    const paper = await getPendingReadConfirmation();
-    if (paper) setPending(paper);
-  };
-
-  useEffect(() => {
-    // Covers both "backgrounded then resumed" and "app was killed while a confirmation was
-    // pending and just cold-started" - the latter needs a check on mount too, not just on the
-    // AppState transition, since a killed app never fires 'change'.
-    checkPending();
-
-    // Checking on every transition *to* 'active' (rather than only when the *previous* state
-    // exactly matched /inactive|background/) is deliberately more permissive: on some
-    // platforms/devices the state right before backgrounding for an external link isn't
-    // reliably 'inactive' or 'background' by the time this fires, and checkPending() is a
-    // harmless no-op when nothing is actually pending, so there's no real cost to checking more
-    // often.
-    const subscription = AppState.addEventListener('change', (nextState) => {
-      if (nextState === 'active') {
-        checkPending();
-      }
-    });
-
-    return () => subscription.remove();
-  }, []);
 
   const playMilestoneAnimation = (badgeNumber) => {
     setMilestone(badgeNumber);
@@ -63,9 +34,7 @@ export default function ReadConfirmationGate() {
 
   const handleYes = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-    const paper = pending;
-    setPending(null);
-    await clearPendingReadConfirmation();
+    onDismiss();
     if (token && paper) {
       const result = await recordPaperView(token, paper.id);
       if (result && result.milestone_reached) {
@@ -74,20 +43,19 @@ export default function ReadConfirmationGate() {
     }
   };
 
-  const handleNo = async () => {
+  const handleNo = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-    setPending(null);
-    await clearPendingReadConfirmation();
+    onDismiss();
   };
 
   return (
     <>
-      <Modal visible={!!pending} transparent animationType="fade">
+      <Modal visible={visible} transparent animationType="fade">
         <View style={styles.overlay}>
           <View style={styles.card}>
             <Text style={styles.title}>Did you read this paper?</Text>
-            {pending?.title ? (
-              <Text style={styles.subtitle} numberOfLines={2}>{pending.title}</Text>
+            {paper?.title ? (
+              <Text style={styles.subtitle} numberOfLines={2}>{paper.title}</Text>
             ) : null}
             <View style={styles.buttonRow}>
               <TouchableOpacity style={[styles.button, styles.noButton]} onPress={handleNo}>

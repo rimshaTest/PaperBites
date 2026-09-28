@@ -8,7 +8,6 @@ import { ThemeProvider, useTheme } from '../hooks/useTheme';
 import { installGlobalErrorHandler } from '../services/monitoring';
 import ErrorBoundary from '../components/ErrorBoundary';
 import IntroVideo from '../components/IntroVideo';
-import ReadConfirmationGate from '../components/ReadConfirmationGate';
 
 function AppShell() {
   // The Stack (and whatever it renders underneath, e.g. Home's feed fetch) mounts immediately -
@@ -36,7 +35,6 @@ function AppShell() {
         <Stack.Screen name="profile-details" />
       </Stack>
       {showIntro && <IntroVideo onFinish={() => setShowIntro(false)} />}
-      <ReadConfirmationGate />
     </>
   );
 }
