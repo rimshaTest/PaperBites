@@ -219,10 +219,6 @@ export const PaperCard: React.FC<{
           </View>
 
           <View style={styles.statsRow}>
-            <View style={styles.statItem}>
-              <Text style={styles.statValue}>{item.citation_count}</Text>
-              <Text style={styles.statLabel}>Citations</Text>
-            </View>
             {item.journal && (
               <TouchableOpacity style={styles.journalPill} onPress={goToJournal}>
                 <Text style={styles.journalText}>
@@ -692,16 +688,6 @@ const createStyles = (theme: any) => StyleSheet.create({
     alignItems: 'center',
     gap: 10,
     marginBottom: 10,
-  },
-  statItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
-  },
-  statValue: {
-    fontSize: 12,
-    fontWeight: 'bold',
-    color: theme.text,
   },
   statLabel: {
     fontSize: 12,

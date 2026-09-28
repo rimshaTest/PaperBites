@@ -72,10 +72,11 @@ export default function AuthorProfileScreen() {
             >
               <Text style={styles.paperTitle} numberOfLines={2}>{item.title}</Text>
               {item.journal && <Text style={styles.paperJournal}>{item.journal}</Text>}
-              <View style={styles.paperMetaRow}>
-                <Text style={styles.paperMeta}>{item.citation_count} citations</Text>
-                {item.published_date && <Text style={styles.paperMeta}>{item.published_date}</Text>}
-              </View>
+              {item.published_date && (
+                <View style={styles.paperMetaRow}>
+                  <Text style={styles.paperMeta}>{item.published_date}</Text>
+                </View>
+              )}
             </TouchableOpacity>
           )}
         />

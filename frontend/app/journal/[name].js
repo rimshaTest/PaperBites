@@ -74,10 +74,11 @@ export default function JournalScreen() {
               <Text style={styles.paperAuthors} numberOfLines={1}>
                 {(item.authors || []).map((a) => a.name).join(', ') || 'Unknown authors'}
               </Text>
-              <View style={styles.paperMetaRow}>
-                <Text style={styles.paperMeta}>{item.citation_count} citations</Text>
-                {item.published_date && <Text style={styles.paperMeta}>{item.published_date}</Text>}
-              </View>
+              {item.published_date && (
+                <View style={styles.paperMetaRow}>
+                  <Text style={styles.paperMeta}>{item.published_date}</Text>
+                </View>
+              )}
             </TouchableOpacity>
           )}
         />
