@@ -47,11 +47,6 @@ export default function SavedScreen() {
         <View style={styles.headerLeft}>
           <Text style={styles.headerTitle}>Saved</Text>
         </View>
-        {user && (
-          <TouchableOpacity onPress={() => router.push('/add-paper')} hitSlop={12}>
-            <Ionicons name="add" size={26} color={theme.text} />
-          </TouchableOpacity>
-        )}
       </View>
 
       {authLoading || loading ? (

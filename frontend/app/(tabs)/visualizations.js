@@ -278,7 +278,7 @@ const createStyles = (theme) => StyleSheet.create({
     fontSize: 15,
     color: theme.textMuted,
     textAlign: 'center',
-    marginTop: 10,
+    margin: 10,
   },
   loginButton: {
     backgroundColor: theme.accent,
@@ -322,6 +322,7 @@ const createStyles = (theme) => StyleSheet.create({
     gap: 6,
     borderRadius: 10,
     paddingVertical: 12,
+    paddingHorizontal: 10,
   },
   exploreButton: {
     backgroundColor: theme.accent,

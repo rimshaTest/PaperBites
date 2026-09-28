@@ -1,14 +1,17 @@
-import { Tabs } from 'expo-router';
+import { Tabs, useRouter } from 'expo-router';
 import React from 'react';
-import { Platform } from 'react-native';
+import { Platform, TouchableOpacity } from 'react-native';
 
 import { HapticTab } from '../../components/HapticTab';
+import { Ionicons } from '@expo/vector-icons';
+
 import { IconSymbol } from '../../components/ui/IconSymbol';
 import TabBarBackground from '../../components/ui/TabBarBackground';
 import { useTheme } from '../../hooks/useTheme';
 
 export default function TabLayout() {
   const { theme } = useTheme();
+  const router = useRouter();
   return (
     <Tabs
       screenOptions={{
@@ -46,6 +49,12 @@ export default function TabLayout() {
           tabBarIcon: ({ color }) => <IconSymbol size={26} name="circle.grid.2x2.fill" color={color} />,
         }}
       />
+      <Tabs.Screen
+        name="add-paper"
+        options={{
+          tabBarIcon: ({ color }) => <IconSymbol size={26} name="plus.circle.fill" color={color} />,
+        }}
+      />
       <Tabs.Screen 
         name="saved" 
         options={{ 
@@ -53,13 +62,9 @@ export default function TabLayout() {
           tabBarIcon: ({ color }) => <IconSymbol size={26} name="bookmark.fill" color={color} />
         }}
       />
-      <Tabs.Screen
-        name="profile"
-        options={{
-          title: 'Profile',
-          tabBarIcon: ({ color }) => <IconSymbol size={26} name="person.fill" color={color} />,
-        }}
-      />
+      <TouchableOpacity onPress={() => router.push('/add-paper')} hitSlop={12}>
+        <Ionicons name="add" size={26} color={theme.text} />
+      </TouchableOpacity>
       {/* Reachable from Profile > Settings > Manage Feed, and shown once as an onboarding
           popup right after signup - not a tab of its own. */}
       <Tabs.Screen name="interests" options={{ href: null }} />

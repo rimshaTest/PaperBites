@@ -417,7 +417,7 @@ const PaperFeed: React.FC = () => {
   };
 
   const fixedHeader = (
-    <View pointerEvents="box-none" style={[styles.brandBar, { paddingTop: insets.top }]}>
+    <View pointerEvents="box-none" style={[styles.brandBar]}>
       <View style={styles.brandBarSpacer} pointerEvents="none" />
       <Text style={styles.brandText} pointerEvents="none">PaperBites</Text>
       <TouchableOpacity
@@ -546,7 +546,7 @@ const createStyles = (theme: any) => StyleSheet.create({
   },
   brandBarSpacer: {
     width: 28,
-    paddingVertical: 28,
+    paddingVertical: 30,
   },
   brandText: {
     flex: 1,
