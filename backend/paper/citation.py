@@ -192,9 +192,16 @@ async def _resolve_url(session: aiohttp.ClientSession, url: str, max_results: in
     """
     meta = await _fetch_citation_meta_tags(session, url)
 
+    # Trust the page's own `citation_doi` meta tag as-is (the publisher is telling us its DOI
+    # directly - the most authoritative source available) rather than re-parsing it with the
+    # regex below, which is built for pulling a DOI out of unstructured text and isn't guaranteed
+    # to capture every valid DOI character, silently truncating an otherwise-correct value (e.g.
+    # a multi-segment suffix like "10.1140/epjs/s11734-021-00001-2" cut down to "10.1140/epjs/").
+    # Only fall back to the regex when there's no structured field to trust - extracting one from
+    # the bare URL string itself, where there's no authoritative source to defer to.
     doi = None
     if meta.get("citation_doi"):
-        doi = _extract_doi(meta["citation_doi"][0]) or meta["citation_doi"][0].strip()
+        doi = meta["citation_doi"][0].strip()
     if not doi:
         doi = _extract_doi(url)
 
