@@ -417,7 +417,7 @@ const PaperFeed: React.FC = () => {
   };
 
   const fixedHeader = (
-    <View pointerEvents="box-none" style={[styles.brandBar]}>
+    <View pointerEvents="box-none" style={[styles.brandBar, { paddingTop: insets.top }]}>
       <View style={styles.brandBarSpacer} pointerEvents="none" />
       <Text style={styles.brandText} pointerEvents="none">PaperBites</Text>
       <TouchableOpacity
