@@ -1,5 +1,4 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { Tabs } from 'expo-router';
 import {
   View,
   Text,
@@ -191,6 +190,7 @@ export default function VisualizationsScreen() {
           </Text>
           <TouchableOpacity
             style={[styles.exploreButton, styles.actionButton]}
+            onPress={() => router.push('/')}
           >
             <Text style={styles.exploreButtonText}>Go Explore Now</Text>
           </TouchableOpacity>

@@ -21,7 +21,12 @@ const MAPPING = {
   'circle.grid.2x2.fill': 'bubble-chart',
   'chevron.left.forwardslash.chevron.right': 'code',
   'chevron.right': 'chevron-right',
-  'explore.fill': 'read'
+  // "explore.fill" isn't a real SF Symbol (so it rendered blank on iOS), and 'read' isn't a
+  // valid MaterialIcons name either (so it would have rendered blank on Android/web too, if it
+  // had ever actually been used as the Explore tab's icon name). "safari.fill" is a real SF
+  // Symbol (a compass, which is what Safari's own icon looks like) with a matching MaterialIcons
+  // "explore" icon (also a compass) - both platforms get a real, working icon.
+  'safari.fill': 'explore',
 } as IconMapping;
 
 /**
