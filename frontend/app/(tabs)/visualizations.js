@@ -1,4 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react';
+import { Tabs } from 'expo-router';
 import {
   View,
   Text,
@@ -186,9 +187,13 @@ export default function VisualizationsScreen() {
         <View style={styles.centerContainer}>
           <Ionicons name="git-network-outline" size={40} color={theme.textMuted} />
           <Text style={styles.emptyText}>
-            Tap "View Original Paper" on a few papers you read, and they'll show up here -
-            connected to each other by how similar they are.
+            Any full texts you explore through the app will show up here!
           </Text>
+          <TouchableOpacity
+            style={[styles.exploreButton, styles.actionButton]}
+          >
+            <Text style={styles.exploreButtonText}>Go Explore Now</Text>
+          </TouchableOpacity>
         </View>
       ) : (
         <View style={styles.canvasViewport}>
@@ -306,5 +311,24 @@ const createStyles = (theme) => StyleSheet.create({
     textAlign: 'center',
     fontSize: 12,
     color: theme.textMuted,
+  },
+  actionRow: {
+    gap: 10,
+  },
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    borderRadius: 10,
+    paddingVertical: 12,
+  },
+  exploreButton: {
+    backgroundColor: theme.accent,
+  },
+  exploreButtonText: {
+    color: theme.text,
+    fontWeight: 'bold',
+    fontSize: 14,
   },
 });

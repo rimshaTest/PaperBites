@@ -7,25 +7,25 @@ const serif = Platform.select({ ios: 'Georgia', android: 'serif', default: 'Geor
 // styles keeps working unchanged for whichever palette useTheme() resolves to.
 export const lightTheme = {
   mode: 'light',
-  background: '#f3f0e9',
-  surface: '#FFFFFF',
+  background: '#f4f9f9',
+  surface: '#addedc',
   text: '#1A1A1A',
-  textMuted: '#5e5e5e',
+  textMuted: '#898989',
   border: '#1A1A1A',
-  accent: '#cf9e2c',
-  danger: '#E53935',
+  accent: '#5cafac',
+  danger: '#9b0c09',
   serif,
 };
 
 export const darkTheme = {
   mode: 'dark',
-  background: '#2a261e',
-  surface: '#2a261e',
-  text: '#EDEAE3',
-  textMuted: '#ffe2a4',
-  border: '#cbbda1',
-  accent: '#a17919',
-  danger: '#FF6B60',
+  background: '#1e292a',
+  surface: '#106663',
+  text: '#dae8e8',
+  textMuted: '#b3cfcf',
+  border: '#6c8b8a',
+  accent: '#5cafac',
+  danger: '#9b0c09',
   serif,
 };
 

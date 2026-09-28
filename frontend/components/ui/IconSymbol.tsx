@@ -5,7 +5,7 @@ import { SymbolWeight, SFSymbol } from 'expo-symbols';
 import { ComponentProps } from 'react';
 import { OpaqueColorValue, type StyleProp, type TextStyle } from 'react-native';
 
-type IconMapping = Record<SFSymbol, ComponentProps<typeof MaterialIcons>['name']>;
+type IconMapping = Partial<Record<SFSymbol, ComponentProps<typeof MaterialIcons>['name']>>;
 type IconSymbolName = keyof typeof MAPPING;
 
 /**
@@ -21,6 +21,7 @@ const MAPPING = {
   'circle.grid.2x2.fill': 'bubble-chart',
   'chevron.left.forwardslash.chevron.right': 'code',
   'chevron.right': 'chevron-right',
+  'explore.fill': 'read'
 } as IconMapping;
 
 /**

@@ -264,7 +264,7 @@ export const PaperCard: React.FC<{
                 }}
               >
                 <Text style={[styles.toggleText, descriptionMode === 'simpler' && styles.toggleTextActive]}>
-                  Simpler
+                  Simplified
                 </Text>
               </TouchableOpacity>
             </View>
@@ -278,8 +278,8 @@ export const PaperCard: React.FC<{
                 style={[styles.readButton, styles.actionButton]}
                 onPress={() => Linking.openURL(item.url!)}
               >
-                <Text style={styles.readButtonText}>Read paper</Text>
-                <Ionicons name="open-outline" size={16} color={theme.surface} />
+                <Text style={styles.readButtonText}>Read Full Text</Text>
+                <Ionicons name="open-outline" size={16} color={theme.text} />
               </TouchableOpacity>
             )}
           </View>
@@ -420,12 +420,8 @@ const PaperFeed: React.FC = () => {
     toggleFavorite(item as any);
   };
 
-  // Rendered once here, as a sibling on top of the FlatList (not inside each per-item card), so
-  // it stays visually frozen in place while paging between papers - previously this lived inside
-  // PaperCard itself, so during the page-to-page drag gesture it moved along with whichever card
-  // was being dragged, instead of reading as a persistent app header.
   const fixedHeader = (
-    <View pointerEvents="box-none" style={[styles.brandBar, { top: brandBarTop }]}>
+    <View pointerEvents="box-none" style={styles.brandBar}>
       <View style={styles.brandBarSpacer} pointerEvents="none" />
       <Text style={styles.brandText} pointerEvents="none">PaperBites</Text>
       <TouchableOpacity
@@ -433,7 +429,7 @@ const PaperFeed: React.FC = () => {
         onPress={() => router.push('/search')}
         hitSlop={10}
       >
-        <Ionicons name="search" size={16} color={theme.surface} />
+        <Ionicons name="search" size={16} color={theme.text} />
       </TouchableOpacity>
     </View>
   );
@@ -543,15 +539,18 @@ const createStyles = (theme: any) => StyleSheet.create({
   },
   brandBar: {
     position: 'absolute',
-    top: 16,
+    top: 0,
     left: 0,
     right: 0,
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-end',
     paddingHorizontal: 16,
+    paddingBottom: 10,
+    backgroundColor: theme.surface,
   },
   brandBarSpacer: {
     width: 28,
+    paddingVertical: 28,
   },
   brandText: {
     flex: 1,
@@ -559,18 +558,18 @@ const createStyles = (theme: any) => StyleSheet.create({
     fontFamily: theme.serif,
     fontSize: 18,
     fontWeight: 'bold',
-    color: theme.surface,
+    color: theme.text,
     textShadowColor: 'rgba(0, 0, 0, 0.5)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
   },
   searchIconButton: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.35)',
+    backgroundColor: theme.accent,
   },
   saveButton: {
     position: 'absolute',
@@ -756,7 +755,7 @@ const createStyles = (theme: any) => StyleSheet.create({
   toggleText: {
     fontSize: 11,
     fontWeight: '600',
-    color: theme.textMuted,
+    color: theme.text,
   },
   toggleTextActive: {
     color: theme.surface,
@@ -780,10 +779,10 @@ const createStyles = (theme: any) => StyleSheet.create({
     paddingVertical: 12,
   },
   readButton: {
-    backgroundColor: theme.text,
+    backgroundColor: theme.accent,
   },
   readButtonText: {
-    color: theme.surface,
+    color: theme.text,
     fontWeight: 'bold',
     fontSize: 14,
   },
