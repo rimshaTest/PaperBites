@@ -220,8 +220,8 @@ const createStyles = (theme) => StyleSheet.create({
   },
   logoutRow: {
     marginTop: 20,
-    borderColor: theme.text,
-    backgroundColor: theme.danger,
+    borderColor: theme.danger,
+    backgroundColor: theme.accent,
   },
   statsCard: {
     backgroundColor: theme.surface,

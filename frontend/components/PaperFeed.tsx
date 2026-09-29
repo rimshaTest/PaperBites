@@ -11,6 +11,7 @@ import {
   TouchableOpacity,
   Share,
   RefreshControl,
+  StatusBar,
 } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 import Animated, {
@@ -43,7 +44,6 @@ const { width, height } = Dimensions.get('window');
 // It stops short of true 0 (see BRAND_BAR_RESERVED_HEIGHT below) so the "PaperBites" brand bar
 // stays visible and tappable even when a card is fully expanded.
 const COLLAPSED_TOP = height * 0.42;
-const BRAND_BAR_TOP_OFFSET = 8;
 const BRAND_BAR_RESERVED_HEIGHT = 44;
 
 interface Author {
@@ -87,9 +87,10 @@ export const PaperCard: React.FC<{
   const confirmRead = useConfirmRead();
   const [justConfirmedRead, setJustConfirmedRead] = React.useState(false);
   const insets = useSafeAreaInsets();
-  const brandBarTop = insets.top + BRAND_BAR_TOP_OFFSET;
-  const controlsTop = brandBarTop + BRAND_BAR_RESERVED_HEIGHT;
-  const expandedTop = brandBarTop + BRAND_BAR_RESERVED_HEIGHT;
+  const BRAND_BAR_TOP_OFFSET = insets.top || StatusBar.currentHeight || 0;
+  const brandBarTop = BRAND_BAR_TOP_OFFSET + 10;
+  const controlsTop = brandBarTop + BRAND_BAR_RESERVED_HEIGHT - 10;
+  const expandedTop = brandBarTop + BRAND_BAR_RESERVED_HEIGHT -10;
   const top = useSharedValue(COLLAPSED_TOP);
   const [isExpanded, setIsExpanded] = React.useState(false);
 
@@ -171,7 +172,7 @@ export const PaperCard: React.FC<{
   }));
 
   return (
-    <View style={styles.card}>
+    <View style={[styles.card, { top: brandBarTop }]}>
       <View style={styles.imageContainer}>
         {item.image_url ? (
           <Image source={{ uri: item.image_url }} style={styles.image} contentFit="cover" />
@@ -374,7 +375,7 @@ const PaperFeed: React.FC = () => {
   const { theme } = useTheme();
   const styles = React.useMemo(() => createStyles(theme), [theme]);
   const insets = useSafeAreaInsets();
-  const brandBarTop = insets.top + BRAND_BAR_TOP_OFFSET;
+  const BRAND_BAR_TOP_OFFSET = insets.top || StatusBar.currentHeight || 0;
   const { isFavorite, toggleFavorite } = useFavoritePapers(token) as unknown as FavoritePapersApi;
   const [papers, setPapers] = React.useState<PaperItem[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -493,7 +494,7 @@ const PaperFeed: React.FC = () => {
 
   const fixedHeader = (
     <View pointerEvents="box-none" style={[styles.brandBar]}>
-      <View style={styles.brandBarSpacer} pointerEvents="none" />
+      <View style={[styles.brandBarSpacer, { paddingTop: BRAND_BAR_TOP_OFFSET }]} pointerEvents="none" />
       <Text style={styles.brandText} pointerEvents="none">PaperBites</Text>
       <TouchableOpacity
         style={styles.searchIconButton}
@@ -616,12 +617,11 @@ const createStyles = (theme: any) => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-end',
     paddingHorizontal: 16,
-    paddingBottom: 10,
+    padding: 10,
     backgroundColor: theme.surface,
   },
   brandBarSpacer: {
     width: 28,
-    paddingVertical: 30,
   },
   brandText: {
     flex: 1,
@@ -630,6 +630,7 @@ const createStyles = (theme: any) => StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
     color: theme.text,
+    top: -5,
     textShadowColor: 'rgba(0, 0, 0, 0.5)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,

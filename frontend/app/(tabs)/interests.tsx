@@ -65,7 +65,11 @@ export default function InterestsScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
+          <Ionicons name="arrow-back" size={24} color={theme.text} />
+        </TouchableOpacity>
         <Text style={styles.headerTitle}>Interests</Text>
+        <View style={styles.headerButton} />
       </View>
 
       {authLoading || (loading && token) ? (
@@ -120,30 +124,42 @@ const createStyles = (theme: any) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.background,
-    padding: 20,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    borderBottomWidth: 1.5,
+    borderBottomColor: theme.border,
+    backgroundColor: theme.surface,
   },
   headerTitle: {
     fontFamily: theme.serif,
-    fontSize: 28,
+    fontSize: 18,
     fontWeight: 'bold',
     color: theme.text,
+  },
+  headerButton: {
+    width: 34,
+    padding: 5,
   },
   subtitle: {
     fontSize: 14,
     color: theme.textMuted,
-    marginTop: 10,
-    marginBottom: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    marginHorizontal: 20,
+
   },
   centerContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    marginHorizontal: 20,
   },
   emptyText: {
     fontSize: 14,
@@ -172,7 +188,9 @@ const createStyles = (theme: any) => StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 10,
-    paddingBottom: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    marginHorizontal: 20,
   },
   chip: {
     borderWidth: 1.5,
