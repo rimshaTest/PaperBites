@@ -110,8 +110,8 @@ export default function ProfileScreen() {
           </TouchableOpacity>
 
           <TouchableOpacity style={[styles.row, styles.logoutRow]} onPress={handleLogout}>
-            <Ionicons name="log-out-outline" size={22} color={theme.danger} />
-            <Text style={[styles.rowText, { color: theme.danger }]}>Log out</Text>
+            <Ionicons name="log-out-outline" size={22} color={theme.text} />
+            <Text style={[styles.rowText, { color: theme.text }]}>Log out</Text>
           </TouchableOpacity>
         </>
       ) : (
@@ -213,7 +213,8 @@ const createStyles = (theme) => StyleSheet.create({
   },
   logoutRow: {
     marginTop: 20,
-    borderColor: theme.danger,
+    borderColor: theme.text,
+    backgroundColor: theme.danger,
   },
   statsCard: {
     backgroundColor: theme.surface,

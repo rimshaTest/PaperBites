@@ -323,6 +323,7 @@ const createStyles = (theme) => StyleSheet.create({
     borderRadius: 10,
     paddingVertical: 12,
     paddingHorizontal: 10,
+    
   },
   exploreButton: {
     backgroundColor: theme.accent,

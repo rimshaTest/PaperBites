@@ -122,7 +122,7 @@ const createStyles = (theme) => StyleSheet.create({
     fontSize: 16,
     marginBottom: 14,
     color: theme.text,
-    backgroundColor: theme.surface,
+    backgroundColor: theme.background,
   },
   error: {
     color: theme.danger,
