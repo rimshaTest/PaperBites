@@ -5,9 +5,11 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider } from '../hooks/useAuth';
 import { ThemeProvider, useTheme } from '../hooks/useTheme';
+import { AchievementProvider } from '../hooks/useAchievements';
 import { installGlobalErrorHandler } from '../services/monitoring';
 import ErrorBoundary from '../components/ErrorBoundary';
 import IntroVideo from '../components/IntroVideo';
+import AchievementOverlay from '../components/AchievementOverlay';
 
 function AppShell() {
   // The Stack (and whatever it renders underneath, e.g. Home's feed fetch) mounts immediately -
@@ -35,6 +37,7 @@ function AppShell() {
         <Stack.Screen name="profile-details" />
       </Stack>
       {showIntro && <IntroVideo onFinish={() => setShowIntro(false)} />}
+      <AchievementOverlay />
     </>
   );
 }
@@ -50,7 +53,9 @@ export default function Layout() {
         <ErrorBoundary>
           <ThemeProvider>
             <AuthProvider>
-              <AppShell />
+              <AchievementProvider>
+                <AppShell />
+              </AchievementProvider>
             </AuthProvider>
           </ThemeProvider>
         </ErrorBoundary>

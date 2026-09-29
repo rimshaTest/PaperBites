@@ -7,7 +7,7 @@ A "read" here means the user tapped "View Original Paper", left the app, came ba
 "Yes" to the Libby-style "Did you read this paper?" prompt (see api_server.py's
 record_paper_view and the frontend's ReadConfirmationGate) - not just clicking the link. That
 confirmed-read event is what feeds the Visualize tab's bubble map, per-topic reading stats, the
-1st/5th/10th/25th/50th/100th read milestone badges, and the cross-user trending signal below.
+1st/10th/25th/50th/100th/200th read milestone badges, and the cross-user trending signal below.
 """
 import time
 from typing import Dict, List, Optional
@@ -16,7 +16,7 @@ import db
 
 # Milestone badges shown on Profile once earned (frontend animates a pop-in celebration the
 # moment one is newly crossed - see record_view's return value below).
-MILESTONES = [1, 5, 10, 25, 50, 100]
+MILESTONES = [1, 10, 25, 50, 100, 200]
 
 
 def record_view(user_id: str, paper_id: str) -> Dict:
@@ -55,6 +55,23 @@ def all_entries() -> List[List[Dict]]:
     """Every user's raw confirmed-read entries - used only for cross-user aggregates (trending),
     never exposed per-user through the API."""
     return [doc["entries"] for doc in db.get_db().paper_views.find({}, {"entries": 1})]
+
+
+def count_readers_bulk(paper_ids: List[str]) -> Dict[str, int]:
+    """{paper_id: number of distinct users who confirmed reading it} for every id in paper_ids
+    that has at least one reader - powers the "N people have read this" people-icon count next to
+    Read Full Text. Each user's entries list can only contain a given paper_id once (see
+    record_view's is_new check above), so counting matching entries directly already gives the
+    distinct-reader count, no extra dedup needed. Scans every user's entries, same tradeoff as
+    the trending computation in api_server.py - fine at this app's read volume."""
+    wanted = set(paper_ids)
+    counts: Dict[str, int] = {}
+    for entries in all_entries():
+        for entry in entries:
+            paper_id = entry["paper_id"]
+            if paper_id in wanted:
+                counts[paper_id] = counts.get(paper_id, 0) + 1
+    return counts
 
 
 def milestone_reached(total_read: int, is_new: bool) -> Optional[int]:

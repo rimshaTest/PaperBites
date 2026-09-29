@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
   Alert,
   Platform,
+  Share,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -172,6 +173,18 @@ export default function AddPaperScreen() {
     }
   };
 
+  const handleShareCandidate = async (candidate, e) => {
+    e.stopPropagation();
+    try {
+      await Share.share({
+        message: `${candidate.title}${candidate.url ? `\n${candidate.url}` : ''}`,
+        title: candidate.title,
+      });
+    } catch (err) {
+      console.error('Error sharing paper:', err);
+    }
+  };
+
   const handleSubmitForReview = async () => {
     if (!citation.trim() || !token) return;
     setSubmittingReview(true);
@@ -294,7 +307,15 @@ export default function AddPaperScreen() {
                   onPress={() => handleSave(candidate)}
                   disabled={saving}
                 >
-                  <Text style={styles.candidateTitle}>{candidate.title}</Text>
+                  <View style={styles.candidateTitleRow}>
+                    <Text style={[styles.candidateTitle, styles.candidateTitleFlex]}>{candidate.title}</Text>
+                    <TouchableOpacity
+                      onPress={(e) => handleShareCandidate(candidate, e)}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                      <Ionicons name="share-outline" size={18} color={theme.textMuted} />
+                    </TouchableOpacity>
+                  </View>
                   {candidate.authors?.length > 0 && (
                     <Text style={styles.candidateMeta}>{candidate.authors.join(', ')}</Text>
                   )}
@@ -486,6 +507,16 @@ const createStyles = (theme) => StyleSheet.create({
   candidateCardSelected: {
     borderColor: theme.accent,
     borderWidth: 2.5,
+  },
+  candidateTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    marginBottom: 4,
+  },
+  candidateTitleFlex: {
+    flex: 1,
+    marginBottom: 0,
   },
   candidateTitle: {
     fontSize: 15,

@@ -19,6 +19,8 @@ import { fetchPaperById } from '../../services/api';
 import { useFavoritePapers } from '../../hooks/useStorage';
 import { useAuth } from '../../hooks/useAuth';
 import { useTheme } from '../../hooks/useTheme';
+import { useLike } from '../../hooks/useLike';
+import { useConfirmRead } from '../../hooks/useConfirmRead';
 
 export default function PaperDetailScreen() {
   const router = useRouter();
@@ -31,6 +33,9 @@ export default function PaperDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [confirmingRead, setConfirmingRead] = useState(false);
+  const [justConfirmedRead, setJustConfirmedRead] = useState(false);
+  const { liked, count: likeCount, toggle: toggleLike } = useLike(token, paper);
+  const confirmRead = useConfirmRead();
 
   useEffect(() => {
     const loadPaper = async () => {
@@ -92,6 +97,15 @@ export default function PaperDetailScreen() {
     }
   };
 
+  const handleConfirmRead = async () => {
+    if (!token) {
+      router.push('/login');
+      return;
+    }
+    await confirmRead(token, paper.id);
+    setJustConfirmedRead(true);
+  };
+
   const handleAuthorPress = (author) => {
     router.push(`/author/${encodeURIComponent(author.id)}`);
   };
@@ -128,6 +142,14 @@ export default function PaperDetailScreen() {
               name={isFavorite ? 'bookmark' : 'bookmark-outline'}
               size={24}
               color={isFavorite ? theme.accent : theme.text}
+            />
+          </TouchableOpacity>
+
+          <TouchableOpacity onPress={toggleLike} style={styles.headerButton}>
+            <Ionicons
+              name={liked ? 'heart' : 'heart-outline'}
+              size={24}
+              color={liked ? '#FF4D6D' : theme.text}
             />
           </TouchableOpacity>
 
@@ -195,10 +217,35 @@ export default function PaperDetailScreen() {
         )}
 
         {paper.url && (
-          <TouchableOpacity style={styles.linkButton} onPress={handleOpenLink}>
-            <Text style={styles.linkButtonText}>View Original Paper</Text>
-          </TouchableOpacity>
+          <>
+            <TouchableOpacity style={styles.linkButton} onPress={handleOpenLink}>
+              <Text style={styles.linkButtonText}>View Original Paper</Text>
+            </TouchableOpacity>
+            {!!paper.read_count && (
+              <View style={styles.readCountRow}>
+                <Ionicons name="people" size={14} color={theme.textMuted} />
+                <Text style={styles.readCountText}>
+                  {paper.read_count} {paper.read_count === 1 ? 'person has' : 'people have'} read this
+                </Text>
+              </View>
+            )}
+          </>
         )}
+
+        <TouchableOpacity
+          style={[styles.confirmReadButton, justConfirmedRead && styles.confirmReadButtonDone]}
+          onPress={handleConfirmRead}
+          disabled={justConfirmedRead}
+        >
+          <Ionicons
+            name={justConfirmedRead ? 'checkmark-circle' : 'checkmark-circle-outline'}
+            size={18}
+            color={justConfirmedRead ? theme.accent : theme.text}
+          />
+          <Text style={styles.confirmReadButtonText}>
+            {justConfirmedRead ? "You've read this!" : "I've Read This!"}
+          </Text>
+        </TouchableOpacity>
       </ScrollView>
 
       <ReadConfirmationModal
@@ -320,6 +367,37 @@ const createStyles = (theme) => StyleSheet.create({
   linkButtonText: {
     fontSize: 15,
     fontWeight: 'bold',
+    color: theme.text,
+  },
+  readCountRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: -18,
+    marginBottom: 20,
+  },
+  readCountText: {
+    fontSize: 12,
+    color: theme.textMuted,
+  },
+  confirmReadButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderWidth: 1.5,
+    borderColor: theme.border,
+    borderRadius: 10,
+    paddingVertical: 12,
+    marginBottom: 30,
+  },
+  confirmReadButtonDone: {
+    borderColor: theme.accent,
+  },
+  confirmReadButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
     color: theme.text,
   },
 });
