@@ -97,7 +97,7 @@ const createStyles = (theme) => StyleSheet.create({
     marginHorizontal: width * 0.05,
     marginVertical: 10,
     borderRadius: 10,
-    backgroundColor: theme.surface,
+    backgroundColor: theme.accent,
     borderWidth: 1.5,
     borderColor: theme.border,
     overflow: 'hidden',
@@ -114,7 +114,7 @@ const createStyles = (theme) => StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: theme.surface,
+    backgroundColor: theme.background,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -133,7 +133,7 @@ const createStyles = (theme) => StyleSheet.create({
   },
   authors: {
     fontSize: 13,
-    color: theme.textMuted,
+    color: theme.text,
     marginBottom: 6,
   },
   description: {
@@ -144,11 +144,11 @@ const createStyles = (theme) => StyleSheet.create({
   },
   meta: {
     fontSize: 12,
-    color: theme.textMuted,
+    color: theme.text,
     marginBottom: 8,
   },
   link: {
-    color: theme.accent,
+    color: theme.text,
     textDecorationLine: 'underline',
   },
   categoriesContainer: {
@@ -157,7 +157,7 @@ const createStyles = (theme) => StyleSheet.create({
     marginTop: 2,
   },
   categoryChip: {
-    backgroundColor: theme.background,
+    backgroundColor: theme.surface,
     borderWidth: 1,
     borderColor: theme.border,
     paddingHorizontal: 8,
@@ -169,7 +169,7 @@ const createStyles = (theme) => StyleSheet.create({
   categoryText: {
     fontSize: 12,
     lineHeight: 16,
-    color: theme.textMuted,
+    color: theme.text,
   },
 });
 

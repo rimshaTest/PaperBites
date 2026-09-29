@@ -249,7 +249,7 @@ export default function AddPaperScreen() {
           disabled={!citation.trim() || searching}
         >
           {searching ? (
-            <ActivityIndicator color={theme.surface} />
+            <ActivityIndicator color={theme.text} />
           ) : (
             <Text style={styles.primaryButtonText}>Search</Text>
           )}
@@ -371,7 +371,7 @@ const createStyles = (theme) => StyleSheet.create({
     borderWidth: 1.5,
     borderColor: theme.border,
     borderRadius: 10,
-    backgroundColor: theme.surface,
+    backgroundColor: theme.background,
     padding: 14,
     fontSize: 15,
     color: theme.text,
@@ -390,7 +390,7 @@ const createStyles = (theme) => StyleSheet.create({
     borderRadius: 10,
     borderWidth: 1.5,
     borderColor: theme.border,
-    backgroundColor: theme.surface,
+    backgroundColor: theme.accent,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -410,15 +410,16 @@ const createStyles = (theme) => StyleSheet.create({
   tooltip: {
     position: 'absolute',
     top: -34,
-    right: -12,
-    backgroundColor: theme.text,
+    right: -4,
+    backgroundColor: theme.textMuted,
     borderRadius: 6,
     paddingHorizontal: 8,
     paddingVertical: 5,
+    width: 100,
     zIndex: 10,
   },
   tooltipText: {
-    color: theme.surface,
+    color: theme.background,
     fontSize: 11,
     fontWeight: 'bold',
   },
@@ -438,7 +439,7 @@ const createStyles = (theme) => StyleSheet.create({
   primaryButtonText: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: theme.surface,
+    color: theme.text,
   },
   resultsSection: {
     marginTop: 24,
