@@ -13,6 +13,8 @@ import interests as interests_store
 import profile as profile_store
 import paper_reviews as paper_reviews_store
 import paper_views as paper_views_store
+import paper_likes as paper_likes_store
+import streaks as streaks_store
 import auth
 import email_sender
 from rate_limit import RateLimitMiddleware
@@ -110,6 +112,22 @@ def get_authenticated_user_id(request) -> Optional[str]:
     return auth.get_user_id_for_token(token)
 
 
+def _merge_engagement(papers: List[Dict], user_id: Optional[str] = None) -> List[Dict]:
+    """Tag each paper with `like_count` (hearts from every user), `read_count` (how many people
+    have confirmed reading its full text - the people-icon count next to Read Full Text), and,
+    when authenticated, `is_liked` (whether the current user has hearted it). Mutates and returns
+    the same list."""
+    paper_ids = [p["id"] for p in papers]
+    like_counts = paper_likes_store.count_likes_bulk(paper_ids)
+    read_counts = paper_views_store.count_readers_bulk(paper_ids)
+    liked_ids = set(paper_likes_store.list_liked_ids(user_id, paper_ids)) if user_id else set()
+    for p in papers:
+        p["like_count"] = like_counts.get(p["id"], 0)
+        p["read_count"] = read_counts.get(p["id"], 0)
+        p["is_liked"] = p["id"] in liked_ids
+    return papers
+
+
 # A paper only gets the "Trending" badge if more than one person actually confirmed reading it
 # this week - a single lucky read isn't a trend. One trending paper per category, the most-read.
 _TRENDING_WINDOW_DAYS = 7
@@ -174,7 +192,9 @@ async def list_papers(request):
     for p in papers:
         p["trending_category"] = trending_by_paper.get(p["id"])
 
-    return JSONResponse(papers[offset:offset + limit])
+    page = papers[offset:offset + limit]
+    _merge_engagement(page, user_id)
+    return JSONResponse(page)
 
 
 async def search_papers_semantically(request):
@@ -214,7 +234,9 @@ async def search_papers_semantically(request):
 
     scored.sort(key=lambda pair: pair[0], reverse=True)
     top_papers = [doc for _, doc in scored[:limit]]
-    return JSONResponse([_serialize_paper(doc) for doc in top_papers])
+    results = [_serialize_paper(doc) for doc in top_papers]
+    _merge_engagement(results, get_authenticated_user_id(request))
+    return JSONResponse(results)
 
 
 async def get_interests(request):
@@ -310,6 +332,7 @@ async def get_paper(request):
     paper = get_paper_by_id(request.path_params["paper_id"])
     if not paper:
         return JSONResponse({"detail": "Paper not found"}, status_code=404)
+    _merge_engagement([paper], get_authenticated_user_id(request))
     return JSONResponse(paper)
 
 
@@ -330,8 +353,14 @@ async def record_paper_view(request):
 
     result = paper_views_store.record_view(user_id, paper_id)
     milestone = paper_views_store.milestone_reached(result["total_read"], result["is_new"])
+    streak = streaks_store.record_read(user_id) if result["is_new"] else streaks_store.get_streak(user_id)
     return JSONResponse(
-        {"status": "ok", "total_read": result["total_read"], "milestone_reached": milestone},
+        {
+            "status": "ok",
+            "total_read": result["total_read"],
+            "milestone_reached": milestone,
+            "streak": streak,
+        },
         status_code=201,
     )
 
@@ -346,9 +375,12 @@ async def get_reading_stats(request):
     paper_ids = paper_views_store.list_viewed_paper_ids(user_id)
     total_read = len(paper_ids)
     milestones_reached = [m for m in paper_views_store.MILESTONES if total_read >= m]
+    streak = streaks_store.get_streak(user_id)
 
     if not paper_ids:
-        return JSONResponse({"total_read": 0, "by_category": {}, "milestones_reached": milestones_reached})
+        return JSONResponse({
+            "total_read": 0, "by_category": {}, "milestones_reached": milestones_reached, "streak": streak,
+        })
 
     try:
         import db
@@ -363,7 +395,9 @@ async def get_reading_stats(request):
         docs = db.get_db().papers.find({"_id": {"$in": object_ids}})
     except Exception as e:
         print(f"Error building reading stats from MongoDB: {e}")
-        return JSONResponse({"total_read": total_read, "by_category": {}, "milestones_reached": milestones_reached})
+        return JSONResponse({
+            "total_read": total_read, "by_category": {}, "milestones_reached": milestones_reached, "streak": streak,
+        })
 
     by_category: Dict[str, int] = {}
     for doc in docs:
@@ -374,6 +408,7 @@ async def get_reading_stats(request):
         "total_read": total_read,
         "by_category": by_category,
         "milestones_reached": milestones_reached,
+        "streak": streak,
     })
 
 
@@ -525,6 +560,7 @@ async def get_author(request):
     result = get_papers_by_author(request.path_params["author_id"])
     if not result:
         return JSONResponse({"detail": "Author not found"}, status_code=404)
+    _merge_engagement(result["papers"], get_authenticated_user_id(request))
     return JSONResponse(result)
 
 
@@ -533,6 +569,7 @@ async def get_journal(request):
     result = get_papers_by_journal(request.path_params["journal_name"])
     if not result:
         return JSONResponse({"detail": "Journal not found"}, status_code=404)
+    _merge_engagement(result["papers"], get_authenticated_user_id(request))
     return JSONResponse(result)
 
 
@@ -706,6 +743,7 @@ async def list_bookmarked_videos(request):
         if paper:
             bookmarked.append(paper)
     bookmarked.sort(key=lambda item: saved_at_by_id[item["id"]], reverse=True)
+    _merge_engagement(bookmarked, user_id)
 
     return JSONResponse(bookmarked)
 
@@ -741,6 +779,36 @@ async def remove_bookmark(request):
     video_id = request.path_params["video_id"]
     bookmarks_store.remove_bookmark(user_id, video_id)
     return JSONResponse({"status": "ok", "bookmarked": False})
+
+
+async def add_like(request):
+    """Heart a paper for the current user."""
+    user_id = get_authenticated_user_id(request)
+    if not user_id:
+        return JSONResponse({"detail": "Authentication required"}, status_code=401)
+
+    paper_id = request.path_params["paper_id"]
+    if not get_paper_by_id(paper_id):
+        return JSONResponse({"detail": "Not found"}, status_code=404)
+
+    paper_likes_store.add_like(user_id, paper_id)
+    return JSONResponse(
+        {"status": "ok", "liked": True, "like_count": paper_likes_store.count_likes(paper_id)},
+        status_code=201,
+    )
+
+
+async def remove_like(request):
+    """Un-heart a paper for the current user."""
+    user_id = get_authenticated_user_id(request)
+    if not user_id:
+        return JSONResponse({"detail": "Authentication required"}, status_code=401)
+
+    paper_id = request.path_params["paper_id"]
+    paper_likes_store.remove_like(user_id, paper_id)
+    return JSONResponse(
+        {"status": "ok", "liked": False, "like_count": paper_likes_store.count_likes(paper_id)}
+    )
 
 
 async def signup(request):
@@ -841,6 +909,8 @@ routes = [
     Route("/api/papers/viewed/graph", get_viewed_papers_graph),
     Route("/api/papers/{paper_id}", get_paper),
     Route("/api/papers/{paper_id}/view", record_paper_view, methods=["POST"]),
+    Route("/api/papers/{paper_id}/like", add_like, methods=["POST"]),
+    Route("/api/papers/{paper_id}/like", remove_like, methods=["DELETE"]),
     Route("/api/stats/reading", get_reading_stats),
     Route("/api/admin/backfill-embeddings", admin_backfill_embeddings, methods=["POST"]),
     Route("/api/admin/backfill-language", admin_backfill_language, methods=["POST"]),

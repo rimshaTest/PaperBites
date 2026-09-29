@@ -1,8 +1,7 @@
-import React, { useRef, useState } from 'react';
-import { Modal, StyleSheet, Text, TouchableOpacity, View, Animated } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import React from 'react';
+import { Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import * as Haptics from 'expo-haptics';
-import { recordPaperView } from '../services/api';
+import { useConfirmRead } from '../hooks/useConfirmRead';
 import { useTheme } from '../hooks/useTheme';
 
 /**
@@ -12,34 +11,21 @@ import { useTheme } from '../hooks/useTheme';
  * closes and control returns to this screen. That's a deterministic signal (a resolved promise),
  * not a guess at an OS-level app-foreground transition - see paper/[id].js's handleOpenLink for
  * why that AppState approach was unreliable and got replaced.
+ *
+ * Any earned milestone celebration is shown by the app-wide <AchievementOverlay/> (see
+ * hooks/useConfirmRead.js), not locally here - the same "I've Read This!" confirmation path is
+ * also reachable directly from a paper card, so the celebration can't live only in this modal.
  */
 export default function ReadConfirmationModal({ visible, paper, token, onDismiss }) {
   const { theme } = useTheme();
   const styles = React.useMemo(() => createStyles(theme), [theme]);
-  const [milestone, setMilestone] = useState(null);
-  const badgeScale = useRef(new Animated.Value(0)).current;
-  const badgeOpacity = useRef(new Animated.Value(0)).current;
-
-  const playMilestoneAnimation = (badgeNumber) => {
-    setMilestone(badgeNumber);
-    badgeScale.setValue(0);
-    badgeOpacity.setValue(1);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-    Animated.sequence([
-      Animated.spring(badgeScale, { toValue: 1, friction: 4, tension: 80, useNativeDriver: true }),
-      Animated.delay(1000),
-      Animated.timing(badgeOpacity, { toValue: 0, duration: 300, useNativeDriver: true }),
-    ]).start(() => setMilestone(null));
-  };
+  const confirmRead = useConfirmRead();
 
   const handleYes = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     onDismiss();
     if (token && paper) {
-      const result = await recordPaperView(token, paper.id);
-      if (result && result.milestone_reached) {
-        playMilestoneAnimation(result.milestone_reached);
-      }
+      await confirmRead(token, paper.id);
     }
   };
 
@@ -49,41 +35,24 @@ export default function ReadConfirmationModal({ visible, paper, token, onDismiss
   };
 
   return (
-    <>
-      <Modal visible={visible} transparent animationType="fade">
-        <View style={styles.overlay}>
-          <View style={styles.card}>
-            <Text style={styles.title}>Did you read this paper?</Text>
-            {paper?.title ? (
-              <Text style={styles.subtitle} numberOfLines={2}>{paper.title}</Text>
-            ) : null}
-            <View style={styles.buttonRow}>
-              <TouchableOpacity style={[styles.button, styles.noButton]} onPress={handleNo}>
-                <Text style={styles.noButtonText}>No</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.button, styles.yesButton]} onPress={handleYes}>
-                <Text style={styles.yesButtonText}>Yes</Text>
-              </TouchableOpacity>
-            </View>
+    <Modal visible={visible} transparent animationType="fade">
+      <View style={styles.overlay}>
+        <View style={styles.card}>
+          <Text style={styles.title}>Did you read this paper?</Text>
+          {paper?.title ? (
+            <Text style={styles.subtitle} numberOfLines={2}>{paper.title}</Text>
+          ) : null}
+          <View style={styles.buttonRow}>
+            <TouchableOpacity style={[styles.button, styles.noButton]} onPress={handleNo}>
+              <Text style={styles.noButtonText}>No</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.button, styles.yesButton]} onPress={handleYes}>
+              <Text style={styles.yesButtonText}>Yes</Text>
+            </TouchableOpacity>
           </View>
         </View>
-      </Modal>
-
-      {milestone && (
-        <View style={styles.celebrationOverlay} pointerEvents="none">
-          <Animated.View
-            style={[
-              styles.badge,
-              { transform: [{ scale: badgeScale }], opacity: badgeOpacity },
-            ]}
-          >
-            <Ionicons name="flame" size={56} color="#FFFFFF" />
-            <Text style={styles.badgeNumber}>{milestone}</Text>
-            <Text style={styles.badgeLabel}>papers read!</Text>
-          </Animated.View>
-        </View>
-      )}
-    </>
+      </View>
+    </Modal>
   );
 }
 
@@ -142,34 +111,6 @@ const createStyles = (theme) => StyleSheet.create({
   },
   yesButtonText: {
     color: theme.text,
-    fontWeight: '600',
-  },
-  celebrationOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  badge: {
-    backgroundColor: '#FF7A00',
-    borderRadius: 100,
-    width: 160,
-    height: 160,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#FF7A00',
-    shadowOpacity: 0.6,
-    shadowRadius: 20,
-    elevation: 10,
-  },
-  badgeNumber: {
-    fontSize: 32,
-    fontWeight: '800',
-    color: '#FFFFFF',
-    marginTop: 4,
-  },
-  badgeLabel: {
-    fontSize: 13,
-    color: '#FFFFFF',
     fontWeight: '600',
   },
 });

@@ -9,9 +9,10 @@ import {
   Text,
   ActivityIndicator,
   TouchableOpacity,
-  Linking,
+  Share,
   RefreshControl,
 } from 'react-native';
+import * as WebBrowser from 'expo-web-browser';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -29,6 +30,8 @@ import { fetchPapers } from '../services/api';
 import { useAuth } from '../hooks/useAuth';
 import { useFavoritePapers } from '../hooks/useStorage';
 import { useTheme } from '../hooks/useTheme';
+import { useLike } from '../hooks/useLike';
+import { useConfirmRead } from '../hooks/useConfirmRead';
 import { languageName } from '../constants/languages';
 import { playWhenReady } from '../utils/sound';
 
@@ -65,6 +68,9 @@ export interface PaperItem {
   categories: string[] | null;
   language: string;
   trending_category?: string | null;
+  like_count?: number;
+  read_count?: number;
+  is_liked?: boolean;
 }
 
 export const PaperCard: React.FC<{
@@ -75,7 +81,11 @@ export const PaperCard: React.FC<{
 }> = ({ item, onExpandedChange, isBookmarked, onToggleBookmark }) => {
   const router = useRouter();
   const { theme } = useTheme();
+  const { token } = useAuth();
   const styles = React.useMemo(() => createStyles(theme), [theme]);
+  const { liked, count: likeCount, toggle: toggleLike } = useLike(token, item);
+  const confirmRead = useConfirmRead();
+  const [justConfirmedRead, setJustConfirmedRead] = React.useState(false);
   const insets = useSafeAreaInsets();
   const brandBarTop = insets.top + BRAND_BAR_TOP_OFFSET;
   const controlsTop = brandBarTop + BRAND_BAR_RESERVED_HEIGHT;
@@ -117,6 +127,32 @@ export const PaperCard: React.FC<{
     }
   };
 
+  const handleShare = async () => {
+    try {
+      await Share.share({
+        message: `${item.title}${item.url ? `\n${item.url}` : ''}`,
+        title: item.title,
+      });
+    } catch (err) {
+      console.error('Error sharing paper:', err);
+    }
+  };
+
+  const handleReadFullText = async () => {
+    if (!item.url) return;
+    await WebBrowser.openBrowserAsync(item.url);
+  };
+
+  const handleConfirmRead = async () => {
+    if (!token) {
+      router.push('/login');
+      return;
+    }
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    await confirmRead(token, item.id);
+    setJustConfirmedRead(true);
+  };
+
   const panGesture = Gesture.Pan()
     .onUpdate((event) => {
       const base = isExpanded ? expandedTop : COLLAPSED_TOP;
@@ -142,19 +178,37 @@ export const PaperCard: React.FC<{
         ) : (
           <View style={[styles.image, styles.imageFallback]} />
         )}
-        <TouchableOpacity
-          style={[styles.saveButton, { top: controlsTop }]}
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-            onToggleBookmark(item);
-          }}
-        >
-          <Ionicons
-            name={isBookmarked ? 'bookmark' : 'bookmark-outline'}
-            size={20}
-            color={isBookmarked ? theme.accent : theme.surface}
-          />
-        </TouchableOpacity>
+        <View style={[styles.cardActionColumn, { top: controlsTop }]}>
+          <TouchableOpacity
+            style={styles.cardActionButton}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+              onToggleBookmark(item);
+            }}
+          >
+            <Ionicons
+              name={isBookmarked ? 'bookmark' : 'bookmark-outline'}
+              size={20}
+              color={isBookmarked ? theme.accent : theme.surface}
+            />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.cardActionButton}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+              toggleLike();
+            }}
+          >
+            <Ionicons
+              name={liked ? 'heart' : 'heart-outline'}
+              size={20}
+              color={liked ? '#FF4D6D' : theme.surface}
+            />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.cardActionButton} onPress={handleShare}>
+            <Ionicons name="share-outline" size={20} color={theme.surface} />
+          </TouchableOpacity>
+        </View>
         <View style={[styles.badgeColumn, { top: controlsTop }]}>
           {item.trending_category && (
             <View style={styles.trendingBadge}>
@@ -272,13 +326,34 @@ export const PaperCard: React.FC<{
             {item.url && (
               <TouchableOpacity
                 style={[styles.readButton, styles.actionButton]}
-                onPress={() => Linking.openURL(item.url!)}
+                onPress={handleReadFullText}
               >
                 <Text style={styles.readButtonText}>Read Full Text</Text>
                 <Ionicons name="open-outline" size={16} color={theme.text} />
               </TouchableOpacity>
             )}
+            {!!item.read_count && (
+              <View style={styles.readCountPill}>
+                <Ionicons name="people" size={14} color={theme.textMuted} />
+                <Text style={styles.readCountText}>{item.read_count}</Text>
+              </View>
+            )}
           </View>
+
+          <TouchableOpacity
+            style={[styles.confirmReadButton, justConfirmedRead && styles.confirmReadButtonDone]}
+            onPress={handleConfirmRead}
+            disabled={justConfirmedRead}
+          >
+            <Ionicons
+              name={justConfirmedRead ? 'checkmark-circle' : 'checkmark-circle-outline'}
+              size={18}
+              color={justConfirmedRead ? theme.accent : theme.text}
+            />
+            <Text style={styles.confirmReadButtonText}>
+              {justConfirmedRead ? "You've read this!" : "I've Read This!"}
+            </Text>
+          </TouchableOpacity>
         </ScrollView>
       </Animated.View>
     </View>
@@ -567,10 +642,14 @@ const createStyles = (theme: any) => StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: theme.accent,
   },
-  saveButton: {
+  cardActionColumn: {
     position: 'absolute',
     top: 50,
     left: 16,
+    alignItems: 'center',
+    gap: 10,
+  },
+  cardActionButton: {
     width: 40,
     height: 40,
     alignItems: 'center',
@@ -771,6 +850,36 @@ const createStyles = (theme: any) => StyleSheet.create({
     color: theme.text,
     fontWeight: 'bold',
     fontSize: 14,
+  },
+  readCountPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  readCountText: {
+    fontSize: 12,
+    color: theme.textMuted,
+    fontWeight: '600',
+  },
+  confirmReadButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: theme.border,
+    paddingVertical: 10,
+    marginTop: 10,
+  },
+  confirmReadButtonDone: {
+    borderColor: theme.accent,
+  },
+  confirmReadButtonText: {
+    color: theme.text,
+    fontWeight: '600',
+    fontSize: 13,
   },
   centerContainer: {
     flex: 1,

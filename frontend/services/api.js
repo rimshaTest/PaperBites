@@ -120,10 +120,11 @@ export const recordPaperView = async (token, paperId) => {
 };
 
 /**
- * Fetch the signed-in user's confirmed-read stats: total reads, per-category breakdown, and
- * which 1/5/10/25/50/100 milestones have been earned - powers the Profile screen's stats/badges.
+ * Fetch the signed-in user's confirmed-read stats: total reads, per-category breakdown, which
+ * 1/10/25/50/100/200 milestones have been earned, and the current reading-streak badge - powers
+ * the Profile screen's stats/badges.
  * @param {string} token
- * @returns {Promise<{total_read: number, by_category: Object, milestones_reached: Array<number>}|null>}
+ * @returns {Promise<{total_read: number, by_category: Object, milestones_reached: Array<number>, streak: {level: number, label: string}}|null>}
  */
 export const fetchReadingStats = async (token) => {
   try {
@@ -345,6 +346,44 @@ export const removeBookmark = async (token, paperId) => {
       headers: { Authorization: `Bearer ${token}` },
     }
   );
+
+  if (!response.ok) {
+    throw new Error(`API error: ${response.status}`);
+  }
+
+  return response.json();
+};
+
+/**
+ * Heart a paper for the signed-in user.
+ * @param {string} token - Session token from login/signup
+ * @param {string} paperId - ID of the paper to like
+ * @returns {Promise<{status: string, liked: boolean, like_count: number}>}
+ */
+export const addLike = async (token, paperId) => {
+  const response = await fetch(`${API_BASE_URL}/papers/${encodeURIComponent(paperId)}/like`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!response.ok) {
+    throw new Error(`API error: ${response.status}`);
+  }
+
+  return response.json();
+};
+
+/**
+ * Un-heart a paper for the signed-in user.
+ * @param {string} token - Session token from login/signup
+ * @param {string} paperId - ID of the paper to unlike
+ * @returns {Promise<{status: string, liked: boolean, like_count: number}>}
+ */
+export const removeLike = async (token, paperId) => {
+  const response = await fetch(`${API_BASE_URL}/papers/${encodeURIComponent(paperId)}/like`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
 
   if (!response.ok) {
     throw new Error(`API error: ${response.status}`);

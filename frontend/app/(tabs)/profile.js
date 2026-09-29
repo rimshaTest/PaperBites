@@ -55,6 +55,13 @@ export default function ProfileScreen() {
             <Text style={styles.email}>{user.email}</Text>
           </View>
 
+          {stats?.streak && (
+            <View style={styles.streakTag}>
+              <Ionicons name="flame" size={16} color={theme.accent} />
+              <Text style={styles.streakTagText}>{stats.streak.label}</Text>
+            </View>
+          )}
+
           {stats && stats.total_read > 0 && (
             <View style={styles.statsCard}>
               <Text style={styles.statsHeading}>{stats.total_read} papers read</Text>
@@ -287,5 +294,30 @@ const createStyles = (theme) => StyleSheet.create({
     fontSize: 14,
     color: theme.textMuted,
     fontWeight: '600',
+  },
+  streakTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'center',
+    gap: 6,
+    backgroundColor: theme.surface,
+    borderWidth: 1.5,
+    borderColor: theme.accent,
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    marginTop: -14,
+    marginBottom: 20,
+    shadowColor: theme.accent,
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
+  },
+  streakTagText: {
+    fontFamily: theme.serif,
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: theme.text,
   },
 });
