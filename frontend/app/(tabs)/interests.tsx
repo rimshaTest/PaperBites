@@ -214,6 +214,8 @@ const createStyles = (theme: any) => StyleSheet.create({
     fontSize: 14,
     lineHeight: 19,
     flexShrink: 1,
+    fontWeight: 'bold',
+    paddingRight: 2,
     color: theme.text,
   },
   chipTextSelected: {
