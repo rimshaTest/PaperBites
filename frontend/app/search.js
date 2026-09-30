@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -7,15 +7,15 @@ import {
   FlatList,
   StyleSheet,
   ActivityIndicator,
-  SafeAreaView,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import PaperCard from '../components/PaperCard';
 import { searchPapersSemantically } from '../services/api';
 import { useAuth } from '../hooks/useAuth';
 import { useFavoritePapers } from '../hooks/useStorage';
-import theme from '../constants/theme';
+import { useTheme } from '../hooks/useTheme';
 
 /**
  * Semantic paper search, reached from the search icon on Home's card overlay
@@ -28,6 +28,8 @@ export default function SearchScreen() {
   const router = useRouter();
   const { user, token } = useAuth();
   const { isFavorite, toggleFavorite } = useFavoritePapers(token);
+  const { theme } = useTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
 
   const [query, setQuery] = useState('');
   const [searching, setSearching] = useState(false);
@@ -126,7 +128,7 @@ export default function SearchScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.background,

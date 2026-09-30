@@ -55,3 +55,29 @@ export const getMe = async (token) => {
   });
   return parseOrThrow(response);
 };
+
+/**
+ * Request a password reset code by email. Always resolves the same way whether or not the
+ * email is registered - the backend never reveals which, so this never throws for "not found".
+ */
+export const forgotPassword = async (email) => {
+  const response = await fetch(`${API_BASE_URL}/auth/forgot-password`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email }),
+  });
+  return parseOrThrow(response);
+};
+
+/**
+ * Consume a reset code (from forgotPassword above) and set a new password. Throws on a
+ * wrong/expired code.
+ */
+export const resetPassword = async (email, code, newPassword) => {
+  const response = await fetch(`${API_BASE_URL}/auth/reset-password`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, code, new_password: newPassword }),
+  });
+  return parseOrThrow(response);
+};

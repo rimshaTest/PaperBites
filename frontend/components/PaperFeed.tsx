@@ -9,9 +9,11 @@ import {
   Text,
   ActivityIndicator,
   TouchableOpacity,
-  Linking,
+  Share,
   RefreshControl,
+  StatusBar,
 } from 'react-native';
+import * as WebBrowser from 'expo-web-browser';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -19,22 +21,30 @@ import Animated, {
   runOnJS,
 } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { useAudioPlayer } from 'expo-audio';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { fetchPapers } from '../services/api';
 import { useAuth } from '../hooks/useAuth';
 import { useFavoritePapers } from '../hooks/useStorage';
-import theme from '../constants/theme';
+import { useTheme } from '../hooks/useTheme';
+import { useLike } from '../hooks/useLike';
+import { useConfirmRead } from '../hooks/useConfirmRead';
+import { languageName } from '../constants/languages';
+import { playWhenReady } from '../utils/sound';
 
 const { width, height } = Dimensions.get('window');
 
 // The card rests showing only its bottom portion (image visible above it); dragging the handle
-// up slides it over the full screen, covering the image. Only once fully expanded does its
+// up slides it over most of the screen, covering the image. Only once fully expanded does its
 // content become scrollable - while collapsed, dragging elsewhere still pages between papers.
+// It stops short of true 0 (see BRAND_BAR_RESERVED_HEIGHT below) so the "PaperBites" brand bar
+// stays visible and tappable even when a card is fully expanded.
 const COLLAPSED_TOP = height * 0.42;
-const EXPANDED_TOP = 0;
+const BRAND_BAR_RESERVED_HEIGHT = 44;
 
 interface Author {
   id: string | null;
@@ -57,6 +67,10 @@ export interface PaperItem {
   doi: string | null;
   categories: string[] | null;
   language: string;
+  trending_category?: string | null;
+  like_count?: number;
+  read_count?: number;
+  is_liked?: boolean;
 }
 
 export const PaperCard: React.FC<{
@@ -66,6 +80,17 @@ export const PaperCard: React.FC<{
   onToggleBookmark: (item: PaperItem) => void;
 }> = ({ item, onExpandedChange, isBookmarked, onToggleBookmark }) => {
   const router = useRouter();
+  const { theme } = useTheme();
+  const { token } = useAuth();
+  const styles = React.useMemo(() => createStyles(theme), [theme]);
+  const { liked, count: likeCount, toggle: toggleLike } = useLike(token, item);
+  const confirmRead = useConfirmRead();
+  const [justConfirmedRead, setJustConfirmedRead] = React.useState(false);
+  const insets = useSafeAreaInsets();
+  const BRAND_BAR_TOP_OFFSET = insets.top || StatusBar.currentHeight || 0;
+  const brandBarTop = BRAND_BAR_TOP_OFFSET + 10;
+  const controlsTop = brandBarTop + BRAND_BAR_RESERVED_HEIGHT - 10;
+  const expandedTop = brandBarTop + BRAND_BAR_RESERVED_HEIGHT -10;
   const top = useSharedValue(COLLAPSED_TOP);
   const [isExpanded, setIsExpanded] = React.useState(false);
 
@@ -79,6 +104,18 @@ export const PaperCard: React.FC<{
 
   const authors = item.authors || [];
 
+  // "Original" is the raw abstract; "Simpler" is the Gemini rewrite at a lower reading level
+  // (paper/summarize.py - genuine simplification, not a condensed summary). Original is the
+  // default per-card state. Papers with no abstract at all (rare - only when a source gave us
+  // neither an abstract nor enough text to keep one, and description was generated from the PDF
+  // full text instead) have nothing to toggle to, so the toggle itself is hidden for those.
+  const hasOriginalAbstract = !!item.abstract && item.abstract.trim().length > 0;
+  const [descriptionMode, setDescriptionMode] = React.useState<'original' | 'simpler'>('original');
+  const displayedDescription =
+    descriptionMode === 'original' && hasOriginalAbstract
+      ? item.abstract
+      : item.description || item.abstract;
+
   const goToAuthor = (author: Author) => {
     if (author.id) {
       router.push(`/author/${encodeURIComponent(author.id)}`);
@@ -91,15 +128,41 @@ export const PaperCard: React.FC<{
     }
   };
 
+  const handleShare = async () => {
+    try {
+      await Share.share({
+        message: `${item.title}${item.url ? `\n${item.url}` : ''}`,
+        title: item.title,
+      });
+    } catch (err) {
+      console.error('Error sharing paper:', err);
+    }
+  };
+
+  const handleReadFullText = async () => {
+    if (!item.url) return;
+    await WebBrowser.openBrowserAsync(item.url);
+  };
+
+  const handleConfirmRead = async () => {
+    if (!token) {
+      router.push('/login');
+      return;
+    }
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    await confirmRead(token, item.id);
+    setJustConfirmedRead(true);
+  };
+
   const panGesture = Gesture.Pan()
     .onUpdate((event) => {
-      const base = isExpanded ? EXPANDED_TOP : COLLAPSED_TOP;
+      const base = isExpanded ? expandedTop : COLLAPSED_TOP;
       const next = base + event.translationY;
-      top.value = Math.min(COLLAPSED_TOP, Math.max(EXPANDED_TOP, next));
+      top.value = Math.min(COLLAPSED_TOP, Math.max(expandedTop, next));
     })
     .onEnd((event) => {
       const shouldExpand = top.value < COLLAPSED_TOP / 2 || event.velocityY < -500;
-      const target = shouldExpand ? EXPANDED_TOP : COLLAPSED_TOP;
+      const target = shouldExpand ? expandedTop : COLLAPSED_TOP;
       top.value = withTiming(target, { duration: 220 });
       runOnJS(setExpanded)(shouldExpand);
     });
@@ -109,39 +172,58 @@ export const PaperCard: React.FC<{
   }));
 
   return (
-    <View style={styles.card}>
+    <View style={[styles.card, { top: brandBarTop }]}>
       <View style={styles.imageContainer}>
         {item.image_url ? (
           <Image source={{ uri: item.image_url }} style={styles.image} contentFit="cover" />
         ) : (
           <View style={[styles.image, styles.imageFallback]} />
         )}
-        <View pointerEvents="box-none" style={styles.brandBar}>
-          <View style={styles.brandBarSpacer} pointerEvents="none" />
-          <Text style={styles.brandText} pointerEvents="none">PaperBites</Text>
+        <View style={[styles.cardActionColumn, { top: controlsTop }]}>
           <TouchableOpacity
-            style={styles.searchIconButton}
-            onPress={() => router.push('/search')}
-            hitSlop={10}
+            style={styles.cardActionButton}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+              onToggleBookmark(item);
+            }}
           >
-            <Ionicons name="search" size={16} color={theme.surface} />
+            <Ionicons
+              name={isBookmarked ? 'bookmark' : 'bookmark-outline'}
+              size={20}
+              color={isBookmarked ? theme.accent : theme.surface}
+            />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.cardActionButton}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+              toggleLike();
+            }}
+          >
+            <Ionicons
+              name={liked ? 'heart' : 'heart-outline'}
+              size={20}
+              color={liked ? '#FF4D6D' : theme.surface}
+            />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.cardActionButton} onPress={handleShare}>
+            <Ionicons name="share-outline" size={20} color={theme.surface} />
           </TouchableOpacity>
         </View>
-        <TouchableOpacity style={styles.saveButton} onPress={() => onToggleBookmark(item)}>
-          <Ionicons
-            name={isBookmarked ? 'bookmark' : 'bookmark-outline'}
-            size={20}
-            color={isBookmarked ? theme.accent : theme.surface}
-          />
-        </TouchableOpacity>
-        <View style={styles.badgeColumn}>
+        <View style={[styles.badgeColumn, { top: controlsTop }]}>
+          {item.trending_category && (
+            <View style={styles.trendingBadge}>
+              <Ionicons name="flame" size={12} color="#FFFFFF" />
+              <Text style={styles.trendingBadgeText}>Trending in {item.trending_category}</Text>
+            </View>
+          )}
           {item.categories && item.categories.length > 0 && (
             <View style={styles.categoryBadge}>
               <Text style={styles.categoryBadgeText}>{item.categories[0]}</Text>
             </View>
           )}
           <View style={styles.languageBadge}>
-            <Text style={styles.categoryBadgeText}>{item.language}</Text>
+            <Text style={styles.categoryBadgeText}>{languageName(item.language)}</Text>
           </View>
         </View>
       </View>
@@ -192,11 +274,6 @@ export const PaperCard: React.FC<{
           </View>
 
           <View style={styles.statsRow}>
-            <View style={styles.statItem}>
-              <Ionicons name="git-branch-outline" size={16} color={theme.text} />
-              <Text style={styles.statValue}>{item.citation_count}</Text>
-              <Text style={styles.statLabel}>Citations</Text>
-            </View>
             {item.journal && (
               <TouchableOpacity style={styles.journalPill} onPress={goToJournal}>
                 <Text style={styles.journalText}>
@@ -210,27 +287,74 @@ export const PaperCard: React.FC<{
           {item.doi && (
             <View style={styles.metaRow}>
               <Text
-                style={styles.metaLink}
-                onPress={() => Linking.openURL(`https://doi.org/${item.doi}`)}
+                style={styles.statLabel}
               >
                 DOI: {item.doi}
               </Text>
             </View>
           )}
 
-          <Text style={styles.description}>{item.description || item.abstract}</Text>
+          {hasOriginalAbstract && (
+            <View style={styles.descriptionToggle}>
+              <TouchableOpacity
+                style={[styles.toggleOption, descriptionMode === 'original' && styles.toggleOptionActive]}
+                onPress={() => {
+                  Haptics.selectionAsync().catch(() => {});
+                  setDescriptionMode('original');
+                }}
+              >
+                <Text style={[styles.toggleText, descriptionMode === 'original' && styles.toggleTextActive]}>
+                  Original
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.toggleOption, descriptionMode === 'simpler' && styles.toggleOptionActive]}
+                onPress={() => {
+                  Haptics.selectionAsync().catch(() => {});
+                  setDescriptionMode('simpler');
+                }}
+              >
+                <Text style={[styles.toggleText, descriptionMode === 'simpler' && styles.toggleTextActive]}>
+                  Simplified
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          <Text style={styles.description}>{displayedDescription}</Text>
 
           <View style={styles.actionRow}>
             {item.url && (
               <TouchableOpacity
                 style={[styles.readButton, styles.actionButton]}
-                onPress={() => Linking.openURL(item.url!)}
+                onPress={handleReadFullText}
               >
-                <Text style={styles.readButtonText}>Read paper</Text>
-                <Ionicons name="open-outline" size={16} color={theme.surface} />
+                <Text style={styles.readButtonText}>Read Full Text</Text>
+                <Ionicons name="open-outline" size={16} color={theme.text} />
               </TouchableOpacity>
             )}
+            {!!item.read_count && (
+              <View style={styles.readCountPill}>
+                <Ionicons name="people" size={14} color={theme.textMuted} />
+                <Text style={styles.readCountText}>{item.read_count}</Text>
+              </View>
+            )}
           </View>
+
+          <TouchableOpacity
+            style={[styles.confirmReadButton, justConfirmedRead && styles.confirmReadButtonDone]}
+            onPress={handleConfirmRead}
+            disabled={justConfirmedRead}
+          >
+            <Ionicons
+              name={justConfirmedRead ? 'checkmark-circle' : 'checkmark-circle-outline'}
+              size={18}
+              color={justConfirmedRead ? theme.accent : theme.text}
+            />
+            <Text style={styles.confirmReadButtonText}>
+              {justConfirmedRead ? "You've read this!" : "I've Read This!"}
+            </Text>
+          </TouchableOpacity>
         </ScrollView>
       </Animated.View>
     </View>
@@ -248,6 +372,10 @@ type FavoritePapersApi = {
 const PaperFeed: React.FC = () => {
   const router = useRouter();
   const { user, token } = useAuth();
+  const { theme } = useTheme();
+  const styles = React.useMemo(() => createStyles(theme), [theme]);
+  const insets = useSafeAreaInsets();
+  const BRAND_BAR_TOP_OFFSET = insets.top || StatusBar.currentHeight || 0;
   const { isFavorite, toggleFavorite } = useFavoritePapers(token) as unknown as FavoritePapersApi;
   const [papers, setPapers] = React.useState<PaperItem[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -315,20 +443,45 @@ const PaperFeed: React.FC = () => {
     }
   };
 
-  // Plays the swipe whoosh once a page-snap settles on a new card. Using the settled index
-  // (rather than trying to detect the swipe gesture mid-flight) avoids double-firing on a
-  // bounce/overscroll that snaps back to the same page.
-  const handleMomentumScrollEnd = (event: { nativeEvent: { contentOffset: { y: number } } }) => {
-    const newIndex = Math.round(event.nativeEvent.contentOffset.y / height);
-    if (newIndex !== lastPageIndexRef.current) {
-      lastPageIndexRef.current = newIndex;
-      try {
-        swipeSound.seekTo(0);
-        swipeSound.play();
-      } catch (err) {
-        console.debug('Swipe sound failed to play:', err);
-      }
+  const playSwipeSound = () => {
+    try {
+      playWhenReady(swipeSound);
+    } catch (err) {
+      console.debug('Swipe sound failed to play:', err);
     }
+  };
+
+  // Plays the whoosh right as the user releases the swipe, not after the settle animation
+  // finishes - waiting for onMomentumScrollEnd made it feel noticeably delayed. iOS hands us
+  // targetContentOffset (exactly where the release will land); Android doesn't, so fall back to
+  // predicting the next page from the release velocity's direction.
+  const handleScrollEndDrag = (event: {
+    nativeEvent: {
+      contentOffset: { y: number };
+      targetContentOffset?: { y: number };
+      velocity?: { y: number };
+    };
+  }) => {
+    const { contentOffset, targetContentOffset, velocity } = event.nativeEvent;
+    let predictedOffset = contentOffset.y;
+    if (targetContentOffset) {
+      predictedOffset = targetContentOffset.y;
+    } else if (velocity && Math.abs(velocity.y) > 0.3) {
+      predictedOffset = contentOffset.y + (velocity.y > 0 ? height : -height);
+    }
+
+    const predictedIndex = Math.max(0, Math.round(predictedOffset / height));
+    if (predictedIndex !== lastPageIndexRef.current) {
+      lastPageIndexRef.current = predictedIndex;
+      playSwipeSound();
+    }
+  };
+
+  // Safety-net resync only (no sound here) - corrects lastPageIndexRef if the release-time
+  // prediction above was wrong (e.g. a swipe too weak to actually change pages, which snaps
+  // back), so it doesn't drift out of sync with where the feed actually ends up.
+  const handleMomentumScrollEnd = (event: { nativeEvent: { contentOffset: { y: number } } }) => {
+    lastPageIndexRef.current = Math.round(event.nativeEvent.contentOffset.y / height);
   };
 
   const handleToggleBookmark = (item: PaperItem) => {
@@ -339,69 +492,99 @@ const PaperFeed: React.FC = () => {
     toggleFavorite(item as any);
   };
 
+  const fixedHeader = (
+    <View pointerEvents="box-none" style={[styles.brandBar]}>
+      <View style={[styles.brandBarSpacer, { paddingTop: BRAND_BAR_TOP_OFFSET }]} pointerEvents="none" />
+      <Text style={styles.brandText} pointerEvents="none">PaperBites</Text>
+      <TouchableOpacity
+        style={styles.searchIconButton}
+        onPress={() => router.push('/search')}
+        hitSlop={10}
+      >
+        <Ionicons name="search" size={16} color={theme.text} />
+      </TouchableOpacity>
+    </View>
+  );
+
   if (loading) {
     return (
-      <View style={styles.centerContainer}>
-        <ActivityIndicator size="large" color={theme.text} />
-        <Text style={styles.loadingText}>Loading papers...</Text>
+      <View style={styles.flexContainer}>
+        {fixedHeader}
+        <View style={styles.centerContainer}>
+          <ActivityIndicator size="large" color={theme.text} />
+          <Text style={styles.loadingText}>Loading papers...</Text>
+        </View>
       </View>
     );
   }
 
   if (error) {
     return (
-      <View style={styles.centerContainer}>
-        <Text style={styles.errorText}>{error}</Text>
+      <View style={styles.flexContainer}>
+        {fixedHeader}
+        <View style={styles.centerContainer}>
+          <Text style={styles.errorText}>{error}</Text>
+        </View>
       </View>
     );
   }
 
   if (papers.length === 0) {
     return (
-      <View style={styles.centerContainer}>
-        <Text style={styles.messageText}>No papers found</Text>
+      <View style={styles.flexContainer}>
+        {fixedHeader}
+        <View style={styles.centerContainer}>
+          <Text style={styles.messageText}>No papers found</Text>
+        </View>
       </View>
     );
   }
 
   return (
-    <FlatList
-      data={papers}
-      keyExtractor={(item) => item.id}
-      renderItem={({ item }) => (
-        <PaperCard
-          item={item}
-          onExpandedChange={setAnyExpanded}
-          isBookmarked={isFavorite(item.id)}
-          onToggleBookmark={handleToggleBookmark}
-        />
-      )}
-      // Every card is exactly `height` tall - telling FlatList that up front via
-      // getItemLayout skips its own (comparatively expensive) dynamic measurement pass, which
-      // is what made paging feel janky rather than an instant, deterministic snap to each page.
-      getItemLayout={(_, index) => ({ length: height, offset: height * index, index })}
-      pagingEnabled
-      scrollEnabled={!anyExpanded}
-      snapToInterval={height}
-      snapToAlignment="start"
-      decelerationRate="fast"
-      showsVerticalScrollIndicator={false}
-      initialNumToRender={2}
-      maxToRenderPerBatch={3}
-      windowSize={5}
-      removeClippedSubviews
-      style={styles.list}
-      onEndReached={handleEndReached}
-      onEndReachedThreshold={0.5}
-      onMomentumScrollEnd={handleMomentumScrollEnd}
-      refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={theme.text} />
-      }
-    />
+    <View style={styles.flexContainer}>
+      <FlatList
+        data={papers}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item }) => (
+          <PaperCard
+            item={item}
+            onExpandedChange={setAnyExpanded}
+            isBookmarked={isFavorite(item.id)}
+            onToggleBookmark={handleToggleBookmark}
+          />
+        )}
+        // Every card is exactly `height` tall - telling FlatList that up front via
+        // getItemLayout skips its own (comparatively expensive) dynamic measurement pass, which
+        // is what made paging feel janky rather than an instant, deterministic snap to each page.
+        getItemLayout={(_, index) => ({ length: height, offset: height * index, index })}
+        pagingEnabled
+        scrollEnabled={!anyExpanded}
+        snapToInterval={height}
+        snapToAlignment="start"
+        decelerationRate="fast"
+        showsVerticalScrollIndicator={false}
+        initialNumToRender={2}
+        maxToRenderPerBatch={3}
+        windowSize={5}
+        removeClippedSubviews
+        style={styles.list}
+        onEndReached={handleEndReached}
+        onEndReachedThreshold={0.5}
+        onScrollEndDrag={handleScrollEndDrag}
+        onMomentumScrollEnd={handleMomentumScrollEnd}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={theme.text} />
+        }
+      />
+      {fixedHeader}
+    </View>
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (theme: any) => StyleSheet.create({
+  flexContainer: {
+    flex: 1,
+  },
   list: {
     flex: 1,
     backgroundColor: theme.background,
@@ -428,12 +611,14 @@ const styles = StyleSheet.create({
   },
   brandBar: {
     position: 'absolute',
-    top: 16,
+    top: 0,
     left: 0,
     right: 0,
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-end',
     paddingHorizontal: 16,
+    padding: 10,
+    backgroundColor: theme.surface,
   },
   brandBarSpacer: {
     width: 28,
@@ -444,23 +629,28 @@ const styles = StyleSheet.create({
     fontFamily: theme.serif,
     fontSize: 18,
     fontWeight: 'bold',
-    color: theme.surface,
+    color: theme.text,
+    top: -5,
     textShadowColor: 'rgba(0, 0, 0, 0.5)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
   },
   searchIconButton: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.35)',
+    backgroundColor: theme.accent,
   },
-  saveButton: {
+  cardActionColumn: {
     position: 'absolute',
     top: 50,
     left: 16,
+    alignItems: 'center',
+    gap: 10,
+  },
+  cardActionButton: {
     width: 40,
     height: 40,
     alignItems: 'center',
@@ -489,6 +679,20 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: 10,
   },
+  trendingBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#FF7A00',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 16,
+  },
+  trendingBadgeText: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+  },
   categoryBadgeText: {
     fontSize: 12,
     fontWeight: 'bold',
@@ -499,7 +703,13 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    height,
+    // Anchored to the screen bottom (rather than a fixed `height` paired with an animated `top`)
+    // so its actual height always shrinks to fit between wherever `top` currently is and the
+    // bottom of the screen. With a fixed height and `top` allowed to land above 0 (see
+    // expandedTop), the card would overflow past the bottom of the screen by that same amount -
+    // pushing its own "Read Original Paper" button/footer off-screen and letting the image
+    // layer's brand bar peek through underneath.
+    bottom: 0,
     backgroundColor: theme.background,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
@@ -559,16 +769,6 @@ const styles = StyleSheet.create({
     gap: 10,
     marginBottom: 10,
   },
-  statItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
-  },
-  statValue: {
-    fontSize: 12,
-    fontWeight: 'bold',
-    color: theme.text,
-  },
   statLabel: {
     fontSize: 12,
     color: theme.textMuted,
@@ -602,6 +802,31 @@ const styles = StyleSheet.create({
     color: theme.textMuted,
     textDecorationLine: 'underline',
   },
+  descriptionToggle: {
+    flexDirection: 'row',
+    alignSelf: 'flex-start',
+    borderWidth: 1.5,
+    borderColor: theme.border,
+    borderRadius: 20,
+    overflow: 'hidden',
+    marginBottom: 10,
+  },
+  toggleOption: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+  },
+  toggleOptionActive: {
+    backgroundColor: theme.accent,
+  },
+  toggleText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: theme.text,
+  },
+  toggleTextActive: {
+    color: theme.surface,
+    fontWeight: 'bold',
+  },
   description: {
     fontSize: 12,
     lineHeight: 16,
@@ -620,12 +845,42 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   readButton: {
-    backgroundColor: theme.text,
+    backgroundColor: theme.accent,
   },
   readButtonText: {
-    color: theme.surface,
+    color: theme.text,
     fontWeight: 'bold',
     fontSize: 14,
+  },
+  readCountPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  readCountText: {
+    fontSize: 12,
+    color: theme.textMuted,
+    fontWeight: '600',
+  },
+  confirmReadButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: theme.border,
+    paddingVertical: 10,
+    marginTop: 10,
+  },
+  confirmReadButtonDone: {
+    borderColor: theme.accent,
+  },
+  confirmReadButtonText: {
+    color: theme.text,
+    fontWeight: '600',
+    fontSize: 13,
   },
   centerContainer: {
     flex: 1,

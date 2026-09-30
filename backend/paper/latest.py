@@ -393,6 +393,10 @@ async def fetch_latest_crossref(category: str, since: datetime.date, limit: int)
             "is_open_access": None,  # resolved by fetch_unpaywall_oa_location below
             "doi": item.get("DOI"),
             "url": item.get("URL"),
+            # Crossref's own reported language of record for the work - a transient hint used
+            # (and discarded) by _apply_language_and_translation below, not part of the stored
+            # paper schema.
+            "source_language": item.get("language"),
         })
 
     return results[:limit]
@@ -448,6 +452,30 @@ async def _fill_open_access_links(papers: List[Dict]) -> None:
                 paper["is_open_access"] = False
 
         await asyncio.gather(*(resolve(p) for p in candidates))
+
+
+_DOI_RE = re.compile(r"^10\.\d{4,9}/\S+$")
+
+
+def _normalize_doi_and_url(paper: Dict) -> None:
+    """Guards against malformed DOI values seen from some sources - a bare registrant prefix
+    with no suffix (e.g. "10.61132/", "10.1140/epjs/") rather than a real DOI - which otherwise
+    showed as a broken "DOI: 10.61132/" line with nothing useful after it, and could also corrupt
+    _dedupe()'s DOI-based matching if two unrelated papers both carried the same bare-prefix
+    non-value. Also gives a paper a fallback URL when its source didn't provide one directly (seen
+    on some Crossref results with no URL field and no Unpaywall-confirmed OA location) - any valid
+    DOI can always be dereferenced via doi.org, so that's strictly better than leaving "Read
+    Original Paper" with nowhere to go and no button rendered at all.
+    """
+    doi = (paper.get("doi") or "").strip()
+    # A DOI ending in "/" (with nothing after it, or nothing but the registrant prefix before
+    # it) is truncated/incomplete, not a real identifier - reject it even though it otherwise
+    # matches the general 10.xxxx/suffix shape.
+    is_valid = bool(_DOI_RE.match(doi)) and not doi.endswith("/")
+    paper["doi"] = doi if is_valid else None
+
+    if not paper.get("url") and paper["doi"]:
+        paper["url"] = f"https://doi.org/{paper['doi']}"
 
 
 def _dedupe(papers: List[Dict]) -> List[Dict]:
@@ -523,8 +551,26 @@ def _detect_language(paper: Dict) -> str:
     false positives on English academic text (acronyms, jargon, proper nouns) misread as another
     language. Require high confidence before accepting a non-English result; otherwise assume
     English, which is the overwhelmingly common case for indexed research papers.
+
+    Checks the title alone first. Non-English journals commonly submit an English-translated
+    abstract for international indexing while leaving the title in its original language (the
+    title is what a human reader actually sees first, so it's far less likely to have been
+    independently translated) - combining title+abstract text before detecting would let that
+    much-longer English abstract dominate and wash out a non-English title's signal entirely,
+    misclassifying the whole paper as English. Only falls back to the combined text (the original
+    behavior) when the title alone isn't a confident enough signal - short titles are noisier for
+    langdetect than a full title+abstract block.
     """
-    text = f"{paper.get('title', '')} {paper.get('abstract', '')}".strip()
+    title = (paper.get('title') or '').strip()
+    if title:
+        try:
+            best_title = detect_langs(title)[0]
+            if best_title.lang != "en" and best_title.prob >= _NON_ENGLISH_CONFIDENCE_THRESHOLD:
+                return best_title.lang
+        except LangDetectException:
+            pass
+
+    text = f"{title} {paper.get('abstract', '')}".strip()
     if not text:
         return "en"
     try:
@@ -634,8 +680,18 @@ async def _apply_language_and_translation(papers: List[Dict]) -> None:
     """Tag each paper with its language, translating title/journal/abstract to English if needed.
 
     Detects language from the actual title/abstract text rather than trusting a source-provided
-    language field - OpenAlex's own `language` metadata turned out to be unreliable in testing
-    (it mislabeled clearly-English titles as Afrikaans).
+    language field by default - OpenAlex's own `language` metadata turned out to be unreliable in
+    testing (it mislabeled clearly-English titles as Afrikaans), so it's never used.
+
+    One narrow exception: many non-English journals submit an English-translated title/abstract
+    for international indexing even though the paper itself isn't in English - our text-based
+    detector, which only ever sees that (English) title/abstract text, has no way to tell the
+    difference and will confidently call it "en". Crossref separately reports a work's actual
+    language of record (`fetch_latest_crossref`'s `source_language`, a raw ISO code, not derived
+    from abstract text), so when it explicitly says non-English and our own detection said "en"
+    anyway, trust Crossref's claim instead. This is a one-directional override: a source claiming
+    "en" is never trusted over our own detection (that's the exact failure mode that made
+    OpenAlex's field unreliable), only a source's *non-English* claim can override an "en" guess.
 
     Detection runs sequentially, not concurrently: langdetect draws from a shared, seeded
     DetectorFactory singleton that isn't thread-safe, and calling detect_langs() concurrently
@@ -647,8 +703,19 @@ async def _apply_language_and_translation(papers: List[Dict]) -> None:
     """
     non_english = []
     for paper in papers:
-        paper["language"] = _detect_language(paper)
-        if paper["language"] != "en":
+        detected_language = _detect_language(paper)
+
+        source_language = paper.pop("source_language", None)
+        if detected_language == "en" and source_language and source_language != "en":
+            detected_language = source_language
+
+        # Computed from the *final* detected_language (after Crossref's override above), not
+        # the pre-override guess - a paper Crossref confirms is non-English needs its
+        # title/abstract translated too, not just its displayed language tag corrected. This was
+        # previously checked before the override ran, so an overridden paper's language tag would
+        # correctly show non-English while its title/abstract silently stayed untranslated.
+        paper["language"] = detected_language
+        if detected_language != "en":
             non_english.append(paper)
 
     if not non_english:
@@ -668,6 +735,176 @@ async def _apply_language_and_translation(papers: List[Dict]) -> None:
             paper["abstract"] = await _translate_to_english(session, paper["abstract"], language) or paper["abstract"]
 
         await asyncio.gather(*(translate_paper(p) for p in non_english))
+
+
+async def backfill_language_and_translation(batch_size: int = 20) -> Dict[str, int]:
+    """One-time (re-run-safe) backfill for papers already in MongoDB whose language was
+    misdetected by a fixed bug in _detect_language(): it used to run langdetect on the combined
+    title+abstract text, so a non-English paper submitted with an English abstract for
+    international indexing (common practice) had its native-language title's signal washed out by
+    the much longer English abstract, misdetecting the whole paper as English and never
+    translating it. _detect_language() now checks the title alone first, which catches this, but
+    that only takes effect for papers processed *after* the fix - existing documents keep whatever
+    `language`/`title`/`abstract` were computed under the old, buggy logic until re-processed here.
+
+    Only reprocesses documents tagged "en" that were never translated (no `title_original` set,
+    meaning they were never flagged as non-English by the old logic either) - a document that
+    already has `title_original` was correctly identified as non-English before this fix and
+    doesn't need touching. Safe to re-run: an already-correct "en" document just gets re-detected
+    as "en" again and is left alone (no write).
+    """
+    import db
+
+    collection = db.get_db().papers
+    candidates = list(collection.find(
+        {"language": "en", "title_original": {"$exists": False}},
+        {"title": 1, "abstract": 1, "journal": 1},
+    ))
+
+    corrected = 0
+    unchanged = 0
+
+    async with aiohttp.ClientSession(timeout=_HTTP_TIMEOUT) as session:
+        async def recheck(doc: Dict) -> None:
+            nonlocal corrected, unchanged
+            paper = {"title": doc.get("title", ""), "abstract": doc.get("abstract", "")}
+            detected = _detect_language(paper)
+            if detected == "en":
+                unchanged += 1
+                return
+
+            updates = {
+                "language": detected,
+                "title_original": doc.get("title"),
+                "journal_original": doc.get("journal"),
+            }
+            updates["title"] = await _translate_to_english(session, doc.get("title"), detected) or doc.get("title")
+            if doc.get("journal"):
+                updates["journal"] = (
+                    await _translate_to_english(session, doc.get("journal"), detected) or doc.get("journal")
+                )
+            updates["abstract"] = (
+                await _translate_to_english(session, doc.get("abstract"), detected) or doc.get("abstract")
+            )
+
+            collection.update_one({"_id": doc["_id"]}, {"$set": updates})
+            corrected += 1
+
+        for i in range(0, len(candidates), batch_size):
+            batch = candidates[i:i + batch_size]
+            await asyncio.gather(*(recheck(doc) for doc in batch))
+
+    return {"total_checked": len(candidates), "corrected": corrected, "unchanged": unchanged}
+
+
+def diagnose_language(limit: int = 50) -> List[Dict]:
+    """Read-only diagnostic: for each paper currently tagged "en" (up to `limit`), show exactly
+    what langdetect saw and decided, so a paper that still looks wrong after
+    backfill_language_and_translation() can be understood instead of guessed at - e.g. whether
+    its title-only detection actually returned a low-confidence non-English guess (falling
+    through to the combined-text check, which an English abstract can dominate) versus genuinely
+    being detected as English throughout.
+    """
+    import db
+
+    collection = db.get_db().papers
+    docs = list(collection.find(
+        {"language": "en"},
+        {"title": 1, "abstract": 1, "journal": 1},
+    ).limit(limit))
+
+    results = []
+    for doc in docs:
+        title = (doc.get('title') or '').strip()
+        abstract = (doc.get('abstract') or '').strip()
+
+        title_guess = None
+        try:
+            best_title = detect_langs(title)[0] if title else None
+            if best_title:
+                title_guess = {"lang": best_title.lang, "prob": round(best_title.prob, 4)}
+        except LangDetectException:
+            title_guess = {"error": "LangDetectException"}
+
+        combined_guess = None
+        text = f"{title} {abstract}".strip()
+        try:
+            best_combined = detect_langs(text)[0] if text else None
+            if best_combined:
+                combined_guess = {"lang": best_combined.lang, "prob": round(best_combined.prob, 4)}
+        except LangDetectException:
+            combined_guess = {"error": "LangDetectException"}
+
+        results.append({
+            "id": str(doc["_id"]),
+            "title": title[:100],
+            "journal": doc.get("journal"),
+            "title_only_guess": title_guess,
+            "combined_guess": combined_guess,
+            "final_decision": _detect_language({"title": title, "abstract": abstract}),
+        })
+
+    return results
+
+
+def list_non_english_papers(limit: int = 50) -> List[Dict]:
+    """Read-only: every paper currently tagged with a non-English language, showing both its
+    (translated) displayed title and title_original - lets you directly confirm a non-English
+    paper both exists and was actually translated, without inspecting documents one by one."""
+    import db
+
+    collection = db.get_db().papers
+    docs = list(collection.find(
+        {"language": {"$ne": "en"}},
+        {"title": 1, "title_original": 1, "journal": 1, "journal_original": 1, "language": 1},
+    ).limit(limit))
+
+    return [
+        {
+            "id": str(doc["_id"]),
+            "language": doc.get("language"),
+            "title": doc.get("title"),
+            "title_original": doc.get("title_original"),
+            "journal": doc.get("journal"),
+            "journal_original": doc.get("journal_original"),
+        }
+        for doc in docs
+    ]
+
+
+def backfill_doi_and_url() -> Dict[str, int]:
+    """One-time (re-run-safe) backfill applying _normalize_doi_and_url()'s validation/fallback to
+    papers already in MongoDB - fetched before that check existed, some carry a malformed DOI (a
+    bare registrant prefix with no real suffix, e.g. "10.61132/") that shows as a broken
+    "DOI: 10.61132/" line, and/or have no `url` at all despite having a valid DOI, meaning "Read
+    Original Paper" doesn't even render (the frontend only shows that button when a paper has a
+    url) - which also meant the Libby-style "did you read this paper?" flow could never trigger
+    for those papers, since there was never anything to tap through to in the first place.
+    """
+    import db
+
+    collection = db.get_db().papers
+    docs = list(collection.find({}, {"doi": 1, "url": 1}))
+
+    doi_cleared = 0
+    url_added = 0
+
+    for doc in docs:
+        paper = {"doi": doc.get("doi"), "url": doc.get("url")}
+        _normalize_doi_and_url(paper)
+
+        updates = {}
+        if paper["doi"] != doc.get("doi"):
+            updates["doi"] = paper["doi"]
+            doi_cleared += 1
+        if paper["url"] != doc.get("url"):
+            updates["url"] = paper["url"]
+            url_added += 1
+
+        if updates:
+            collection.update_one({"_id": doc["_id"]}, {"$set": updates})
+
+    return {"total_checked": len(docs), "doi_cleared": doi_cleared, "url_added": url_added}
 
 
 async def _apply_summaries(papers: List[Dict]) -> None:
@@ -768,7 +1005,11 @@ async def get_latest_papers(
         fetch_latest_crossref(category, since, limit),
     )
 
-    combined = _dedupe(semantic_scholar_papers + openalex_papers + crossref_papers)
+    all_papers = semantic_scholar_papers + openalex_papers + crossref_papers
+    for paper in all_papers:
+        _normalize_doi_and_url(paper)
+
+    combined = _dedupe(all_papers)
     if sort_by == "citations":
         combined.sort(key=lambda p: p.get("citation_count") or 0, reverse=True)
     else:

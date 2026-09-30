@@ -1,13 +1,22 @@
 # cli.py
 import argparse
 import asyncio
+import json
 import logging
 import os
 from typing import Optional
 
 from config import Config
 from utils.logging import setup_logging
-from paper.latest import get_latest_papers, CATEGORIES
+from paper.latest import (
+    get_latest_papers,
+    CATEGORIES,
+    backfill_language_and_translation,
+    diagnose_language,
+    list_non_english_papers,
+    backfill_doi_and_url,
+)
+from paper.embeddings import backfill_missing_embeddings
 from db import upsert_papers
 
 
@@ -41,6 +50,45 @@ def main():
     )
     fetch_parser.add_argument("--config", "-c", help="Path to config file", default="config.json")
 
+    backfill_parser = subparsers.add_parser(
+        "backfill-embeddings",
+        help="Compute embeddings for papers already in MongoDB that predate semantic search "
+             "(or fell outside every fetch-latest run's days_back window since) - safe to re-run",
+    )
+    backfill_parser.add_argument("--config", "-c", help="Path to config file", default="config.json")
+
+    backfill_language_parser = subparsers.add_parser(
+        "backfill-language",
+        help="Re-check the language of papers already in MongoDB tagged 'en' but never "
+             "translated, using the fixed title-first detection - safe to re-run",
+    )
+    backfill_language_parser.add_argument("--config", "-c", help="Path to config file", default="config.json")
+
+    diagnose_parser = subparsers.add_parser(
+        "diagnose-language",
+        help="Read-only: show exactly what langdetect saw/decided for papers still tagged 'en', "
+             "to see why backfill-language didn't flag them as non-English",
+    )
+    diagnose_parser.add_argument("--limit", help="Max papers to inspect", type=int, default=50)
+    diagnose_parser.add_argument("--config", "-c", help="Path to config file", default="config.json")
+
+    non_english_parser = subparsers.add_parser(
+        "list-non-english",
+        help="Read-only: show every paper currently tagged with a non-English language, with "
+             "both its translated title and title_original - confirms non-English papers exist "
+             "and were actually translated, without checking documents one by one",
+    )
+    non_english_parser.add_argument("--limit", help="Max papers to list", type=int, default=50)
+    non_english_parser.add_argument("--config", "-c", help="Path to config file", default="config.json")
+
+    backfill_doi_parser = subparsers.add_parser(
+        "backfill-doi-url",
+        help="Clear malformed DOIs (e.g. a bare 'DOI: 10.61132/' with no suffix) and fill in a "
+             "doi.org fallback URL for papers with a valid DOI but no url - without a url, "
+             "'Read Original Paper' doesn't render at all - safe to re-run",
+    )
+    backfill_doi_parser.add_argument("--config", "-c", help="Path to config file", default="config.json")
+
     args = parser.parse_args()
 
     logger = setup_logging()
@@ -51,6 +99,22 @@ def main():
         if args.command == "fetch-latest":
             total = await fetch_latest_command(args.category, args.days, args.limit, sort_by=args.sort_by)
             logger.info(f"Upserted {total} papers total")
+        elif args.command == "backfill-embeddings":
+            result = await backfill_missing_embeddings()
+            logger.info(f"Backfill complete: {result}")
+        elif args.command == "backfill-language":
+            result = await backfill_language_and_translation()
+            logger.info(f"Backfill complete: {result}")
+        elif args.command == "diagnose-language":
+            results = diagnose_language(limit=args.limit)
+            print(json.dumps(results, indent=2))
+        elif args.command == "list-non-english":
+            results = list_non_english_papers(limit=args.limit)
+            print(json.dumps(results, indent=2))
+            logger.info(f"Found {len(results)} non-English paper(s)")
+        elif args.command == "backfill-doi-url":
+            result = backfill_doi_and_url()
+            logger.info(f"Backfill complete: {result}")
         else:
             parser.print_help()
 

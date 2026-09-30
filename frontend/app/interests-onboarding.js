@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -6,12 +6,12 @@ import {
   StyleSheet,
   ScrollView,
   ActivityIndicator,
-  SafeAreaView,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { fetchCategories, saveInterests } from '../services/api';
 import { useAuth } from '../hooks/useAuth';
-import theme from '../constants/theme';
+import { useTheme } from '../hooks/useTheme';
 
 /**
  * Shown once, right after a successful signup (see app/signup.js). Picking at least one
@@ -22,6 +22,8 @@ import theme from '../constants/theme';
 export default function InterestsOnboardingScreen() {
   const router = useRouter();
   const { token } = useAuth();
+  const { theme } = useTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const [topics, setTopics] = useState([]);
   const [selected, setSelected] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -114,7 +116,7 @@ export default function InterestsOnboardingScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.background,
@@ -158,6 +160,7 @@ const styles = StyleSheet.create({
   },
   chipText: {
     fontSize: 14,
+    lineHeight: 19,
     color: theme.text,
   },
   chipTextSelected: {

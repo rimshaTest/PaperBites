@@ -1,57 +1,35 @@
 """
-Simple JSON-file-backed bookmark storage, scoped by authenticated user id
-(see auth.py). Data is keyed by the opaque user id issued at signup, so
-bookmarks follow the account rather than any one device.
+Bookmark storage, scoped by authenticated user id (see auth.py). Backed by MongoDB's `bookmarks`
+collection - one document per (user_id, video_id) pair - so bookmarks follow the account across
+devices and survive concurrent writers, instead of the flat JSON file this used to be.
+
+"video_id" is a legacy field name from before this app was paper-only; api_server.py's bookmark
+routes and the frontend both still use it to mean "paper id", so it's kept as-is here rather than
+renamed mid-migration.
 """
-import os
-import json
 import time
 from typing import Dict, List
 
-BOOKMARKS_FILE = os.environ.get("PAPERBITES_BOOKMARKS_FILE", "bookmarks.json")
-
-
-def _load() -> Dict[str, List[Dict]]:
-    if not os.path.exists(BOOKMARKS_FILE):
-        return {}
-    try:
-        with open(BOOKMARKS_FILE, 'r') as f:
-            return json.load(f)
-    except Exception as e:
-        print(f"Error reading bookmarks from {BOOKMARKS_FILE}: {e}")
-        return {}
-
-
-def _save(data: Dict[str, List[Dict]]) -> None:
-    with open(BOOKMARKS_FILE, 'w') as f:
-        json.dump(data, f, indent=2)
+import db
 
 
 def list_bookmarks(user_id: str) -> List[Dict]:
     """Return this user's bookmark entries, most recently saved first."""
-    data = _load()
-    entries = data.get(user_id, [])
-    return sorted(entries, key=lambda e: e.get("saved_at", 0), reverse=True)
+    cursor = db.get_db().bookmarks.find({"user_id": user_id}).sort("saved_at", -1)
+    return [{"video_id": e["video_id"], "saved_at": e["saved_at"]} for e in cursor]
 
 
 def is_bookmarked(user_id: str, video_id: str) -> bool:
-    return any(e["video_id"] == video_id for e in _load().get(user_id, []))
+    return db.get_db().bookmarks.find_one({"user_id": user_id, "video_id": video_id}) is not None
 
 
 def add_bookmark(user_id: str, video_id: str) -> None:
-    data = _load()
-    entries = data.setdefault(user_id, [])
-    if not any(e["video_id"] == video_id for e in entries):
-        entries.append({"video_id": video_id, "saved_at": time.time()})
-        _save(data)
+    db.get_db().bookmarks.update_one(
+        {"user_id": user_id, "video_id": video_id},
+        {"$setOnInsert": {"saved_at": time.time()}},
+        upsert=True,
+    )
 
 
 def remove_bookmark(user_id: str, video_id: str) -> None:
-    data = _load()
-    entries = data.get(user_id)
-    if not entries:
-        return
-    filtered = [e for e in entries if e["video_id"] != video_id]
-    if len(filtered) != len(entries):
-        data[user_id] = filtered
-        _save(data)
+    db.get_db().bookmarks.delete_one({"user_id": user_id, "video_id": video_id})

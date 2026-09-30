@@ -1,22 +1,24 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  SafeAreaView,
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../hooks/useAuth';
-import theme from '../constants/theme';
+import { useTheme } from '../hooks/useTheme';
 
 export default function LoginScreen() {
   const router = useRouter();
   const { login, error: authError } = useAuth();
+  const { theme } = useTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -48,7 +50,7 @@ export default function LoginScreen() {
       >
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
-            <Ionicons name="arrow-back" size={24} color="#333" />
+            <Ionicons name="arrow-back" size={24} color={theme.text} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Log In</Text>
           <View style={styles.headerButton} />
@@ -58,6 +60,7 @@ export default function LoginScreen() {
           <TextInput
             style={styles.input}
             placeholder="Email"
+            placeholderTextColor={theme.textMuted}
             value={email}
             onChangeText={setEmail}
             autoCapitalize="none"
@@ -66,6 +69,7 @@ export default function LoginScreen() {
           <TextInput
             style={styles.input}
             placeholder="Password"
+            placeholderTextColor={theme.textMuted}
             value={password}
             onChangeText={setPassword}
             secureTextEntry
@@ -84,14 +88,17 @@ export default function LoginScreen() {
           <TouchableOpacity onPress={() => router.replace('/signup')}>
             <Text style={styles.switchLink}>Don't have an account? Sign up</Text>
           </TouchableOpacity>
+          <TouchableOpacity onPress={() => router.push('/forgot-password')}>
+            <Text style={styles.switchLink}>Forgot password?</Text>
+          </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
+const createStyles = (theme) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.background },
   flex: { flex: 1 },
   header: {
     flexDirection: 'row',
@@ -100,22 +107,25 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
+    borderBottomColor: theme.border,
+    backgroundColor: theme.surface,
   },
   headerButton: { width: 34, padding: 5 },
-  headerTitle: { fontSize: 18, fontWeight: 'bold', color: '#333' },
+  headerTitle: { fontSize: 18, fontWeight: 'bold', color: theme.text },
   form: { padding: 20 },
   input: {
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: theme.border,
     borderRadius: 8,
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontSize: 16,
     marginBottom: 14,
+    color: theme.text,
+    backgroundColor: theme.background,
   },
   error: {
-    color: '#E53935',
+    color: theme.danger,
     marginBottom: 14,
     fontSize: 14,
   },
@@ -135,5 +145,5 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   submitButtonDisabled: { opacity: 0.6 },
-  switchLink: { color: '#c5b590', textAlign: 'center', fontSize: 14 },
+  switchLink: { color: theme.accent, textAlign: 'center', fontSize: 14, lineHeight: 19, marginTop: 10 },
 });

@@ -94,6 +94,71 @@ Sensitive profile data (Tier 2) requires:
 
 Given GDPR-style special-category data is involved, plan for a documented lawful basis (consent) and a retention/deletion policy before public launch, not after.
 
+## Navigation Redesign (Instagram-style 5-tab bar)
+
+Planned restructure of the bottom tab bar from the current 3 visible tabs (Home/Visualize/Profile,
+with Saved and Interests reachable from Profile) to 5, modeled on Instagram's layout: two content
+tabs, a center action button, a notifications tab, and profile. This is a design decision to build
+against, not yet implemented - each sub-section below calls out what already exists vs. what's net
+new.
+
+**Tab 1 — Home (subscriptions feed).** Cards for every journal and author the user has
+subscribed to - not a chronological paper feed (that's Explore, below). Net new:
+
+- No "subscribe" concept exists today at all - `author/[id].js`/`journal/[name].js` only list a
+  page's papers, no follow action. Needs a `subscriptions(user_id, target_type [author|journal],
+  target_id, subscribed_at)` store (flat JSON, same account-scoped pattern as `bookmarks.py`) and
+  a Subscribe/Following toggle on both pages.
+- **Open decision, needs product input before building**: does a Home card represent *one
+  subscribed source* (a directory of who/what you follow, tap through to their page - like
+  Instagram's own profile grid) or *one new paper* from a subscription (a feed, like Instagram's
+  main feed)? These are meaningfully different builds - the former is a simple list keyed on
+  `subscriptions`; the latter needs a per-user "new since last visit" query across every
+  subscription's papers, closer to Explore's own pagination. Given the user's phrasing ("shows
+  all journals and authors subscribed to... in card format"), the source-directory reading is the
+  default assumption until confirmed otherwise.
+
+**Tab 2 — Explore (the current Home/PaperFeed).** Existing `PaperFeed.tsx` paging-card feed,
+relocated here unchanged, plus:
+
+- A search field - reuses `search.js`'s semantic search (`GET /api/papers/search`) rather than
+  building a second search path; likely inlined into this screen instead of a separate modal, or
+  kept as today's modal reached from an icon here instead of Home.
+- A filter/sort button opening a popup (bottom sheet or modal) - filter by category (the existing
+  fixed `CATEGORIES` list) and/or open-access status; sort by date (current default) or citation
+  count (`sort_by=citations`, already supported by `backend/cli.py fetch-latest` and
+  `paper/latest.py`'s `get_latest_papers`, just not exposed through the feed API/UI yet - `GET
+  /api/papers` would need a `sort_by` param added to reach it).
+- Interests' hard category-exclusion filter (unchanged) keeps applying underneath whatever this
+  screen's own filter/sort picks.
+
+**Tab 3 — Add (center icon).** Consolidates the existing add-paper-by-citation/URL/photo flow
+(`app/add-paper.js`, `backend/paper/citation.py`) here as its own tab entry point, replacing its
+current placement behind Saved's "+" button (Saved itself is unaffected and stays reachable from
+Profile - it isn't one of the 5 tabs). No backend changes needed - this is purely moving the
+existing screen's entry point.
+
+**Tab 4 — Notifications.** Net new; nothing in this category exists yet:
+
+- **Comments on saved papers**: requires a comments system that doesn't exist at all today -
+  `comments(id, paper_id, user_id, text, parent_comment_id [null for a top-level comment],
+  created_at)`, plus API routes to create/list/reply. A notification fires when someone comments
+  on a paper the notified user has bookmarked (`bookmarks.py` already has the needed
+  user-to-paper mapping to know who to notify).
+- **Replies to the user's own comments**: same comments table, filtered by
+  `parent_comment_id`'s author instead of the paper's bookmarkers.
+- **Weekly trending-paper digest**: a scheduled job (no scheduler currently exists in this
+  backend - `cli.py` is invoked manually) computing, once a week, which paper gained the most
+  engagement in the trailing 7 days and generating one notification per user. "Engagement" needs
+  a concrete definition - candidates: aggregate `paper_views.py` view-clicks across *all* users
+  (currently that store is read per-user, for the Visualize tab's graph; a trending job would
+  need a cross-user aggregate query instead), bookmark counts, or both weighted together.
+- Needs a `notifications(user_id, type [comment|reply|trending], payload, created_at, read_at)`
+  store and a bell-icon unread-count badge on the tab.
+
+**Tab 5 — Profile.** Unchanged from today - account info, Saved, Profile Details, Settings, log
+out.
+
 ## Build Notes & Decisions
 
 - **Licensing**: ingestion checks each paper's license via Crossref/OpenAlex metadata. Permissive licenses (e.g. CC-BY) cache Original in full; restrictive ones cache only an excerpt plus a link to the source, with generation done from a fetch-on-demand copy rather than a stored full text.

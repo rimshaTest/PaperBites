@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -14,13 +14,15 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { fetchPaperById, chatAboutPaper } from '../../services/api';
-import theme from '../../constants/theme';
+import { useTheme } from '../../hooks/useTheme';
 
 // The backend chat endpoint is stateless (no server-side conversation memory) - each request
 // resends the full message history alongside the new question, so it's kept here as plain state.
 export default function PaperChatScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams();
+  const { theme } = useTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const [paper, setPaper] = useState(null);
   const [loadingPaper, setLoadingPaper] = useState(true);
   const [messages, setMessages] = useState([]); // [{role: 'user'|'assistant', content}]
@@ -151,7 +153,7 @@ export default function PaperChatScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.background,

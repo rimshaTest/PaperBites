@@ -2,9 +2,10 @@ __pycache__/
 logs/
 .env
 
-# Runtime JSON-file stores (auth.py/bookmarks.py/interests.py/profile.py) - real user data
-# (password hashes, live session tokens), never meant to be committed. config.json is the app's
-# own config, not a runtime store, and stays tracked.
+# Legacy runtime JSON-file stores (auth.py/bookmarks.py/interests.py/profile.py/paper_views.py
+# now write to MongoDB instead - see db.py). Kept ignored in case any stale local files remain
+# from before that migration; nothing writes these anymore. config.json is the app's own config,
+# not a runtime store, and stays tracked.
 users.json
 sessions.json
 bookmarks.json
@@ -12,6 +13,7 @@ interests.json
 profile_tier1.json
 profile_tier2.json
 profile_tier2_audit.json
+paper_views.json
 paper/__pycache__/
 utils/__pycache__/
 video/__pycache__/

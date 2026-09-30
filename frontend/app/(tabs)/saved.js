@@ -5,18 +5,20 @@ import {
   FlatList,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import PaperCard from '../../components/PaperCard';
 import { useFavoritePapers } from '../../hooks/useStorage';
 import { useAuth } from '../../hooks/useAuth';
-import theme from '../../constants/theme';
+import { useTheme } from '../../hooks/useTheme';
 
 export default function SavedScreen() {
   const router = useRouter();
   const { user, token, loading: authLoading } = useAuth();
+  const { theme } = useTheme();
+  const styles = React.useMemo(() => createStyles(theme), [theme]);
   const { favorites, loading, isFavorite, removeFavorite, refetch } = useFavoritePapers(token);
 
   // Reload whenever the Saved tab regains focus, so bookmarks added/removed
@@ -42,12 +44,9 @@ export default function SavedScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Saved</Text>
-        {user && (
-          <TouchableOpacity onPress={() => router.push('/add-paper')} hitSlop={12}>
-            <Ionicons name="add" size={26} color={theme.text} />
-          </TouchableOpacity>
-        )}
+        <View style={styles.headerLeft}>
+          <Text style={styles.headerTitle}>Saved</Text>
+        </View>
       </View>
 
       {authLoading || loading ? (
@@ -91,7 +90,7 @@ export default function SavedScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.background,
@@ -105,6 +104,11 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1.5,
     borderBottomColor: theme.border,
     backgroundColor: theme.surface,
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   headerTitle: {
     fontFamily: theme.serif,

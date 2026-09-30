@@ -12,11 +12,13 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { fetchCategories, fetchInterests, saveInterests } from '../../services/api';
 import { useAuth } from '../../hooks/useAuth';
-import theme from '../../constants/theme';
+import { useTheme } from '../../hooks/useTheme';
 
 export default function InterestsScreen() {
   const router = useRouter();
   const { user, token, loading: authLoading } = useAuth();
+  const { theme } = useTheme();
+  const styles = React.useMemo(() => createStyles(theme), [theme]);
   const [topics, setTopics] = React.useState<string[]>([]);
   const [selected, setSelected] = React.useState<string[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -63,7 +65,11 @@ export default function InterestsScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
+          <Ionicons name="arrow-back" size={24} color={theme.text} />
+        </TouchableOpacity>
         <Text style={styles.headerTitle}>Interests</Text>
+        <View style={styles.headerButton} />
       </View>
 
       {authLoading || (loading && token) ? (
@@ -114,34 +120,46 @@ export default function InterestsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: any) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.background,
-    padding: 20,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    borderBottomWidth: 1.5,
+    borderBottomColor: theme.border,
+    backgroundColor: theme.surface,
   },
   headerTitle: {
     fontFamily: theme.serif,
-    fontSize: 28,
+    fontSize: 18,
     fontWeight: 'bold',
     color: theme.text,
+  },
+  headerButton: {
+    width: 34,
+    padding: 5,
   },
   subtitle: {
     fontSize: 14,
     color: theme.textMuted,
-    marginTop: 10,
-    marginBottom: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    marginHorizontal: 20,
+
   },
   centerContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    marginHorizontal: 20,
   },
   emptyText: {
     fontSize: 14,
@@ -170,7 +188,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 10,
-    paddingBottom: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    marginHorizontal: 20,
   },
   chip: {
     borderWidth: 1.5,
@@ -186,8 +206,8 @@ const styles = StyleSheet.create({
   },
   chipText: {
     fontSize: 14,
+    lineHeight: 19,
     color: theme.text,
-    flexShrink: 1,
   },
   chipTextSelected: {
     fontWeight: 'bold',

@@ -1,20 +1,47 @@
-import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView } from 'react-native';
-import { useRouter } from 'expo-router';
+import React, { useState, useCallback, useMemo } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../hooks/useAuth';
-import theme from '../../constants/theme';
+import { useTheme } from '../../hooks/useTheme';
+import { fetchReadingStats } from '../../services/api';
+import { MILESTONES } from '../../constants/milestones';
 
 export default function ProfileScreen() {
   const router = useRouter();
-  const { user, loading, logout } = useAuth();
+  const { user, token, loading, logout } = useAuth();
+  const { theme } = useTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
+  const [stats, setStats] = useState(null);
+
+  // Reload every time the tab regains focus, same staleness fix as Saved/Visualize, so a
+  // just-confirmed read's milestone/stats show up immediately after switching tabs.
+  useFocusEffect(
+    useCallback(() => {
+      if (!token) {
+        setStats(null);
+        return;
+      }
+      let cancelled = false;
+      fetchReadingStats(token).then((result) => {
+        if (!cancelled) setStats(result);
+      });
+      return () => { cancelled = true; };
+    }, [token])
+  );
 
   const handleLogout = async () => {
     await logout();
   };
 
+  const topCategories = stats
+    ? Object.entries(stats.by_category).sort((a, b) => b[1] - a[1]).slice(0, 5)
+    : [];
+
   return (
     <SafeAreaView style={styles.container}>
+      <ScrollView showsVerticalScrollIndicator={false}>
       <Text style={styles.headerTitle}>Profile</Text>
 
       {loading ? (
@@ -27,6 +54,55 @@ export default function ProfileScreen() {
             </View>
             <Text style={styles.email}>{user.email}</Text>
           </View>
+
+          {stats?.streak && (
+            <View style={styles.streakTag}>
+              <Ionicons name="flame" size={16} color={theme.accent} />
+              <Text style={styles.streakTagText}>{stats.streak.label}</Text>
+            </View>
+          )}
+
+          {stats && stats.total_read > 0 && (
+            <View style={styles.statsCard}>
+              <Text style={styles.statsHeading}>{stats.total_read} papers read</Text>
+
+              <View style={styles.badgeRow}>
+                {MILESTONES.map((m) => {
+                  const earned = stats.milestones_reached.includes(m);
+                  return (
+                    <View key={m} style={styles.badgeItem}>
+                      <View style={[styles.badgeCircle, earned && styles.badgeCircleEarned]}>
+                        <Ionicons
+                          name="flame"
+                          size={20}
+                          color={earned ? '#FFFFFF' : theme.textMuted}
+                        />
+                      </View>
+                      <Text style={[styles.badgeCount, earned && styles.badgeCountEarned]}>{m}</Text>
+                    </View>
+                  );
+                })}
+              </View>
+
+              {topCategories.length > 0 && (
+                <View style={styles.categorySection}>
+                  <Text style={styles.categoryHeading}>Top topics</Text>
+                  {topCategories.map(([category, count]) => (
+                    <View key={category} style={styles.categoryRow}>
+                      <Text style={styles.categoryName}>{category}</Text>
+                      <Text style={styles.categoryCount}>{count}</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+            </View>
+          )}
+
+          <TouchableOpacity style={styles.row} onPress={() => router.push('/saved')}>
+            <Ionicons name="bookmark-outline" size={22} color={theme.text} />
+            <Text style={styles.rowText}>Saved</Text>
+            <Ionicons name="chevron-forward" size={20} color={theme.textMuted} />
+          </TouchableOpacity>
 
           <TouchableOpacity style={styles.row} onPress={() => router.push('/profile-details')}>
             <Ionicons name="person-circle-outline" size={22} color={theme.text} />
@@ -41,8 +117,8 @@ export default function ProfileScreen() {
           </TouchableOpacity>
 
           <TouchableOpacity style={[styles.row, styles.logoutRow]} onPress={handleLogout}>
-            <Ionicons name="log-out-outline" size={22} color={theme.danger} />
-            <Text style={[styles.rowText, { color: theme.danger }]}>Log out</Text>
+            <Ionicons name="log-out-outline" size={22} color={theme.text} />
+            <Text style={[styles.rowText, { color: theme.text }]}>Log out</Text>
           </TouchableOpacity>
         </>
       ) : (
@@ -60,11 +136,12 @@ export default function ProfileScreen() {
           </TouchableOpacity>
         </View>
       )}
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.background,
@@ -98,9 +175,10 @@ const styles = StyleSheet.create({
   },
   email: {
     fontSize: 15,
+    lineHeight: 20,
     color: theme.textMuted,
     marginBottom: 20,
-    maxWidth: '85%',
+    paddingHorizontal: 24,
     textAlign: 'center',
   },
   primaryButton: {
@@ -120,6 +198,7 @@ const styles = StyleSheet.create({
   secondaryLink: {
     color: theme.text,
     fontSize: 15,
+    lineHeight: 20,
     textDecorationLine: 'underline',
   },
   row: {
@@ -142,5 +221,103 @@ const styles = StyleSheet.create({
   logoutRow: {
     marginTop: 20,
     borderColor: theme.danger,
+    backgroundColor: theme.accent,
+  },
+  statsCard: {
+    backgroundColor: theme.surface,
+    borderWidth: 1.5,
+    borderColor: theme.border,
+    borderRadius: 10,
+    padding: 16,
+    marginBottom: 20,
+  },
+  statsHeading: {
+    fontFamily: theme.serif,
+    fontSize: 17,
+    fontWeight: 'bold',
+    color: theme.text,
+    marginBottom: 12,
+  },
+  badgeRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  badgeItem: {
+    alignItems: 'center',
+  },
+  badgeCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: theme.background,
+    borderWidth: 1,
+    borderColor: theme.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  badgeCircleEarned: {
+    backgroundColor: '#FF7A00',
+    borderColor: '#FF7A00',
+  },
+  badgeCount: {
+    fontSize: 11,
+    color: theme.textMuted,
+  },
+  badgeCountEarned: {
+    color: theme.text,
+    fontWeight: '600',
+  },
+  categorySection: {
+    marginTop: 16,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: theme.background,
+  },
+  categoryHeading: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: theme.textMuted,
+    marginBottom: 8,
+    textTransform: 'uppercase',
+  },
+  categoryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 4,
+  },
+  categoryName: {
+    fontSize: 14,
+    color: theme.text,
+  },
+  categoryCount: {
+    fontSize: 14,
+    color: theme.textMuted,
+    fontWeight: '600',
+  },
+  streakTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'center',
+    gap: 6,
+    backgroundColor: theme.surface,
+    borderWidth: 1.5,
+    borderColor: theme.accent,
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    marginTop: -14,
+    marginBottom: 20,
+    shadowColor: theme.accent,
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
+  },
+  streakTagText: {
+    fontFamily: theme.serif,
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: theme.text,
   },
 });

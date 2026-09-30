@@ -1,15 +1,33 @@
-import React from 'react';
-import { View, Text, Image, StyleSheet, TouchableOpacity, Dimensions } from 'react-native';
+import React, { useMemo } from 'react';
+import { View, Text, Image, StyleSheet, TouchableOpacity, Dimensions, Share } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import theme from '../constants/theme';
+import { useTheme } from '../hooks/useTheme';
+import { useAuth } from '../hooks/useAuth';
+import { useLike } from '../hooks/useLike';
 
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = width * 0.9;
 
 const PaperCard = ({ paper, onPress, isBookmarked = false, onToggleBookmark, onAuthorPress, onJournalPress }) => {
+  const { theme } = useTheme();
+  const { token } = useAuth();
+  const styles = useMemo(() => createStyles(theme), [theme]);
+  const { liked, toggle: toggleLike } = useLike(token, paper);
   const authors = paper.authors || [];
   const visibleAuthors = authors.slice(0, 2);
   const extraCount = authors.length - visibleAuthors.length;
+
+  const handleShare = async (e) => {
+    e.stopPropagation();
+    try {
+      await Share.share({
+        message: `${paper.title}${paper.url ? `\n${paper.url}` : ''}`,
+        title: paper.title,
+      });
+    } catch (err) {
+      console.error('Error sharing paper:', err);
+    }
+  };
 
   return (
     <TouchableOpacity
@@ -21,22 +39,51 @@ const PaperCard = ({ paper, onPress, isBookmarked = false, onToggleBookmark, onA
         <Image source={{ uri: paper.image_url }} style={styles.thumbnail} resizeMode="cover" />
       ) : null}
 
-      {onToggleBookmark && (
+      <View style={styles.cardActionRow}>
         <TouchableOpacity
-          style={[styles.bookmarkButton, !paper.image_url && styles.bookmarkButtonNoImage]}
+          style={[styles.cardIconButton, !paper.image_url && styles.cardIconButtonNoImage]}
           onPress={(e) => {
             e.stopPropagation();
-            onToggleBookmark(paper);
+            toggleLike();
           }}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
           <Ionicons
-            name={isBookmarked ? 'bookmark' : 'bookmark-outline'}
-            size={22}
-            color={isBookmarked ? theme.accent : (paper.image_url ? '#fff' : theme.textMuted)}
+            name={liked ? 'heart' : 'heart-outline'}
+            size={20}
+            color={liked ? '#FF4D6D' : (paper.image_url ? '#fff' : theme.textMuted)}
           />
         </TouchableOpacity>
-      )}
+
+        <TouchableOpacity
+          style={[styles.cardIconButton, !paper.image_url && styles.cardIconButtonNoImage]}
+          onPress={handleShare}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <Ionicons
+            name="share-outline"
+            size={20}
+            color={paper.image_url ? '#fff' : theme.textMuted}
+          />
+        </TouchableOpacity>
+
+        {onToggleBookmark && (
+          <TouchableOpacity
+            style={[styles.cardIconButton, !paper.image_url && styles.cardIconButtonNoImage]}
+            onPress={(e) => {
+              e.stopPropagation();
+              onToggleBookmark(paper);
+            }}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Ionicons
+              name={isBookmarked ? 'bookmark' : 'bookmark-outline'}
+              size={22}
+              color={isBookmarked ? theme.accent : (paper.image_url ? '#fff' : theme.textMuted)}
+            />
+          </TouchableOpacity>
+        )}
+      </View>
 
       <View style={styles.infoContainer}>
         <Text style={styles.title} numberOfLines={2}>{paper.title}</Text>
@@ -89,13 +136,13 @@ const PaperCard = ({ paper, onPress, isBookmarked = false, onToggleBookmark, onA
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (theme) => StyleSheet.create({
   container: {
     width: CARD_WIDTH,
     marginHorizontal: width * 0.05,
     marginVertical: 10,
     borderRadius: 10,
-    backgroundColor: theme.surface,
+    backgroundColor: theme.accent,
     borderWidth: 1.5,
     borderColor: theme.border,
     overflow: 'hidden',
@@ -105,18 +152,22 @@ const styles = StyleSheet.create({
     height: 160,
     backgroundColor: '#f0f0f0',
   },
-  bookmarkButton: {
+  cardActionRow: {
     position: 'absolute',
     top: 10,
     right: 10,
+    flexDirection: 'row',
+    gap: 6,
+  },
+  cardIconButton: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    backgroundColor: theme.background,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  bookmarkButtonNoImage: {
+  cardIconButtonNoImage: {
     backgroundColor: 'transparent',
   },
   infoContainer: {
@@ -131,7 +182,7 @@ const styles = StyleSheet.create({
   },
   authors: {
     fontSize: 13,
-    color: theme.textMuted,
+    color: theme.text,
     marginBottom: 6,
   },
   description: {
@@ -142,11 +193,11 @@ const styles = StyleSheet.create({
   },
   meta: {
     fontSize: 12,
-    color: theme.textMuted,
+    color: theme.text,
     marginBottom: 8,
   },
   link: {
-    color: theme.accent,
+    color: theme.text,
     textDecorationLine: 'underline',
   },
   categoriesContainer: {
@@ -155,7 +206,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   categoryChip: {
-    backgroundColor: theme.background,
+    backgroundColor: theme.surface,
     borderWidth: 1,
     borderColor: theme.border,
     paddingHorizontal: 8,
@@ -166,7 +217,8 @@ const styles = StyleSheet.create({
   },
   categoryText: {
     fontSize: 12,
-    color: theme.textMuted,
+    lineHeight: 16,
+    color: theme.text,
   },
 });
 

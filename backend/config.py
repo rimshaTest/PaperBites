@@ -25,7 +25,11 @@ class Config:
             "gemini_key": "",  # For card description summarization (paper/summarize.py)
             "gemini_models": "",  # Optional comma-separated override of paper/summarize.py's model list
             "gemini_image_models": "",  # Optional comma-separated override of the add-paper-by-photo model list
-            "gemini_embedding_model": ""  # Optional override of paper/embeddings.py's embedding model
+            "gemini_embedding_model": "",  # Optional override of paper/embeddings.py's embedding model
+            "resend_key": "",  # For sending password-reset codes (email_sender.py)
+            "resend_from_email": "PaperBites <onboarding@resend.dev>",  # Resend's shared sandbox sender, until a custom domain is verified
+            "sentry_dsn": "",  # Optional - crash/error monitoring (monitoring.py). Unset = no-op.
+            "admin_key": ""  # Shared secret for the one-off /api/admin/* backfill endpoints. Unset = those routes always 403.
         },
         "paper": {
             "max_papers": 3,
@@ -88,6 +92,14 @@ class Config:
             self.set("api.gemini_embedding_model", os.getenv("PAPERBITES_GEMINI_EMBEDDING_MODEL"))
         if os.getenv("PAPERBITES_EMAIL"):
             self.set("api.email", os.getenv("PAPERBITES_EMAIL"))
+        if os.getenv("PAPERBITES_RESEND_KEY"):
+            self.set("api.resend_key", os.getenv("PAPERBITES_RESEND_KEY"))
+        if os.getenv("PAPERBITES_RESEND_FROM_EMAIL"):
+            self.set("api.resend_from_email", os.getenv("PAPERBITES_RESEND_FROM_EMAIL"))
+        if os.getenv("PAPERBITES_SENTRY_DSN"):
+            self.set("api.sentry_dsn", os.getenv("PAPERBITES_SENTRY_DSN"))
+        if os.getenv("PAPERBITES_ADMIN_KEY"):
+            self.set("api.admin_key", os.getenv("PAPERBITES_ADMIN_KEY"))
 
         # OCR configuration
         if os.getenv("TESSERACT_CMD"):

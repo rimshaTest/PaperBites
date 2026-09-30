@@ -96,6 +96,72 @@ export const searchPapersSemantically = async (query, limit = 20) => {
 };
 
 /**
+ * Record that the signed-in user clicked "View Original Paper" - the source data for the
+ * Visualizations tab's paper-relationship bubble map. Fire-and-forget from the caller's
+ * perspective; failures are logged but not surfaced, since this is a background signal, not
+ * something the user is waiting on.
+ * @param {string} token - Session token from login/signup
+ * @param {string} paperId - ID of the paper the user viewed
+ */
+export const recordPaperView = async (token, paperId) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/papers/${encodeURIComponent(paperId)}/view`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+    return response.json();
+  } catch (error) {
+    console.error('Error recording paper view:', error);
+    return null;
+  }
+};
+
+/**
+ * Fetch the signed-in user's confirmed-read stats: total reads, per-category breakdown, which
+ * 1/10/25/50/100/200 milestones have been earned, and the current reading-streak badge - powers
+ * the Profile screen's stats/badges.
+ * @param {string} token
+ * @returns {Promise<{total_read: number, by_category: Object, milestones_reached: Array<number>, streak: {level: number, label: string}}|null>}
+ */
+export const fetchReadingStats = async (token) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/stats/reading`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+    return response.json();
+  } catch (error) {
+    console.error('Error fetching reading stats:', error);
+    return null;
+  }
+};
+
+/**
+ * Fetch the paper-relationship graph for the Visualizations tab: every paper the signed-in user
+ * has clicked "View Original Paper" for, connected pairwise by embedding similarity computed
+ * server-side (backend/paper/embeddings.py) - the raw embeddings never reach the client.
+ * @param {string} token - Session token from login/signup
+ * @returns {Promise<{nodes: Array, edges: Array}>}
+ */
+export const fetchViewedPapersGraph = async (token) => {
+  const response = await fetch(`${API_BASE_URL}/papers/viewed/graph`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(body.detail || `API error: ${response.status}`);
+  }
+
+  return response.json();
+};
+
+/**
  * Fetch a single paper by ID
  * @param {string} paperId - ID of the paper to fetch
  * @returns {Promise<Object>} - Promise that resolves to paper metadata
@@ -280,6 +346,44 @@ export const removeBookmark = async (token, paperId) => {
       headers: { Authorization: `Bearer ${token}` },
     }
   );
+
+  if (!response.ok) {
+    throw new Error(`API error: ${response.status}`);
+  }
+
+  return response.json();
+};
+
+/**
+ * Heart a paper for the signed-in user.
+ * @param {string} token - Session token from login/signup
+ * @param {string} paperId - ID of the paper to like
+ * @returns {Promise<{status: string, liked: boolean, like_count: number}>}
+ */
+export const addLike = async (token, paperId) => {
+  const response = await fetch(`${API_BASE_URL}/papers/${encodeURIComponent(paperId)}/like`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!response.ok) {
+    throw new Error(`API error: ${response.status}`);
+  }
+
+  return response.json();
+};
+
+/**
+ * Un-heart a paper for the signed-in user.
+ * @param {string} token - Session token from login/signup
+ * @param {string} paperId - ID of the paper to unlike
+ * @returns {Promise<{status: string, liked: boolean, like_count: number}>}
+ */
+export const removeLike = async (token, paperId) => {
+  const response = await fetch(`${API_BASE_URL}/papers/${encodeURIComponent(paperId)}/like`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
 
   if (!response.ok) {
     throw new Error(`API error: ${response.status}`);

@@ -1,11 +1,20 @@
-import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView } from 'react-native';
+import React, { useMemo } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import theme from '../constants/theme';
+import { useTheme } from '../hooks/useTheme';
 
 export default function SettingsScreen() {
   const router = useRouter();
+  const { theme, preference, setThemePreference } = useTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
+
+  const appearanceOptions = [
+    { value: 'light', label: 'Light', icon: 'sunny-outline' },
+    { value: 'dark', label: 'Dark', icon: 'moon-outline' },
+    { value: 'system', label: 'System', icon: 'phone-portrait-outline' },
+  ];
 
   return (
     <SafeAreaView style={styles.container}>
@@ -15,6 +24,29 @@ export default function SettingsScreen() {
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Settings</Text>
         <View style={styles.headerButton} />
+      </View>
+
+      <Text style={styles.sectionTitle}>Appearance</Text>
+      <View style={styles.segmentedControl}>
+        {appearanceOptions.map((option) => {
+          const active = preference === option.value;
+          return (
+            <TouchableOpacity
+              key={option.value}
+              style={[styles.segment, active && styles.segmentActive]}
+              onPress={() => setThemePreference(option.value)}
+            >
+              <Ionicons
+                name={option.icon}
+                size={18}
+                color={active ? theme.background : theme.textMuted}
+              />
+              <Text style={[styles.segmentText, active && styles.segmentTextActive]}>
+                {option.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
       </View>
 
       <Text style={styles.sectionTitle}>Manage Feed</Text>
@@ -27,7 +59,7 @@ export default function SettingsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.background,
@@ -78,5 +110,35 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 15,
     color: theme.text,
+  },
+  segmentedControl: {
+    flexDirection: 'row',
+    backgroundColor: theme.surface,
+    borderWidth: 1.5,
+    borderColor: theme.border,
+    borderRadius: 10,
+    marginHorizontal: 20,
+    padding: 4,
+    gap: 4,
+  },
+  segment: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  segmentActive: {
+    backgroundColor: theme.text,
+  },
+  segmentText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: theme.textMuted,
+  },
+  segmentTextActive: {
+    color: theme.background,
   },
 });

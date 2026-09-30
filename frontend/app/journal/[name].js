@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -7,16 +7,18 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Linking,
-  SafeAreaView,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { fetchJournal } from '../../services/api';
-import theme from '../../constants/theme';
+import { useTheme } from '../../hooks/useTheme';
 
 export default function JournalScreen() {
   const router = useRouter();
   const { name } = useLocalSearchParams();
+  const { theme } = useTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const [journal, setJournal] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -72,10 +74,11 @@ export default function JournalScreen() {
               <Text style={styles.paperAuthors} numberOfLines={1}>
                 {(item.authors || []).map((a) => a.name).join(', ') || 'Unknown authors'}
               </Text>
-              <View style={styles.paperMetaRow}>
-                <Text style={styles.paperMeta}>{item.citation_count} citations</Text>
-                {item.published_date && <Text style={styles.paperMeta}>{item.published_date}</Text>}
-              </View>
+              {item.published_date && (
+                <View style={styles.paperMetaRow}>
+                  <Text style={styles.paperMeta}>{item.published_date}</Text>
+                </View>
+              )}
             </TouchableOpacity>
           )}
         />
@@ -84,7 +87,7 @@ export default function JournalScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.background,

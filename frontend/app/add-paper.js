@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -8,10 +8,11 @@ import {
   StyleSheet,
   ScrollView,
   ActivityIndicator,
-  SafeAreaView,
   Alert,
   Platform,
+  Share,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -22,7 +23,7 @@ import {
   scanPaperPhoto,
 } from '../services/api';
 import { useAuth } from '../hooks/useAuth';
-import theme from '../constants/theme';
+import { useTheme } from '../hooks/useTheme';
 
 /**
  * Add-a-paper-by-citation flow (docs/TECHNICAL_SPEC.md's "Add-Paper Ingestion Pipeline"),
@@ -43,6 +44,8 @@ import theme from '../constants/theme';
 export default function AddPaperScreen() {
   const router = useRouter();
   const { token } = useAuth();
+  const { theme } = useTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
 
   const [citation, setCitation] = useState('');
   const [searching, setSearching] = useState(false);
@@ -170,6 +173,18 @@ export default function AddPaperScreen() {
     }
   };
 
+  const handleShareCandidate = async (candidate, e) => {
+    e.stopPropagation();
+    try {
+      await Share.share({
+        message: `${candidate.title}${candidate.url ? `\n${candidate.url}` : ''}`,
+        title: candidate.title,
+      });
+    } catch (err) {
+      console.error('Error sharing paper:', err);
+    }
+  };
+
   const handleSubmitForReview = async () => {
     if (!citation.trim() || !token) return;
     setSubmittingReview(true);
@@ -247,7 +262,7 @@ export default function AddPaperScreen() {
           disabled={!citation.trim() || searching}
         >
           {searching ? (
-            <ActivityIndicator color={theme.surface} />
+            <ActivityIndicator color={theme.text} />
           ) : (
             <Text style={styles.primaryButtonText}>Search</Text>
           )}
@@ -292,7 +307,15 @@ export default function AddPaperScreen() {
                   onPress={() => handleSave(candidate)}
                   disabled={saving}
                 >
-                  <Text style={styles.candidateTitle}>{candidate.title}</Text>
+                  <View style={styles.candidateTitleRow}>
+                    <Text style={[styles.candidateTitle, styles.candidateTitleFlex]}>{candidate.title}</Text>
+                    <TouchableOpacity
+                      onPress={(e) => handleShareCandidate(candidate, e)}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                      <Ionicons name="share-outline" size={18} color={theme.textMuted} />
+                    </TouchableOpacity>
+                  </View>
                   {candidate.authors?.length > 0 && (
                     <Text style={styles.candidateMeta}>{candidate.authors.join(', ')}</Text>
                   )}
@@ -330,7 +353,7 @@ export default function AddPaperScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.background,
@@ -369,7 +392,7 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: theme.border,
     borderRadius: 10,
-    backgroundColor: theme.surface,
+    backgroundColor: theme.background,
     padding: 14,
     fontSize: 15,
     color: theme.text,
@@ -388,7 +411,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     borderWidth: 1.5,
     borderColor: theme.border,
-    backgroundColor: theme.surface,
+    backgroundColor: theme.accent,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -408,15 +431,16 @@ const styles = StyleSheet.create({
   tooltip: {
     position: 'absolute',
     top: -34,
-    right: -12,
-    backgroundColor: theme.text,
+    right: -4,
+    backgroundColor: theme.textMuted,
     borderRadius: 6,
     paddingHorizontal: 8,
     paddingVertical: 5,
+    width: 100,
     zIndex: 10,
   },
   tooltipText: {
-    color: theme.surface,
+    color: theme.background,
     fontSize: 11,
     fontWeight: 'bold',
   },
@@ -436,7 +460,7 @@ const styles = StyleSheet.create({
   primaryButtonText: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: theme.surface,
+    color: theme.text,
   },
   resultsSection: {
     marginTop: 24,
@@ -483,6 +507,16 @@ const styles = StyleSheet.create({
   candidateCardSelected: {
     borderColor: theme.accent,
     borderWidth: 2.5,
+  },
+  candidateTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    marginBottom: 4,
+  },
+  candidateTitleFlex: {
+    flex: 1,
+    marginBottom: 0,
   },
   candidateTitle: {
     fontSize: 15,

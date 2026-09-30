@@ -5,7 +5,7 @@ import { SymbolWeight, SFSymbol } from 'expo-symbols';
 import { ComponentProps } from 'react';
 import { OpaqueColorValue, type StyleProp, type TextStyle } from 'react-native';
 
-type IconMapping = Record<SFSymbol, ComponentProps<typeof MaterialIcons>['name']>;
+type IconMapping = Partial<Record<SFSymbol, ComponentProps<typeof MaterialIcons>['name']>>;
 type IconSymbolName = keyof typeof MAPPING;
 
 /**
@@ -18,8 +18,15 @@ const MAPPING = {
   'paperplane.fill': 'send',
   'bookmark.fill': 'bookmark',
   'person.fill': 'person',
+  'circle.grid.2x2.fill': 'bubble-chart',
   'chevron.left.forwardslash.chevron.right': 'code',
   'chevron.right': 'chevron-right',
+  // "explore.fill" isn't a real SF Symbol (so it rendered blank on iOS), and 'read' isn't a
+  // valid MaterialIcons name either (so it would have rendered blank on Android/web too, if it
+  // had ever actually been used as the Explore tab's icon name). "safari.fill" is a real SF
+  // Symbol (a compass, which is what Safari's own icon looks like) with a matching MaterialIcons
+  // "explore" icon (also a compass) - both platforms get a real, working icon.
+  'safari.fill': 'explore',
 } as IconMapping;
 
 /**

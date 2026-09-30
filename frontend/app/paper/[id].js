@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -7,26 +7,35 @@ import {
   ScrollView,
   TouchableOpacity,
   Share,
-  Linking,
-  SafeAreaView
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import * as WebBrowser from 'expo-web-browser';
 import LoadingIndicator from '../../components/LoadingIndicator';
 import ErrorMessage from '../../components/ErrorMessage';
+import ReadConfirmationModal from '../../components/ReadConfirmationModal';
 import { fetchPaperById } from '../../services/api';
 import { useFavoritePapers } from '../../hooks/useStorage';
 import { useAuth } from '../../hooks/useAuth';
-import theme from '../../constants/theme';
+import { useTheme } from '../../hooks/useTheme';
+import { useLike } from '../../hooks/useLike';
+import { useConfirmRead } from '../../hooks/useConfirmRead';
 
 export default function PaperDetailScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams();
   const { user, token } = useAuth();
+  const { theme } = useTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const { isFavorite: isFavoriteFn, toggleFavorite: toggleFavoriteFn } = useFavoritePapers(token);
   const [paper, setPaper] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [confirmingRead, setConfirmingRead] = useState(false);
+  const [justConfirmedRead, setJustConfirmedRead] = useState(false);
+  const { liked, count: likeCount, toggle: toggleLike } = useLike(token, paper);
+  const confirmRead = useConfirmRead();
 
   useEffect(() => {
     const loadPaper = async () => {
@@ -70,10 +79,31 @@ export default function PaperDetailScreen() {
     }
   };
 
-  const handleOpenLink = () => {
-    if (paper?.url) {
-      Linking.openURL(paper.url);
+  const handleOpenLink = async () => {
+    if (!paper?.url) return;
+
+    // Opens an in-app browser (SFSafariViewController/Chrome Custom Tabs) rather than handing
+    // off to a fully separate app via Linking.openURL - that keeps this screen's JS alive the
+    // whole time, and openBrowserAsync's promise resolves deterministically the instant the user
+    // closes it, which is what actually makes "did you read this paper?" reliable: no dependency
+    // on AppState ever noticing a background/foreground transition (which is what the previous,
+    // unreliable version of this feature depended on).
+    await WebBrowser.openBrowserAsync(paper.url);
+
+    // Only signed-in users get the Libby-style prompt, since the graph/stats are account-scoped
+    // like bookmarks.
+    if (token) {
+      setConfirmingRead(true);
     }
+  };
+
+  const handleConfirmRead = async () => {
+    if (!token) {
+      router.push('/login');
+      return;
+    }
+    await confirmRead(token, paper.id);
+    setJustConfirmedRead(true);
   };
 
   const handleAuthorPress = (author) => {
@@ -112,6 +142,14 @@ export default function PaperDetailScreen() {
               name={isFavorite ? 'bookmark' : 'bookmark-outline'}
               size={24}
               color={isFavorite ? theme.accent : theme.text}
+            />
+          </TouchableOpacity>
+
+          <TouchableOpacity onPress={toggleLike} style={styles.headerButton}>
+            <Ionicons
+              name={liked ? 'heart' : 'heart-outline'}
+              size={24}
+              color={liked ? '#FF4D6D' : theme.text}
             />
           </TouchableOpacity>
 
@@ -156,7 +194,6 @@ export default function PaperDetailScreen() {
 
         {paper.doi && (
           <View style={styles.infoRow}>
-            <Ionicons name="link-outline" size={16} color={theme.textMuted} />
             <Text style={styles.infoText}>DOI: {paper.doi}</Text>
           </View>
         )}
@@ -180,16 +217,48 @@ export default function PaperDetailScreen() {
         )}
 
         {paper.url && (
-          <TouchableOpacity style={styles.linkButton} onPress={handleOpenLink}>
-            <Text style={styles.linkButtonText}>View Original Paper</Text>
-          </TouchableOpacity>
+          <>
+            <TouchableOpacity style={styles.linkButton} onPress={handleOpenLink}>
+              <Text style={styles.linkButtonText}>View Original Paper</Text>
+            </TouchableOpacity>
+            {!!paper.read_count && (
+              <View style={styles.readCountRow}>
+                <Ionicons name="people" size={14} color={theme.textMuted} />
+                <Text style={styles.readCountText}>
+                  {paper.read_count} {paper.read_count === 1 ? 'person has' : 'people have'} read this
+                </Text>
+              </View>
+            )}
+          </>
         )}
+
+        <TouchableOpacity
+          style={[styles.confirmReadButton, justConfirmedRead && styles.confirmReadButtonDone]}
+          onPress={handleConfirmRead}
+          disabled={justConfirmedRead}
+        >
+          <Ionicons
+            name={justConfirmedRead ? 'checkmark-circle' : 'checkmark-circle-outline'}
+            size={18}
+            color={justConfirmedRead ? theme.accent : theme.text}
+          />
+          <Text style={styles.confirmReadButtonText}>
+            {justConfirmedRead ? "You've read this!" : "I've Read This!"}
+          </Text>
+        </TouchableOpacity>
       </ScrollView>
+
+      <ReadConfirmationModal
+        visible={confirmingRead}
+        paper={paper}
+        token={token}
+        onDismiss={() => setConfirmingRead(false)}
+      />
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.background,
@@ -298,6 +367,37 @@ const styles = StyleSheet.create({
   linkButtonText: {
     fontSize: 15,
     fontWeight: 'bold',
+    color: theme.text,
+  },
+  readCountRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: -18,
+    marginBottom: 20,
+  },
+  readCountText: {
+    fontSize: 12,
+    color: theme.textMuted,
+  },
+  confirmReadButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderWidth: 1.5,
+    borderColor: theme.border,
+    borderRadius: 10,
+    paddingVertical: 12,
+    marginBottom: 30,
+  },
+  confirmReadButtonDone: {
+    borderColor: theme.accent,
+  },
+  confirmReadButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
     color: theme.text,
   },
 });

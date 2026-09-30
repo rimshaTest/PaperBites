@@ -131,6 +131,10 @@ async def _candidate_from_crossref_item(session: aiohttp.ClientSession, item: Di
         "published_date": _crossref_published_date(item),
         "url": item.get("URL"),
         "is_open_access": None,
+        # Crossref's own reported language of record - carried through confirm so
+        # add_paper_from_citation can apply the same "trust a non-English source claim over our
+        # own text detection" override paper/latest.py's discovery feed already does.
+        "language": item.get("language"),
     }
 
     if doi:
@@ -188,9 +192,16 @@ async def _resolve_url(session: aiohttp.ClientSession, url: str, max_results: in
     """
     meta = await _fetch_citation_meta_tags(session, url)
 
+    # Trust the page's own `citation_doi` meta tag as-is (the publisher is telling us its DOI
+    # directly - the most authoritative source available) rather than re-parsing it with the
+    # regex below, which is built for pulling a DOI out of unstructured text and isn't guaranteed
+    # to capture every valid DOI character, silently truncating an otherwise-correct value (e.g.
+    # a multi-segment suffix like "10.1140/epjs/s11734-021-00001-2" cut down to "10.1140/epjs/").
+    # Only fall back to the regex when there's no structured field to trust - extracting one from
+    # the bare URL string itself, where there's no authoritative source to defer to.
     doi = None
     if meta.get("citation_doi"):
-        doi = _extract_doi(meta["citation_doi"][0]) or meta["citation_doi"][0].strip()
+        doi = meta["citation_doi"][0].strip()
     if not doi:
         doi = _extract_doi(url)
 
@@ -232,7 +243,12 @@ async def add_paper_from_citation(candidate: Dict) -> Dict:
     no usable description/category from any source).
     """
     doi = (candidate or {}).get("doi")
-    if not doi:
+    # Guards against a malformed DOI from Crossref - a bare registrant prefix with no suffix
+    # (e.g. "10.61132/") rather than a real DOI - which would otherwise show as a broken
+    # "DOI: 10.61132/" line with nothing useful after it (same issue paper/latest.py's discovery
+    # feed guards against for fetched papers).
+    doi = (doi or "").strip()
+    if not doi or not _DOI_RE.fullmatch(doi) or doi.endswith("/"):
         raise ValueError("A DOI is required to add a paper by citation")
 
     async with aiohttp.ClientSession(timeout=_HTTP_TIMEOUT) as session:
@@ -252,7 +268,14 @@ async def add_paper_from_citation(candidate: Dict) -> Dict:
         "publication_type": "journal",
         "is_open_access": candidate.get("is_open_access"),
         "doi": doi,
-        "url": candidate.get("url"),
+        # Any valid DOI can always be dereferenced via doi.org, so this is a safe fallback when
+        # the candidate itself didn't carry a direct URL - better than "Read Original Paper"
+        # having nowhere to go (and the button not even rendering at all, since the frontend only
+        # shows it when a url is present).
+        "url": candidate.get("url") or f"https://doi.org/{doi}",
+        # Transient hint for _apply_language_and_translation below - popped and turned into the
+        # real `language` field there, same as the discovery feed's fetch_latest_crossref.
+        "source_language": candidate.get("language"),
     }
 
     combined = [paper]
