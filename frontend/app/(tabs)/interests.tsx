@@ -204,18 +204,15 @@ const createStyles = (theme: any) => StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 10,
     backgroundColor: theme.surface,
-    alignSelf: 'flex-start',
-    maxWidth: '100%',
   },
   chipSelected: {
     backgroundColor: theme.accent,
   },
   chipText: {
     fontSize: 14,
-    lineHeight: 19,
-    flexShrink: 1,
+    lineHeight: 20,
+    includeFontPadding: false,
     fontWeight: 'bold',
-    paddingRight: 2,
     color: theme.text,
   },
   chipTextSelected: {
