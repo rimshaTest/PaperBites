@@ -184,6 +184,11 @@ export default function VisualizationsScreen() {
   }, [graph, edges]);
 
   const laidOutNodes = simNodesRef.current;
+  const [legendOpen, setLegendOpen] = useState(true);
+  // Bubbles are colored by their first category, so the legend lists exactly those
+  const legendCategories = Array.from(
+    new Set((graph?.nodes || []).map((n) => n.categories?.[0]).filter(Boolean))
+  );
   const nodesById = {};
   laidOutNodes.forEach((n) => {
     nodesById[n.id] = n;
@@ -341,6 +346,38 @@ export default function VisualizationsScreen() {
               </Animated.View>
             </View>
           </GestureDetector>
+          {legendOpen ? (
+            <View style={styles.legend}>
+              <TouchableOpacity style={styles.legendHeader} onPress={() => setLegendOpen(false)}>
+                <Text style={styles.legendTitle}>Legend</Text>
+                <Ionicons name="chevron-up" size={14} color={theme.textMuted} />
+              </TouchableOpacity>
+              {legendCategories.map((category) => (
+                <View key={category} style={styles.legendRow}>
+                  <View style={[styles.legendDot, { backgroundColor: hashCategoryColor(category, theme.textMuted) }]} />
+                  <Text style={styles.legendText}>{category}</Text>
+                </View>
+              ))}
+              <View style={styles.legendRow}>
+                <View style={[styles.legendLine, { backgroundColor: theme.textMuted }]} />
+                <Text style={styles.legendText}>Similar content</Text>
+              </View>
+              <View style={styles.legendRow}>
+                <View style={styles.legendDashed}>
+                  {[0, 1, 2].map((i) => (
+                    <View key={i} style={[styles.legendDash, { backgroundColor: theme.textMuted }]} />
+                  ))}
+                </View>
+                <Text style={styles.legendText}>Shared category</Text>
+              </View>
+              <Text style={styles.legendNote}>Thicker line = stronger link. Bigger bubble = more links.</Text>
+            </View>
+          ) : (
+            <TouchableOpacity style={styles.legendCollapsed} onPress={() => setLegendOpen(true)}>
+              <Ionicons name="information-circle-outline" size={16} color={theme.textMuted} />
+              <Text style={styles.legendTitle}>Legend</Text>
+            </TouchableOpacity>
+          )}
           <Text style={styles.hintText}>Drag a bubble to play with it, drag the background to pan, tap to open</Text>
         </View>
       )}
@@ -411,6 +448,77 @@ const createStyles = (theme) => StyleSheet.create({
     right: 0,
     textAlign: 'center',
     fontSize: 12,
+    color: theme.textMuted,
+  },
+  legend: {
+    position: 'absolute',
+    top: 10,
+    left: 10,
+    maxWidth: '70%',
+    padding: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: theme.border,
+    backgroundColor: theme.surface,
+    opacity: 0.95,
+    gap: 6,
+  },
+  legendCollapsed: {
+    position: 'absolute',
+    top: 10,
+    left: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: theme.border,
+    backgroundColor: theme.surface,
+  },
+  legendHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  legendTitle: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: theme.text,
+  },
+  legendRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  legendDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: theme.border,
+  },
+  legendLine: {
+    width: 24,
+    height: 2,
+  },
+  legendDashed: {
+    width: 24,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  legendDash: {
+    width: 6,
+    height: 2,
+  },
+  legendText: {
+    fontSize: 12,
+    color: theme.text,
+    flexShrink: 1,
+  },
+  legendNote: {
+    fontSize: 11,
     color: theme.textMuted,
   },
   actionRow: {
