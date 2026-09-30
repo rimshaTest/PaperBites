@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -11,7 +11,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Circle, Line, Text as SvgText } from 'react-native-svg';
 import Animated, { useSharedValue, useAnimatedStyle } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import { forceSimulation, forceManyBody, forceLink, forceCenter, forceCollide } from 'd3-force';
+import { forceSimulation, forceManyBody, forceLink, forceCollide, forceX, forceY } from 'd3-force';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { fetchViewedPapersGraph } from '../../services/api';
@@ -21,7 +21,6 @@ import { useTheme } from '../../hooks/useTheme';
 const { width, height } = Dimensions.get('window');
 const CANVAS_SIZE = Math.max(width, height) * 1.6; // bigger than the viewport - that's what makes panning meaningful
 const NODE_BASE_RADIUS = 22;
-const SIMULATION_TICKS = 300;
 
 // A small fixed palette (rather than fully random hues) so bubble colors stay within the app's
 // muted paper/parchment feel instead of clashing with it. Picked by hashing the category name,
@@ -38,39 +37,36 @@ function hashCategoryColor(category, fallbackColor) {
 }
 
 /**
- * Runs d3-force synchronously to a stable layout (rather than animating tick-by-tick), since
- * this is a "here's the shape of your reading history" snapshot, not a live simulation - a
- * static-but-pannable result is both simpler and cheaper than continuous physics.
+ * Edges between papers: the server's embedding-similarity edges (semantic closeness) plus a
+ * weaker edge for every pair sharing at least one category, so papers still cluster by topic
+ * when embeddings are missing or the similarity threshold is too strict.
  */
-function computeLayout(nodes, edges) {
-  const simNodes = nodes.map((n) => ({ ...n }));
-  const degreeById = {};
-  edges.forEach((e) => {
-    degreeById[e.source] = (degreeById[e.source] || 0) + 1;
-    degreeById[e.target] = (degreeById[e.target] || 0) + 1;
+function buildEdges(nodes, semanticEdges) {
+  const byPair = new Map();
+  const key = (a, b) => (a < b ? `${a}|${b}` : `${b}|${a}`);
+  (semanticEdges || []).forEach((e) => {
+    byPair.set(key(e.source, e.target), { source: e.source, target: e.target, strength: e.similarity, semantic: true });
   });
+  for (let i = 0; i < nodes.length; i++) {
+    for (let j = i + 1; j < nodes.length; j++) {
+      const a = nodes[i];
+      const b = nodes[j];
+      const shared = (a.categories || []).filter((c) => (b.categories || []).includes(c)).length;
+      if (!shared) continue;
+      const k = key(a.id, b.id);
+      const existing = byPair.get(k);
+      if (existing) {
+        existing.strength = Math.min(1, existing.strength + 0.1 * shared);
+      } else {
+        byPair.set(k, { source: a.id, target: b.id, strength: Math.min(0.6, 0.35 + 0.1 * shared), semantic: false });
+      }
+    }
+  }
+  return Array.from(byPair.values());
+}
 
-  const simulation = forceSimulation(simNodes)
-    .force('charge', forceManyBody().strength(-140))
-    .force(
-      'link',
-      forceLink(edges)
-        .id((d) => d.id)
-        .distance(90)
-        .strength((d) => d.similarity)
-    )
-    .force('center', forceCenter(0, 0))
-    .force('collide', forceCollide().radius((d) => NODE_BASE_RADIUS + Math.min(degreeById[d.id] || 0, 5) * 3 + 6))
-    .stop();
-
-  for (let i = 0; i < SIMULATION_TICKS; i++) simulation.tick();
-
-  return simNodes.map((n) => ({
-    ...n,
-    x: n.x + CANVAS_SIZE / 2,
-    y: n.y + CANVAS_SIZE / 2,
-    radius: NODE_BASE_RADIUS + Math.min(degreeById[n.id] || 0, 5) * 3,
-  }));
+function radiusFor(degree) {
+  return NODE_BASE_RADIUS + Math.min(degree, 5) * 3;
 }
 
 /**
@@ -123,42 +119,143 @@ export default function VisualizationsScreen() {
     }, [token])
   );
 
-  const laidOutNodes = useMemo(() => {
-    if (!graph || graph.nodes.length === 0) return [];
-    return computeLayout(graph.nodes, graph.edges);
-  }, [graph]);
+  const edges = useMemo(() => (graph ? buildEdges(graph.nodes, graph.edges) : []), [graph]);
 
-  const nodesById = useMemo(() => {
-    const map = {};
-    laidOutNodes.forEach((n) => {
-      map[n.id] = n;
+  // Live d3-force simulation: bubbles spring toward their linked neighbours, bounce off each
+  // other, and keep wobbling after being dragged. Positions live in a ref and are copied to
+  // state once per animation frame to re-render the SVG.
+  const simRef = useRef(null);
+  const simNodesRef = useRef([]);
+  const [, forceRender] = useState(0);
+  const frameRef = useRef(null);
+
+  useEffect(() => {
+    if (!graph || graph.nodes.length === 0) {
+      simNodesRef.current = [];
+      return undefined;
+    }
+    const degree = {};
+    edges.forEach((e) => {
+      degree[e.source] = (degree[e.source] || 0) + 1;
+      degree[e.target] = (degree[e.target] || 0) + 1;
     });
-    return map;
-  }, [laidOutNodes]);
+    const center = CANVAS_SIZE / 2;
+    const simNodes = graph.nodes.map((n, i) => {
+      const angle = (i / graph.nodes.length) * Math.PI * 2;
+      return {
+        ...n,
+        radius: radiusFor(degree[n.id] || 0),
+        x: center + Math.cos(angle) * 120,
+        y: center + Math.sin(angle) * 120,
+      };
+    });
+    simNodesRef.current = simNodes;
 
-  // Center the canvas in the viewport on first render, then let the user drag it freely.
+    const simulation = forceSimulation(simNodes)
+      .force('charge', forceManyBody().strength(-160))
+      .force(
+        'link',
+        forceLink(edges.map((e) => ({ ...e })))
+          .id((d) => d.id)
+          .distance((d) => 170 - d.strength * 90)
+          .strength((d) => 0.15 + d.strength * 0.5)
+      )
+      .force('x', forceX(center).strength(0.04))
+      .force('y', forceY(center).strength(0.04))
+      .force('collide', forceCollide().radius((d) => d.radius + 6).strength(0.9))
+      .velocityDecay(0.22) // low friction = bouncy
+      .alphaDecay(0.012)
+      .alphaTarget(0.02); // never fully rests, so bubbles keep a gentle float
+    simRef.current = simulation;
+
+    simulation.on('tick', () => {
+      if (frameRef.current) return;
+      frameRef.current = requestAnimationFrame(() => {
+        frameRef.current = null;
+        forceRender((n) => n + 1);
+      });
+    });
+
+    return () => {
+      simulation.stop();
+      if (frameRef.current) cancelAnimationFrame(frameRef.current);
+      frameRef.current = null;
+    };
+  }, [graph, edges]);
+
+  const laidOutNodes = simNodesRef.current;
+  const nodesById = {};
+  laidOutNodes.forEach((n) => {
+    nodesById[n.id] = n;
+  });
+
   const translateX = useSharedValue((width - CANVAS_SIZE) / 2);
   const translateY = useSharedValue((height - CANVAS_SIZE) / 2);
-  const panStartX = useSharedValue(0);
-  const panStartY = useSharedValue(0);
+  const panStart = useRef({ x: 0, y: 0 });
+  const dragged = useRef(null); // { node, startX, startY } while a bubble is being dragged
 
-  const panGesture = Gesture.Pan()
-    .onStart(() => {
-      panStartX.value = translateX.value;
-      panStartY.value = translateY.value;
-    })
-    .onUpdate((event) => {
-      translateX.value = panStartX.value + event.translationX;
-      translateY.value = panStartY.value + event.translationY;
-    });
-
-  const canvasStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: translateX.value }, { translateY: translateY.value }],
-  }));
+  const hitTest = (viewX, viewY) => {
+    const cx = viewX - translateX.value;
+    const cy = viewY - translateY.value;
+    for (let i = simNodesRef.current.length - 1; i >= 0; i--) {
+      const n = simNodesRef.current[i];
+      const r = n.radius + 8;
+      if ((n.x - cx) ** 2 + (n.y - cy) ** 2 <= r * r) return n;
+    }
+    return null;
+  };
 
   const handleNodePress = (paperId) => {
     router.push(`/paper/${paperId}`);
   };
+
+  // Dragging a bubble pins it to the finger while the rest of the graph reacts; letting go
+  // releases it and the simulation springs it back. Dragging empty space pans the canvas.
+  const panGesture = Gesture.Pan()
+    .runOnJS(true)
+    .onStart((event) => {
+      panStart.current = { x: translateX.value, y: translateY.value };
+      const node = hitTest(event.x - event.translationX, event.y - event.translationY);
+      if (node) {
+        dragged.current = { node, startX: node.x, startY: node.y };
+        node.fx = node.x;
+        node.fy = node.y;
+        simRef.current?.alphaTarget(0.3).restart();
+      }
+    })
+    .onUpdate((event) => {
+      const d = dragged.current;
+      if (d) {
+        d.node.fx = d.startX + event.translationX;
+        d.node.fy = d.startY + event.translationY;
+      } else {
+        translateX.value = panStart.current.x + event.translationX;
+        translateY.value = panStart.current.y + event.translationY;
+      }
+    })
+    .onFinalize(() => {
+      const d = dragged.current;
+      if (d) {
+        d.node.fx = null;
+        d.node.fy = null;
+        dragged.current = null;
+        simRef.current?.alphaTarget(0.02).alpha(0.6).restart();
+      }
+    });
+
+  const tapGesture = Gesture.Tap()
+    .runOnJS(true)
+    .onEnd((event, success) => {
+      if (!success) return;
+      const node = hitTest(event.x, event.y);
+      if (node) handleNodePress(node.id);
+    });
+
+  const gesture = Gesture.Exclusive(panGesture, tapGesture);
+
+  const canvasStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: translateX.value }, { translateY: translateY.value }],
+  }));
 
   return (
     <SafeAreaView style={styles.container}>
@@ -182,7 +279,7 @@ export default function VisualizationsScreen() {
         <View style={styles.centerContainer}>
           <Text style={styles.emptyText}>{error}</Text>
         </View>
-      ) : laidOutNodes.length === 0 ? (
+      ) : !graph || graph.nodes.length === 0 ? (
         <View style={styles.centerContainer}>
           <Ionicons name="git-network-outline" size={40} color={theme.textMuted} />
           <Text style={styles.emptyText}>
@@ -197,53 +294,54 @@ export default function VisualizationsScreen() {
         </View>
       ) : (
         <View style={styles.canvasViewport}>
-          <GestureDetector gesture={panGesture}>
-            <Animated.View style={[styles.canvas, canvasStyle]}>
-              <Svg width={CANVAS_SIZE} height={CANVAS_SIZE}>
-                {graph.edges.map((edge) => {
-                  const source = nodesById[edge.source];
-                  const target = nodesById[edge.target];
-                  if (!source || !target) return null;
-                  return (
-                    <Line
-                      key={`${edge.source}-${edge.target}`}
-                      x1={source.x}
-                      y1={source.y}
-                      x2={target.x}
-                      y2={target.y}
-                      stroke={theme.textMuted}
-                      strokeWidth={1 + edge.similarity * 2}
-                      strokeOpacity={0.35}
-                    />
-                  );
-                })}
-                {laidOutNodes.map((node) => (
-                  <React.Fragment key={node.id}>
-                    <Circle
-                      cx={node.x}
-                      cy={node.y}
-                      r={node.radius}
-                      fill={hashCategoryColor(node.categories?.[0], theme.textMuted)}
-                      stroke={theme.border}
-                      strokeWidth={1.5}
-                      onPress={() => handleNodePress(node.id)}
-                    />
-                    <SvgText
-                      x={node.x}
-                      y={node.y + node.radius + 14}
-                      fontSize={11}
-                      fill={theme.text}
-                      textAnchor="middle"
-                      onPress={() => handleNodePress(node.id)}
-                    >
-                      {node.title.length > 22 ? `${node.title.slice(0, 22)}...` : node.title}
-                    </SvgText>
-                  </React.Fragment>
-                ))}
-              </Svg>
-            </Animated.View>
+          <GestureDetector gesture={gesture}>
+            <View style={styles.gestureSurface} collapsable={false}>
+              <Animated.View style={[styles.canvas, canvasStyle]} pointerEvents="none">
+                <Svg width={CANVAS_SIZE} height={CANVAS_SIZE}>
+                  {edges.map((edge) => {
+                    const source = nodesById[edge.source];
+                    const target = nodesById[edge.target];
+                    if (!source || !target) return null;
+                    return (
+                      <Line
+                        key={`${edge.source}-${edge.target}`}
+                        x1={source.x}
+                        y1={source.y}
+                        x2={target.x}
+                        y2={target.y}
+                        stroke={theme.textMuted}
+                        strokeWidth={1 + edge.strength * 2}
+                        strokeOpacity={edge.semantic ? 0.45 : 0.25}
+                        strokeDasharray={edge.semantic ? undefined : '4,4'}
+                      />
+                    );
+                  })}
+                  {laidOutNodes.map((node) => (
+                    <React.Fragment key={node.id}>
+                      <Circle
+                        cx={node.x}
+                        cy={node.y}
+                        r={node.radius}
+                        fill={hashCategoryColor(node.categories?.[0], theme.textMuted)}
+                        stroke={theme.border}
+                        strokeWidth={1.5}
+                      />
+                      <SvgText
+                        x={node.x}
+                        y={node.y + node.radius + 14}
+                        fontSize={11}
+                        fill={theme.text}
+                        textAnchor="middle"
+                      >
+                        {node.title.length > 22 ? `${node.title.slice(0, 22)}...` : node.title}
+                      </SvgText>
+                    </React.Fragment>
+                  ))}
+                </Svg>
+              </Animated.View>
+            </View>
           </GestureDetector>
-          <Text style={styles.hintText}>Drag to explore - tap a bubble to open that paper</Text>
+          <Text style={styles.hintText}>Drag a bubble to play with it, drag the background to pan, tap to open</Text>
         </View>
       )}
     </SafeAreaView>
@@ -297,6 +395,9 @@ const createStyles = (theme) => StyleSheet.create({
   canvasViewport: {
     flex: 1,
     overflow: 'hidden',
+  },
+  gestureSurface: {
+    flex: 1,
   },
   canvas: {
     position: 'absolute',

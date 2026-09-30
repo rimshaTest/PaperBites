@@ -10,7 +10,7 @@ const COMPUTER_IP = '10.212.104.176'; // Replace with your actual IP
 // isolation, where the phone can't reach the laptop directly by LAN IP. Quick tunnel URLs are
 // ephemeral (a new one is generated each time `cloudflared tunnel --url http://localhost:8000`
 // is started), so update this when it changes.
-const TUNNEL_URL = 'https://foster-preservation-oil-unnecessary.trycloudflare.com';
+const TUNNEL_URL = 'https://returned-ascii-passport-packing.trycloudflare.com';
 
 const getApiBaseUrl = () => {
   // Set in a .env file as EXPO_PUBLIC_API_URL=http://<host>:8000 (no trailing /api - that's
@@ -166,9 +166,12 @@ export const fetchViewedPapersGraph = async (token) => {
  * @param {string} paperId - ID of the paper to fetch
  * @returns {Promise<Object>} - Promise that resolves to paper metadata
  */
-export const fetchPaperById = async (paperId) => {
+export const fetchPaperById = async (paperId, token) => {
   try {
-    const response = await fetch(`${API_BASE_URL}/papers/${paperId}`);
+    // The token is optional, but without it the server can't tell whether this user has liked the paper
+    const response = await fetch(`${API_BASE_URL}/papers/${paperId}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
 
     if (!response.ok) {
       throw new Error(`API error: ${response.status}`);

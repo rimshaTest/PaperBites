@@ -41,7 +41,7 @@ export default function PaperDetailScreen() {
     const loadPaper = async () => {
       try {
         setLoading(true);
-        const data = await fetchPaperById(id);
+        const data = await fetchPaperById(id, token);
         setPaper(data);
       } catch (err) {
         setError(`Failed to load paper: ${err.message}`);
@@ -53,7 +53,7 @@ export default function PaperDetailScreen() {
     if (id) {
       loadPaper();
     }
-  }, [id]);
+  }, [id, token]);
 
   const isFavorite = isFavoriteFn(id);
 

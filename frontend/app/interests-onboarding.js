@@ -154,7 +154,7 @@ const createStyles = (theme) => StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 10,
     backgroundColor: theme.surface,
-    minWidth: '70%',
+    maxWidth: '100%',
   },
   chipSelected: {
     backgroundColor: theme.accent,
@@ -162,6 +162,7 @@ const createStyles = (theme) => StyleSheet.create({
   chipText: {
     fontSize: 14,
     lineHeight: 19,
+    flexShrink: 1,
     color: theme.text,
   },
   chipTextSelected: {

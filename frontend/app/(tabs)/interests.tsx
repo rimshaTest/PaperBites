@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { useBottomTabBarHeight } from 'expo-router/js-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { fetchCategories, fetchInterests, saveInterests } from '../../services/api';
 import { useAuth } from '../../hooks/useAuth';
@@ -18,6 +19,7 @@ export default function InterestsScreen() {
   const router = useRouter();
   const { user, token, loading: authLoading } = useAuth();
   const { theme } = useTheme();
+  const tabBarHeight = useBottomTabBarHeight();
   const styles = React.useMemo(() => createStyles(theme), [theme]);
   const [topics, setTopics] = React.useState<string[]>([]);
   const [selected, setSelected] = React.useState<string[]>([]);
@@ -111,7 +113,10 @@ export default function InterestsScreen() {
             </ScrollView>
           )}
 
-          <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
+          <TouchableOpacity
+            style={[styles.saveButton, { marginBottom: tabBarHeight + 12 }]}
+            onPress={handleSave}
+          >
             <Text style={styles.saveButtonText}>{saved ? 'Saved' : 'Save Interests'}</Text>
           </TouchableOpacity>
         </>
@@ -199,13 +204,16 @@ const createStyles = (theme: any) => StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 10,
     backgroundColor: theme.surface,
-    minWidth: '30%'
+    alignSelf: 'flex-start',
+    maxWidth: '100%',
   },
   chipSelected: {
     backgroundColor: theme.accent,
   },
   chipText: {
     fontSize: 14,
+    lineHeight: 19,
+    flexShrink: 1,
     color: theme.text,
   },
   chipTextSelected: {

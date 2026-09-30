@@ -73,7 +73,7 @@ export interface PaperItem {
   is_liked?: boolean;
 }
 
-export const PaperCard: React.FC<{
+const FeedPaperCard: React.FC<{
   item: PaperItem;
   onExpandedChange: (expanded: boolean) => void;
   isBookmarked: boolean;
@@ -547,7 +547,7 @@ const PaperFeed: React.FC = () => {
         data={papers}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
-          <PaperCard
+          <FeedPaperCard
             item={item}
             onExpandedChange={setAnyExpanded}
             isBookmarked={isFavorite(item.id)}
