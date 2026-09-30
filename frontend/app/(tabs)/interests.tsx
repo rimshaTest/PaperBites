@@ -204,6 +204,10 @@ const createStyles = (theme: any) => StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 10,
     backgroundColor: theme.surface,
+    flexBasis: '47%',
+    flexGrow: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   chipSelected: {
     backgroundColor: theme.accent,
@@ -212,6 +216,7 @@ const createStyles = (theme: any) => StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
     includeFontPadding: false,
+    textAlign: 'center',
     fontWeight: 'bold',
     color: theme.text,
   },
