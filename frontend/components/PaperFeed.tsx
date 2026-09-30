@@ -502,7 +502,7 @@ const PaperFeed: React.FC = () => {
         onPress={() => router.push('/search')}
         hitSlop={10}
       >
-        <Ionicons name="search" size={16} color={theme.text} />
+        <Ionicons name="search" size={16} color={theme.accent} />
       </TouchableOpacity>
     </View>
   );
@@ -640,9 +640,11 @@ const createStyles = (theme: any) => StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
+    borderColor: theme.border,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: theme.accent,
+    backgroundColor: theme.background,
   },
   cardActionColumn: {
     position: 'absolute',
@@ -821,12 +823,12 @@ const createStyles = (theme: any) => StyleSheet.create({
   },
   toggleText: {
     fontSize: 11,
-    fontWeight: '600',
     color: theme.text,
+    fontWeight: 'bold',
   },
   toggleTextActive: {
-    color: theme.surface,
-    fontWeight: 'bold',
+    color: theme.background,
+    fontWeight: '600',
   },
   description: {
     fontSize: 12,
