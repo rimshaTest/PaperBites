@@ -199,14 +199,13 @@ const createStyles = (theme: any) => StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 10,
     backgroundColor: theme.surface,
-    maxWidth: '100%',
+    minWidth: '30%'
   },
   chipSelected: {
     backgroundColor: theme.accent,
   },
   chipText: {
     fontSize: 14,
-    lineHeight: 19,
     color: theme.text,
   },
   chipTextSelected: {
@@ -214,18 +213,17 @@ const createStyles = (theme: any) => StyleSheet.create({
   },
   saveButton: {
     backgroundColor: theme.accent,
-    borderWidth: 1.5,
-    borderColor: theme.border,
-    borderRadius: 10,
-    height: 52,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 10,
-    marginBottom: 10,
+    gap: 6,
+    borderRadius: 10,
+    paddingVertical: 12,
+    marginHorizontal: 20,
   },
   saveButtonText: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: 'bold',
-    color: theme.surface,
+    color: theme.text,
   },
 });

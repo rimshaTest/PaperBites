@@ -88,6 +88,7 @@ export const PaperCard: React.FC<{
   const [justConfirmedRead, setJustConfirmedRead] = React.useState(false);
   const insets = useSafeAreaInsets();
   const BRAND_BAR_TOP_OFFSET = insets.top || StatusBar.currentHeight || 0;
+  const BRAND_BAR_BOTTOM_OFFSET = insets.bottom *2 || StatusBar.currentHeight || 0;
   const brandBarTop = BRAND_BAR_TOP_OFFSET + 10;
   const controlsTop = brandBarTop + BRAND_BAR_RESERVED_HEIGHT - 10;
   const expandedTop = brandBarTop + BRAND_BAR_RESERVED_HEIGHT -10;
@@ -190,7 +191,7 @@ export const PaperCard: React.FC<{
             <Ionicons
               name={isBookmarked ? 'bookmark' : 'bookmark-outline'}
               size={20}
-              color={isBookmarked ? theme.accent : theme.surface}
+              color={isBookmarked ? theme.background : theme.surface}
             />
           </TouchableOpacity>
           <TouchableOpacity
@@ -352,7 +353,7 @@ export const PaperCard: React.FC<{
               color={justConfirmedRead ? theme.accent : theme.text}
             />
             <Text style={styles.confirmReadButtonText}>
-              {justConfirmedRead ? "You've read this!" : "I've Read This!"}
+              {justConfirmedRead ? "You've read this!" : "Have you read this?"}
             </Text>
           </TouchableOpacity>
         </ScrollView>
@@ -375,7 +376,7 @@ const PaperFeed: React.FC = () => {
   const { theme } = useTheme();
   const styles = React.useMemo(() => createStyles(theme), [theme]);
   const insets = useSafeAreaInsets();
-  const BRAND_BAR_TOP_OFFSET = insets.top || StatusBar.currentHeight || 0;
+  const BRAND_BAR_TOP_OFFSET = insets.top *2 || StatusBar.currentHeight || 0;
   const { isFavorite, toggleFavorite } = useFavoritePapers(token) as unknown as FavoritePapersApi;
   const [papers, setPapers] = React.useState<PaperItem[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -656,7 +657,7 @@ const createStyles = (theme: any) => StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 20,
-    backgroundColor: 'rgba(0, 0, 0, 0.35)',
+    backgroundColor: theme.accent,
   },
   badgeColumn: {
     position: 'absolute',

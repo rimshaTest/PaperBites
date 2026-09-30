@@ -243,7 +243,7 @@ export default function PaperDetailScreen() {
             color={justConfirmedRead ? theme.accent : theme.text}
           />
           <Text style={styles.confirmReadButtonText}>
-            {justConfirmedRead ? "You've read this!" : "I've Read This!"}
+            {justConfirmedRead ? "You've read this!" : "Have you read this?"}
           </Text>
         </TouchableOpacity>
       </ScrollView>

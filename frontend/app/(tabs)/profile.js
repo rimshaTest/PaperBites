@@ -86,10 +86,12 @@ export default function ProfileScreen() {
 
               {topCategories.length > 0 && (
                 <View style={styles.categorySection}>
-                  <Text style={styles.categoryHeading}>Top topics</Text>
+                  <Text style={styles.categoryHeading}>Your favorite topics</Text>
                   {topCategories.map(([category, count]) => (
                     <View key={category} style={styles.categoryRow}>
-                      <Text style={styles.categoryName}>{category}</Text>
+                      <View style={styles.categoryItem}>
+                        <Text style={styles.categoryName}>{category}</Text>
+                      </View>
                       <Text style={styles.categoryCount}>{count}</Text>
                     </View>
                   ))}
@@ -285,6 +287,9 @@ const createStyles = (theme) => StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     paddingVertical: 4,
+  },
+  categoryItem: {
+    width: '70%'
   },
   categoryName: {
     fontSize: 14,
