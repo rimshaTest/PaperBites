@@ -14,6 +14,9 @@ export const lightTheme = {
   border: '#1A1A1A',
   accent: '#5cafac',
   danger: '#9b0c09',
+  like: '#FF4D6D',
+  streak: '#FF7A00',
+  onAccent: '#FFFFFF',
   serif,
 };
 
@@ -26,6 +29,9 @@ export const darkTheme = {
   border: '#6c8b8a',
   accent: '#5cafac',
   danger: '#9b0c09',
+  like: '#FF4D6D',
+  streak: '#FF7A00',
+  onAccent: '#FFFFFF',
   serif,
 };
 

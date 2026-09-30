@@ -51,7 +51,7 @@ const PaperCard = ({ paper, onPress, isBookmarked = false, onToggleBookmark, onA
           <Ionicons
             name={liked ? 'heart' : 'heart-outline'}
             size={20}
-            color={liked ? '#FF4D6D' : (paper.image_url ? '#fff' : theme.textMuted)}
+            color={liked ? theme.like : (paper.image_url ? theme.onAccent : theme.textMuted)}
           />
         </TouchableOpacity>
 
@@ -63,7 +63,7 @@ const PaperCard = ({ paper, onPress, isBookmarked = false, onToggleBookmark, onA
           <Ionicons
             name="share-outline"
             size={20}
-            color={paper.image_url ? '#fff' : theme.textMuted}
+            color={paper.image_url ? theme.onAccent : theme.textMuted}
           />
         </TouchableOpacity>
 
@@ -79,7 +79,7 @@ const PaperCard = ({ paper, onPress, isBookmarked = false, onToggleBookmark, onA
             <Ionicons
               name={isBookmarked ? 'bookmark' : 'bookmark-outline'}
               size={22}
-              color={isBookmarked ? theme.accent : (paper.image_url ? '#fff' : theme.textMuted)}
+              color={isBookmarked ? theme.accent : (paper.image_url ? theme.onAccent : theme.textMuted)}
             />
           </TouchableOpacity>
         )}
@@ -150,7 +150,7 @@ const createStyles = (theme) => StyleSheet.create({
   thumbnail: {
     width: '100%',
     height: 160,
-    backgroundColor: '#f0f0f0',
+    backgroundColor: theme.surface,
   },
   cardActionRow: {
     position: 'absolute',

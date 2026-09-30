@@ -149,7 +149,7 @@ export default function PaperDetailScreen() {
             <Ionicons
               name={liked ? 'heart' : 'heart-outline'}
               size={24}
-              color={liked ? '#FF4D6D' : theme.text}
+              color={liked ? theme.like : theme.text}
             />
           </TouchableOpacity>
 
@@ -289,7 +289,7 @@ const createStyles = (theme) => StyleSheet.create({
     height: 200,
     borderRadius: 10,
     marginBottom: 16,
-    backgroundColor: '#f0f0f0',
+    backgroundColor: theme.surface,
   },
   link: {
     color: theme.accent,

@@ -1,33 +1,34 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import Colors from '../constants/Colors';
+import { useTheme } from '../hooks/useTheme';
 
 const ErrorMessage = ({ 
   message = 'Something went wrong', 
   onRetry = null,
   onBack = null 
 }) => {
+  const { theme } = useTheme();
   return (
     <View style={styles.container}>
-      <Ionicons name="alert-circle-outline" size={60} color="#E53935" />
-      <Text style={styles.message}>{message}</Text>
+      <Ionicons name="alert-circle-outline" size={60} color={theme.danger} />
+      <Text style={[styles.message, { color: theme.text }]}>{message}</Text>
       
       <View style={styles.buttonsContainer}>
         {onRetry && (
-          <TouchableOpacity style={styles.button} onPress={onRetry}>
-            <Ionicons name="refresh" size={18} color="#fff" />
-            <Text style={styles.buttonText}>Try Again</Text>
+          <TouchableOpacity style={[styles.button, { backgroundColor: theme.accent }]} onPress={onRetry}>
+            <Ionicons name="refresh" size={18} color={theme.onAccent} />
+            <Text style={[styles.buttonText, { color: theme.onAccent }]}>Try Again</Text>
           </TouchableOpacity>
         )}
         
         {onBack && (
           <TouchableOpacity 
-            style={[styles.button, styles.backButton]} 
+            style={[styles.button, { backgroundColor: theme.textMuted }]} 
             onPress={onBack}
           >
-            <Ionicons name="arrow-back" size={18} color="#fff" />
-            <Text style={styles.buttonText}>Go Back</Text>
+            <Ionicons name="arrow-back" size={18} color={theme.onAccent} />
+            <Text style={[styles.buttonText, { color: theme.onAccent }]}>Go Back</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -45,7 +46,6 @@ const styles = StyleSheet.create({
   message: {
     marginTop: 15,
     fontSize: 16,
-    color: '#333',
     textAlign: 'center',
     marginBottom: 20,
   },
@@ -54,7 +54,6 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   button: {
-    backgroundColor: '#4285F4',
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 15,
@@ -62,11 +61,7 @@ const styles = StyleSheet.create({
     borderRadius: 5,
     marginHorizontal: 5,
   },
-  backButton: {
-    backgroundColor: '#757575',
-  },
   buttonText: {
-    color: '#fff',
     fontSize: 14,
     marginLeft: 5,
   },

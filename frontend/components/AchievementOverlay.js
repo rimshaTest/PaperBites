@@ -95,11 +95,11 @@ export default function AchievementOverlay() {
               },
             ]}
           >
-            <Ionicons name="sparkles" size={18} color="#FFD700" />
+            <Ionicons name="sparkles" size={18} color={theme.onAccent} />
           </Animated.View>
         ))}
         <View style={styles.badge}>
-          <Ionicons name="flame" size={44} color="#FFFFFF" />
+          <Ionicons name="flame" size={44} color={theme.onAccent} />
           <Text style={styles.badgeNumber}>{milestone}</Text>
         </View>
         <Text style={styles.badgeTitle}>{milestoneTitle(milestone)}</Text>
@@ -120,13 +120,13 @@ const createStyles = (theme) => StyleSheet.create({
     alignItems: 'center',
   },
   badge: {
-    backgroundColor: '#FF7A00',
+    backgroundColor: theme.streak,
     borderRadius: 100,
     width: 140,
     height: 140,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#FF7A00',
+    shadowColor: theme.streak,
     shadowOpacity: 0.7,
     shadowRadius: 24,
     elevation: 12,
@@ -134,7 +134,7 @@ const createStyles = (theme) => StyleSheet.create({
   badgeNumber: {
     fontSize: 28,
     fontWeight: '800',
-    color: '#FFFFFF',
+    color: theme.onAccent,
     marginTop: 2,
   },
   badgeTitle: {

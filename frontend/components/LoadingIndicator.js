@@ -1,12 +1,13 @@
 import React from 'react';
 import { View, ActivityIndicator, Text, StyleSheet } from 'react-native';
-import Colors from '../constants/Colors';
+import { useTheme } from '../hooks/useTheme';
 
 const LoadingIndicator = ({ message = 'Loading...' }) => {
+  const { theme } = useTheme();
   return (
     <View style={styles.container}>
-      <ActivityIndicator size="large" color="#4285F4" />
-      <Text style={styles.message}>{message}</Text>
+      <ActivityIndicator size="large" color={theme.accent} />
+      <Text style={[styles.message, { color: theme.textMuted }]}>{message}</Text>
     </View>
   );
 };
@@ -21,7 +22,6 @@ const styles = StyleSheet.create({
   message: {
     marginTop: 10,
     fontSize: 16,
-    color: '#666',
     textAlign: 'center',
   },
 });

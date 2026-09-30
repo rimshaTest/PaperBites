@@ -75,7 +75,7 @@ export default function ProfileScreen() {
                         <Ionicons
                           name="flame"
                           size={20}
-                          color={earned ? '#FFFFFF' : theme.textMuted}
+                          color={earned ? theme.onAccent : theme.textMuted}
                         />
                       </View>
                       <Text style={[styles.badgeCount, earned && styles.badgeCountEarned]}>{m}</Text>
@@ -259,8 +259,8 @@ const createStyles = (theme) => StyleSheet.create({
     marginBottom: 4,
   },
   badgeCircleEarned: {
-    backgroundColor: '#FF7A00',
-    borderColor: '#FF7A00',
+    backgroundColor: theme.streak,
+    borderColor: theme.streak,
   },
   badgeCount: {
     fontSize: 11,

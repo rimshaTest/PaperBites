@@ -204,7 +204,7 @@ const FeedPaperCard: React.FC<{
             <Ionicons
               name={liked ? 'heart' : 'heart-outline'}
               size={20}
-              color={liked ? '#FF4D6D' : theme.surface}
+              color={liked ? theme.like : theme.surface}
             />
           </TouchableOpacity>
           <TouchableOpacity style={styles.cardActionButton} onPress={handleShare}>
@@ -214,7 +214,7 @@ const FeedPaperCard: React.FC<{
         <View style={[styles.badgeColumn, { top: controlsTop }]}>
           {item.trending_category && (
             <View style={styles.trendingBadge}>
-              <Ionicons name="flame" size={12} color="#FFFFFF" />
+              <Ionicons name="flame" size={12} color={theme.onAccent} />
               <Text style={styles.trendingBadgeText}>Trending in {item.trending_category}</Text>
             </View>
           )}
@@ -608,7 +608,7 @@ const createStyles = (theme: any) => StyleSheet.create({
     height: '100%',
   },
   imageFallback: {
-    backgroundColor: '#ccc4ae',
+    backgroundColor: theme.surface,
   },
   brandBar: {
     position: 'absolute',
@@ -684,7 +684,7 @@ const createStyles = (theme: any) => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: '#FF7A00',
+    backgroundColor: theme.streak,
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 16,
@@ -692,7 +692,7 @@ const createStyles = (theme: any) => StyleSheet.create({
   trendingBadgeText: {
     fontSize: 11,
     fontWeight: 'bold',
-    color: '#FFFFFF',
+    color: theme.onAccent,
   },
   categoryBadgeText: {
     fontSize: 12,
