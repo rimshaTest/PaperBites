@@ -348,29 +348,31 @@ export default function VisualizationsScreen() {
           </GestureDetector>
           {legendOpen ? (
             <View style={styles.legend}>
-              <TouchableOpacity style={styles.legendHeader} onPress={() => setLegendOpen(false)}>
-                <Text style={styles.legendTitle}>Legend</Text>
-                <Ionicons name="chevron-up" size={14} color={theme.textMuted} />
-              </TouchableOpacity>
-              {legendCategories.map((category) => (
-                <View key={category} style={styles.legendRow}>
-                  <View style={[styles.legendDot, { backgroundColor: hashCategoryColor(category, theme.textMuted) }]} />
-                  <Text style={styles.legendText}>{category}</Text>
-                </View>
-              ))}
-              <View style={styles.legendRow}>
-                <View style={[styles.legendLine, { backgroundColor: theme.textMuted }]} />
-                <Text style={styles.legendText}>Similar content</Text>
-              </View>
-              <View style={styles.legendRow}>
-                <View style={styles.legendDashed}>
-                  {[0, 1, 2].map((i) => (
-                    <View key={i} style={[styles.legendDash, { backgroundColor: theme.textMuted }]} />
+                <TouchableOpacity style={styles.legendHeader} onPress={() => setLegendOpen(false)}>
+                  <Text style={styles.legendTitle}>Legend</Text>
+                  <Ionicons name="chevron-up" size={14} color={theme.textMuted} />
+                </TouchableOpacity>
+                  {legendCategories.map((category) => (
+                    <View key={category} style={styles.legendRow}>
+                      <View style={[styles.legendDot, { backgroundColor: hashCategoryColor(category, theme.textMuted) }]} />
+                      <Text style={styles.legendText}>{category+"  "}</Text>
+                    </View>
                   ))}
+                <View style={styles.legendRow}>
+                  <View style={[styles.legendLine, { backgroundColor: theme.textMuted }]} />
+                  <Text style={styles.legendText}>Similar content  </Text>
                 </View>
-                <Text style={styles.legendText}>Shared category</Text>
-              </View>
-              <Text style={styles.legendNote}>Thicker line = stronger link. Bigger bubble = more links.</Text>
+                <View style={styles.legendRow}>
+                  <View style={styles.legendDashed}>
+                    {[0, 1, 2].map((i) => (
+                      <View key={i} style={[styles.legendDash, { backgroundColor: theme.textMuted }]} />
+                    ))}
+                  </View>
+                  <Text style={styles.legendText}>Shared category  </Text>
+                </View>
+                <Text style={styles.legendNote}>Thicker line = stronger link. Bigger bubble = more links.</Text>
+              
+              
             </View>
           ) : (
             <TouchableOpacity style={styles.legendCollapsed} onPress={() => setLegendOpen(true)}>
@@ -404,10 +406,8 @@ const createStyles = (theme) => StyleSheet.create({
     color: theme.text,
   },
   centerContainer: {
-    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 30,
   },
   emptyText: {
     fontSize: 15,
@@ -443,7 +443,7 @@ const createStyles = (theme) => StyleSheet.create({
   },
   hintText: {
     position: 'absolute',
-    bottom: 20,
+    top: '97%',
     left: 0,
     right: 0,
     textAlign: 'center',
@@ -460,7 +460,7 @@ const createStyles = (theme) => StyleSheet.create({
     borderWidth: 1,
     borderColor: theme.border,
     backgroundColor: theme.surface,
-    opacity: 0.95,
+    opacity: 0.75,
     gap: 6,
   },
   legendCollapsed: {
@@ -515,7 +515,6 @@ const createStyles = (theme) => StyleSheet.create({
   legendText: {
     fontSize: 12,
     color: theme.text,
-    flexShrink: 1,
   },
   legendNote: {
     fontSize: 11,

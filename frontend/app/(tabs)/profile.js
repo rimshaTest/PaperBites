@@ -47,12 +47,12 @@ export default function ProfileScreen() {
       {loading ? (
         <Text style={styles.infoText}>Loading...</Text>
       ) : user ? (
-        <>
+        <View style={{ width: '100%' }}>
           <View style={styles.avatarSection}>
             <View style={styles.avatar}>
               <Ionicons name="person" size={40} color={theme.text} />
             </View>
-            <Text style={styles.email}>{user.email}</Text>
+            <Text style={styles.email}>{user.email + '  '}</Text>
           </View>
 
           {stats?.streak && (
@@ -122,7 +122,7 @@ export default function ProfileScreen() {
             <Ionicons name="log-out-outline" size={22} color={theme.text} />
             <Text style={[styles.rowText, { color: theme.text }]}>Log out</Text>
           </TouchableOpacity>
-        </>
+        </View>
       ) : (
         <View style={styles.avatarSection}>
           <View style={styles.avatar}>
