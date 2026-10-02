@@ -4,7 +4,7 @@ import {
   View,
   FlatList,
   ScrollView,
-  Dimensions,
+  useWindowDimensions,
   StyleSheet,
   Text,
   ActivityIndicator,
@@ -30,20 +30,20 @@ import * as Haptics from 'expo-haptics';
 import { fetchPapers } from '../services/api';
 import { useAuth } from '../hooks/useAuth';
 import { useFavoritePapers } from '../hooks/useStorage';
+import { useBottomTabBarHeight } from 'expo-router/js-tabs';
 import { useTheme } from '../hooks/useTheme';
 import { useLike } from '../hooks/useLike';
 import { useConfirmRead } from '../hooks/useConfirmRead';
 import { languageName } from '../constants/languages';
 import { playWhenReady } from '../utils/sound';
 
-const { width, height } = Dimensions.get('window');
-
 // The card rests showing only its bottom portion (image visible above it); dragging the handle
 // up slides it over most of the screen, covering the image. Only once fully expanded does its
 // content become scrollable - while collapsed, dragging elsewhere still pages between papers.
 // It stops short of true 0 (see BRAND_BAR_RESERVED_HEIGHT below) so the "PaperBites" brand bar
 // stays visible and tappable even when a card is fully expanded.
-const COLLAPSED_TOP = height * 0.42;
+const COLLAPSED_TOP_RATIO = 0.42;
+const ACTION_COLUMN_HEIGHT = 140; // three 40px buttons + gaps
 const BRAND_BAR_RESERVED_HEIGHT = 44;
 
 interface Author {
@@ -78,11 +78,21 @@ const FeedPaperCard: React.FC<{
   onExpandedChange: (expanded: boolean) => void;
   isBookmarked: boolean;
   onToggleBookmark: (item: PaperItem) => void;
-}> = ({ item, onExpandedChange, isBookmarked, onToggleBookmark }) => {
+  headerHeight: number;
+}> = ({ item, onExpandedChange, isBookmarked, onToggleBookmark, headerHeight }) => {
   const router = useRouter();
   const { theme } = useTheme();
   const { token } = useAuth();
-  const styles = React.useMemo(() => createStyles(theme), [theme]);
+  // Live window size (not a module-level snapshot) so the layout follows browser resizes and rotation
+  const { width, height } = useWindowDimensions();
+  const tabBarHeight = useBottomTabBarHeight();
+  // Normally 42% down, but never so high that the card covers the action buttons stacked under
+  // the header (relevant on short windows) - capped so the card stays usable.
+  const COLLAPSED_TOP = Math.min(
+    height * 0.75,
+    Math.max(height * COLLAPSED_TOP_RATIO, (headerHeight || 70) + ACTION_COLUMN_HEIGHT + 20)
+  );
+  const styles = React.useMemo(() => createStyles(theme, width, height), [theme, width, height]);
   const { liked, count: likeCount, toggle: toggleLike } = useLike(token, item);
   const confirmRead = useConfirmRead();
   const [justConfirmedRead, setJustConfirmedRead] = React.useState(false);
@@ -90,10 +100,23 @@ const FeedPaperCard: React.FC<{
   const BRAND_BAR_TOP_OFFSET = insets.top || StatusBar.currentHeight || 0;
   const BRAND_BAR_BOTTOM_OFFSET = insets.bottom *2 || StatusBar.currentHeight || 0;
   const brandBarTop = BRAND_BAR_TOP_OFFSET + 10;
-  const controlsTop = brandBarTop + BRAND_BAR_RESERVED_HEIGHT - 10;
-  const expandedTop = brandBarTop + BRAND_BAR_RESERVED_HEIGHT -10;
+  // Positions are relative to the card, which is itself shifted down by brandBarTop. Use the real
+  // measured header height when we have it - its height differs between platforms (web has no
+  // safe-area insets), so the fixed estimate left the controls and badges hidden behind it.
+  const controlsTop = headerHeight
+    ? headerHeight + 10 - brandBarTop
+    : brandBarTop + BRAND_BAR_RESERVED_HEIGHT - 10;
+  const expandedTop = headerHeight
+    ? headerHeight - brandBarTop
+    : brandBarTop + BRAND_BAR_RESERVED_HEIGHT - 10;
   const top = useSharedValue(COLLAPSED_TOP);
   const [isExpanded, setIsExpanded] = React.useState(false);
+
+  // Keep the resting/expanded position correct when the window size or header height changes
+  React.useEffect(() => {
+    top.value = isExpanded ? expandedTop : COLLAPSED_TOP;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [height, expandedTop]);
 
   const setExpanded = React.useCallback(
     (expanded: boolean) => {
@@ -243,7 +266,7 @@ const FeedPaperCard: React.FC<{
 
         <ScrollView
           style={styles.infoCardScroll}
-          contentContainerStyle={styles.infoCardContent}
+          contentContainerStyle={[styles.infoCardContent, { paddingBottom: 40 + tabBarHeight }]}
           scrollEnabled={isExpanded}
           nestedScrollEnabled
           showsVerticalScrollIndicator={false}
@@ -374,7 +397,9 @@ const PaperFeed: React.FC = () => {
   const router = useRouter();
   const { user, token } = useAuth();
   const { theme } = useTheme();
-  const styles = React.useMemo(() => createStyles(theme), [theme]);
+  const { width, height } = useWindowDimensions();
+  const styles = React.useMemo(() => createStyles(theme, width, height), [theme, width, height]);
+  const [headerHeight, setHeaderHeight] = React.useState(0);
   const insets = useSafeAreaInsets();
   const BRAND_BAR_TOP_OFFSET = insets.top *2 || StatusBar.currentHeight || 0;
   const { isFavorite, toggleFavorite } = useFavoritePapers(token) as unknown as FavoritePapersApi;
@@ -494,7 +519,11 @@ const PaperFeed: React.FC = () => {
   };
 
   const fixedHeader = (
-    <View pointerEvents="box-none" style={[styles.brandBar]}>
+    <View
+      pointerEvents="box-none"
+      style={[styles.brandBar]}
+      onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}
+    >
       <View style={[styles.brandBarSpacer, { paddingTop: BRAND_BAR_TOP_OFFSET }]} pointerEvents="none" />
       <View style={styles.brandBarContent}>
         <Image source={require('../assets/icon.png')} style={styles.brandImage} />
@@ -549,6 +578,7 @@ const PaperFeed: React.FC = () => {
     <View style={styles.flexContainer}>
       <FlatList
         data={papers}
+        extraData={headerHeight}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
           <FeedPaperCard
@@ -556,6 +586,7 @@ const PaperFeed: React.FC = () => {
             onExpandedChange={setAnyExpanded}
             isBookmarked={isFavorite(item.id)}
             onToggleBookmark={handleToggleBookmark}
+            headerHeight={headerHeight}
           />
         )}
         // Every card is exactly `height` tall - telling FlatList that up front via
@@ -586,7 +617,7 @@ const PaperFeed: React.FC = () => {
   );
 };
 
-const createStyles = (theme: any) => StyleSheet.create({
+const createStyles = (theme: any, width: number, height: number) => StyleSheet.create({
   flexContainer: {
     flex: 1,
   },
