@@ -133,3 +133,12 @@ def test_format_report_mentions_limits():
     acquire_now(tracker)
     text = tracker.format_report()
     assert "gemini-3.5-flash" in text and "1/20 requests today" in text and "1/5 req" in text
+
+
+def test_set_daily_requests_marks_prior_usage(monkeypatch):
+    clock = Clock()
+    tracker, database = make(clock)
+    tracker.set_daily_requests(FLASH, 20)  # e.g. quota spent before tracking existed
+    assert tracker.availability(FLASH)[0] == "exhausted"
+    second, _ = make(clock, database)  # persisted for the next run
+    assert second.availability(FLASH)[0] == "exhausted"

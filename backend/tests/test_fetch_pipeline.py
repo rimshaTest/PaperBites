@@ -180,3 +180,102 @@ def test_process_candidate_drops_papers_failing_validation(monkeypatch):
     monkeypatch.setattr(L, "_apply_summaries", no_summary)
     paper = {"source": "s", "source_id": "1", "title": "T", "abstract": ""}
     assert asyncio.run(L.process_candidate(paper, "Physics")) is None
+
+
+# ---- target count / search pool --------------------------------------------------------------
+def test_limit_counts_new_papers_and_searches_a_wider_pool(monkeypatch, database):
+    asked = {}
+    cand = candidates(12)
+    processed = []
+
+    async def fake_find(category, days_back, limit, sort_by):
+        asked["pool"] = limit
+        return list(cand)
+
+    async def fake_process(paper, category):
+        processed.append(paper["source_id"])
+        paper["description"] = "summary " * 5
+        return paper
+
+    monkeypatch.setattr(L, "find_candidate_papers", fake_find)
+    monkeypatch.setattr(L, "process_candidate", fake_process)
+    monkeypatch.setattr(cli, "CATEGORIES", ["Physics"])
+    monkeypatch.setattr(L, "config_instance", type("C", (), {"get": staticmethod(lambda k, d=None: None)})())
+    for c in cand[:3]:  # the three newest are already stored from an earlier run
+        db.upsert_paper({**c, "description": "already summarized"})
+
+    saved = asyncio.run(cli.fetch_latest_command("Physics", 7, 4, pool_factor=3))
+    assert asked["pool"] == 12  # limit 4 x pool factor 3
+    assert saved == 4 and processed == ["id3", "id4", "id5", "id6"]  # stored ones don't count; stops at 4
+    assert "id7" not in processed
+
+
+def test_dropped_candidates_dont_count_toward_the_limit(monkeypatch, database):
+    cand = candidates(10)
+    original_process = None
+
+    async def fake_find(category, days_back, limit, sort_by):
+        return list(cand)
+
+    async def fake_process(paper, category):
+        if int(paper["source_id"][2:]) % 2 == 0:
+            return None  # e.g. Unpaywall can't confirm open access
+        paper["description"] = "summary " * 5
+        return paper
+
+    monkeypatch.setattr(L, "find_candidate_papers", fake_find)
+    monkeypatch.setattr(L, "process_candidate", fake_process)
+    monkeypatch.setattr(cli, "CATEGORIES", ["Physics"])
+    monkeypatch.setattr(L, "config_instance", type("C", (), {"get": staticmethod(lambda k, d=None: None)})())
+    saved = asyncio.run(cli.fetch_latest_command("Physics", 7, 3))
+    assert saved == 3 and stored_ids(database) == ["id1", "id3", "id5"]
+
+
+# ---- rate-limited source circuit breaker ----------------------------------------------------
+class _Resp:
+    status = 429
+
+    async def json(self, content_type=None):
+        return {"retryAfter": 0}
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *a):
+        return False
+
+
+class _Session:
+    def __init__(self):
+        self.calls = 0
+
+    def get(self, url, headers=None):
+        self.calls += 1
+        return _Resp()
+
+
+def test_rate_limited_source_is_skipped_after_retries_run_out(monkeypatch):
+    monkeypatch.setattr(L, "_source_blocked_until", {})
+    session = _Session()
+    assert asyncio.run(L._get_json_with_retry(session, "http://x", "Semantic Scholar", default_backoff=0)) is None
+    first_calls = session.calls
+    assert first_calls == 3  # initial try + 2 retries
+    # The next category's request doesn't wait through the retries all over again
+    assert asyncio.run(L._get_json_with_retry(session, "http://x", "Semantic Scholar", default_backoff=0)) is None
+    assert session.calls == first_calls
+    # ...and it's per source
+    other = _Session()
+    asyncio.run(L._get_json_with_retry(other, "http://x", "OpenAlex", default_backoff=0))
+    assert other.calls == 3
+
+
+def test_source_is_retried_after_the_cooldown(monkeypatch):
+    monkeypatch.setattr(L, "_source_blocked_until", {})
+    clock = {"now": 1000.0}
+    monkeypatch.setattr(L, "_time_now", lambda: clock["now"])
+    session = _Session()
+    asyncio.run(L._get_json_with_retry(session, "http://x", "Semantic Scholar", default_backoff=0))
+    calls = session.calls
+    clock["now"] += L._RATE_LIMIT_COOLDOWN_SECONDS + 1
+    asyncio.run(L._get_json_with_retry(session, "http://x", "Semantic Scholar", default_backoff=0))
+    assert session.calls > calls

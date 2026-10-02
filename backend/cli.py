@@ -10,6 +10,7 @@ from config import Config
 from utils.logging import setup_logging
 import llm_usage
 from paper.latest import (
+    DEFAULT_POOL_FACTOR,
     iter_latest_papers,
     CATEGORIES,
     backfill_language_and_translation,
@@ -23,7 +24,7 @@ from db import upsert_paper
 
 async def fetch_latest_command(
     category: Optional[str], days: int, limit: int, sort_by: str = "date",
-    refresh: bool = False, continue_without_llm: bool = False,
+    refresh: bool = False, continue_without_llm: bool = False, pool_factor: int = DEFAULT_POOL_FACTOR,
 ) -> int:
     """Fetch papers for one or all known categories, storing each paper the moment it's ready.
 
@@ -46,7 +47,7 @@ async def fetch_latest_command(
                 async for paper in iter_latest_papers(
                     cat, days_back=days, limit=limit, sort_by=sort_by,
                     skip_existing=not refresh, stop_when_llm_exhausted=not continue_without_llm,
-                    stats=stats,
+                    stats=stats, pool_factor=pool_factor,
                 ):
                     try:
                         upsert_paper(paper)
@@ -82,7 +83,16 @@ def main():
     fetch_parser = subparsers.add_parser("fetch-latest", help="Fetch latest papers from free APIs into MongoDB")
     fetch_parser.add_argument("--category", help="Single category to fetch (default: all known categories)", default=None)
     fetch_parser.add_argument("--days", help="How many days back to look", type=int, default=7)
-    fetch_parser.add_argument("--limit", help="Max papers per category per source", type=int, default=20)
+    fetch_parser.add_argument(
+        "--limit", type=int, default=20,
+        help="How many NEW papers to save per category. Papers already stored or dropped (not open "
+             "access, no description) don't count, so a wider pool is searched to find this many",
+    )
+    fetch_parser.add_argument(
+        "--search-pool", type=int, default=DEFAULT_POOL_FACTOR,
+        help=f"Candidates to search per paper wanted (default {DEFAULT_POOL_FACTOR}); raise it if "
+             "re-runs keep finding nothing new",
+    )
     fetch_parser.add_argument(
         "--sort-by", help="'date' for the latest papers, 'citations' for the most-cited in the window",
         choices=["date", "citations"], default="date",
@@ -100,6 +110,11 @@ def main():
 
     usage_parser = subparsers.add_parser(
         "llm-usage", help="Show today's Gemini usage per model against its RPM / TPM / RPD limits"
+    )
+    usage_parser.add_argument(
+        "--set-used", nargs=2, metavar=("MODEL", "N"),
+        help="Record that MODEL has already used N requests today (e.g. quota spent before tracking "
+             "began), so runs don't waste calls discovering it. Use N = its daily limit to mark it spent",
     )
     usage_parser.add_argument("--config", "-c", help="Path to config file", default="config.json")
 
@@ -153,10 +168,14 @@ def main():
             total = await fetch_latest_command(
                 args.category, args.days, args.limit, sort_by=args.sort_by,
                 refresh=args.refresh, continue_without_llm=args.continue_without_llm,
+                pool_factor=args.search_pool,
             )
             logger.info(f"Saved {total} papers total")
         elif args.command == "llm-usage":
             from paper.summarize import _configured_model_names
+            if args.set_used:
+                llm_usage.tracker.set_daily_requests(args.set_used[0], int(args.set_used[1]))
+                print(f"Recorded {args.set_used[1]} request(s) used today for {args.set_used[0]}")
             print(llm_usage.tracker.format_report(_configured_model_names()))
             print(f"Daily quotas reset in {llm_usage.seconds_until_pacific_reset(llm_usage._time_now()) / 3600:.1f}h (midnight Pacific)")
         elif args.command == "backfill-embeddings":
@@ -178,7 +197,15 @@ def main():
         else:
             parser.print_help()
 
-    asyncio.run(run())
+    try:
+        asyncio.run(run())
+    except KeyboardInterrupt:
+        logger.warning(
+            "Interrupted. Papers saved so far are kept - run the same command again to continue "
+            "(already-saved papers are skipped)."
+        )
+        raise SystemExit(130)
+
 
 if __name__ == "__main__":
     main()

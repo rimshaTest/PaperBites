@@ -12,6 +12,7 @@ import asyncio
 import datetime
 import logging
 import re
+import time
 import urllib.parse
 from typing import Dict, List, Optional
 
@@ -74,6 +75,17 @@ def _is_plausible_recent_date(value: Optional[str], since: datetime.date) -> boo
     return since <= parsed <= datetime.date.today()
 
 
+# After a source exhausts its 429 retries, skip it for a while instead of repeating the same
+# ~30s of waiting for every category in the run (Semantic Scholar's anonymous limit stays blocked
+# for minutes at a time).
+_RATE_LIMIT_COOLDOWN_SECONDS = 600.0
+_source_blocked_until: Dict[str, float] = {}
+
+
+def _time_now() -> float:
+    return time.time()
+
+
 async def _get_json_with_retry(
     session: aiohttp.ClientSession,
     url: str,
@@ -82,7 +94,15 @@ async def _get_json_with_retry(
     max_retries: int = 2,
     default_backoff: float = 15.0,
 ) -> Optional[Dict]:
-    """GET a URL as JSON, retrying once or twice on 429 (both free APIs rate-limit anonymous traffic)."""
+    """GET a URL as JSON, retrying once or twice on 429 (both free APIs rate-limit anonymous traffic).
+
+    Once a source has used up its retries it's skipped (returning None straight away) for
+    _RATE_LIMIT_COOLDOWN_SECONDS, so one rate-limited source doesn't stall every category."""
+    blocked_for = _source_blocked_until.get(source_name, 0.0) - _time_now()
+    if blocked_for > 0:
+        logger.info(f"Skipping {source_name} for another {blocked_for / 60:.0f} min (rate-limited earlier in this run)")
+        return None
+
     for attempt in range(max_retries + 1):
         try:
             async with session.get(url, headers=headers) as response:
@@ -100,6 +120,13 @@ async def _get_json_with_retry(
                     continue
 
                 logger.error(f"{source_name} error {response.status} for '{url}'")
+                if response.status == 429:
+                    _source_blocked_until[source_name] = _time_now() + _RATE_LIMIT_COOLDOWN_SECONDS
+                    logger.warning(
+                        f"{source_name} stays rate-limited; skipping it for the next "
+                        f"{_RATE_LIMIT_COOLDOWN_SECONDS / 60:.0f} minutes"
+                        + (" - set a free API key to raise its limit (see .env.example)" if source_name == "Semantic Scholar" else "")
+                    )
                 return None
         except Exception as e:
             logger.error(f"Error fetching from {source_name}: {e}")
@@ -1066,6 +1093,11 @@ async def process_candidate(paper: Dict, category: str) -> Optional[Dict]:
     return paper
 
 
+# Candidates searched per paper wanted: many get skipped (already stored) or dropped (not open
+# access, no usable description), so look wider than the number of papers actually needed.
+DEFAULT_POOL_FACTOR = 5
+
+
 async def iter_latest_papers(
     category: str,
     days_back: int = 7,
@@ -1074,10 +1106,16 @@ async def iter_latest_papers(
     skip_existing: bool = True,
     stop_when_llm_exhausted: bool = True,
     stats: Optional[Dict[str, int]] = None,
+    pool_factor: int = DEFAULT_POOL_FACTOR,
 ):
     """Yield this category's papers one at a time, each fully enriched and validated, so the
     caller can store each the moment it's ready - an interrupted run keeps everything finished
     before the interruption.
+
+    `limit` is how many NEW papers to produce. Candidates that are already stored or get dropped
+    (not open access, no description) don't count, so the search pool is `limit * pool_factor`
+    and iteration stops as soon as `limit` papers have been produced - which is what lets a
+    re-run keep finding fresh papers instead of re-skipping the same top results.
 
     skip_existing: a candidate already stored with a description is skipped before any LLM call,
     so re-running after a crash or a quota stop doesn't spend quota redoing finished papers.
@@ -1094,11 +1132,13 @@ async def iter_latest_papers(
     for key in ("candidates", "skipped_existing", "dropped", "produced"):
         stats.setdefault(key, 0)
 
-    candidates = await find_candidate_papers(category, days_back, limit, sort_by)
+    candidates = await find_candidate_papers(category, days_back, limit * max(1, pool_factor), sort_by)
     stats["candidates"] += len(candidates)
     uses_llm = bool(config_instance.get("api.gemini_key"))
 
     for paper in candidates:
+        if stats["produced"] >= limit:
+            break
         if skip_existing and db.paper_is_stored(paper.get("source"), paper.get("source_id")):
             stats["skipped_existing"] += 1
             continue
@@ -1132,7 +1172,8 @@ async def get_latest_papers(
     the CLI streams them with iter_latest_papers() and stores each one as it's produced."""
     papers = [
         paper async for paper in iter_latest_papers(
-            category, days_back, limit, sort_by, skip_existing=False, stop_when_llm_exhausted=False
+            category, days_back, limit, sort_by, skip_existing=False,
+            stop_when_llm_exhausted=False, pool_factor=1,
         )
     ]
     logger.info(f"Found {len(papers)} latest papers for '{category}'")

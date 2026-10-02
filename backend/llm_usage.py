@@ -278,6 +278,14 @@ class LLMUsageTracker:
         day["tokens"] += tokens
         self._persist(model, date, requests=1, tokens=tokens)
 
+    def set_daily_requests(self, model: str, requests: int) -> None:
+        """Tell the tracker how many requests this model has already used today - for quota
+        spent before tracking existed, or by another machine/project on the same key."""
+        now = self._clock()
+        date = pacific_date(now)
+        self._day(model, date)["requests"] = requests
+        self._persist(model, date, set_requests=requests)
+
     def note_api_quota_error(self, model: str, message: str) -> None:
         """React to the API itself reporting 429: a per-day quota error exhausts the model for
         the rest of the (Pacific) day even if our own count was off; a per-minute one just

@@ -98,8 +98,12 @@ def _get_llm_for_model(model_name: str):
     if model_name not in _llm_cache:
         from langchain_google_genai import ChatGoogleGenerativeAI
 
+        # The client's own retry loop (default 6, each sleeping on a 429) just stalls the run -
+        # llm_usage.py already paces calls and handles 429s, so keep client retries minimal.
+        max_retries = config_instance.get("api.gemini_max_retries")
         _llm_cache[model_name] = ChatGoogleGenerativeAI(
-            model=model_name, google_api_key=api_key, temperature=0.3
+            model=model_name, google_api_key=api_key, temperature=0.3,
+            max_retries=1 if max_retries is None else int(max_retries),
         )
     return _llm_cache[model_name]
 

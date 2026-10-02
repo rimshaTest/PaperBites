@@ -87,3 +87,16 @@ def test_classify_falls_through_on_unparseable_json(setup):
     llms[LITE].reply = '{"summary": "Good.", "category": "physics"}'
     result = asyncio.run(S.summarize_and_classify("T", "text", ["Physics", "Biology"]))
     assert result == {"summary": "Good.", "category": "Physics"}
+
+
+def test_client_retries_are_kept_low_so_429s_dont_stall_the_run(monkeypatch):
+    pytest.importorskip("langchain_google_genai")
+    monkeypatch.setattr(S, "_llm_cache", {})
+    monkeypatch.setattr(S, "config_instance", SimpleNamespace(get=lambda k, d=None: "key" if k == "api.gemini_key" else None))
+    assert S._get_llm_for_model(FLASH).max_retries == 1  # the library default is 6
+    monkeypatch.setattr(S, "_llm_cache", {})
+    monkeypatch.setattr(
+        S, "config_instance",
+        SimpleNamespace(get=lambda k, d=None: {"api.gemini_key": "key", "api.gemini_max_retries": 3}.get(k)),
+    )
+    assert S._get_llm_for_model(FLASH).max_retries == 3
