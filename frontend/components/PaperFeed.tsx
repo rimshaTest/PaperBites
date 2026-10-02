@@ -675,20 +675,20 @@ const createStyles = (theme: any, width: number, height: number) => StyleSheet.c
     backgroundColor: theme.surface,
   },
   brandBarContent: {
+    // flex: 1 so the row spans the whole bar - logo left, title centered, search right - instead
+    // of shrinking to its contents and bunching up at the left edge on wide screens
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 10,
-    paddingHorizontal: 16,
-    left: -15,
   },
   brandBarSpacer: {
-    width: 28,
+    width: 0,
   },
   brandImage: {
     width: 50,
     height: 50,
-    left:-20,
   },
   brandText: {
     flex: 1,
@@ -697,8 +697,6 @@ const createStyles = (theme: any, width: number, height: number) => StyleSheet.c
     fontSize: 18,
     fontWeight: 'bold',
     color: theme.text,
-    top: -5,
-    left: -15,
     textShadowColor: 'rgba(0, 0, 0, 0.5)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,

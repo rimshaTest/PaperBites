@@ -263,7 +263,7 @@ export default function VisualizationsScreen() {
   }));
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Visualize</Text>
       </View>
@@ -298,6 +298,7 @@ export default function VisualizationsScreen() {
           </TouchableOpacity>
         </View>
       ) : (
+        <>
         <View style={styles.canvasViewport}>
           <GestureDetector gesture={gesture}>
             <View style={styles.gestureSurface} collapsable={false}>
@@ -380,8 +381,9 @@ export default function VisualizationsScreen() {
               <Text style={styles.legendTitle}>Legend</Text>
             </TouchableOpacity>
           )}
-          <Text style={styles.hintText}>Drag a bubble to play with it, drag the background to pan, tap to open</Text>
         </View>
+        <Text style={styles.hintText}>Drag a bubble to play with it, drag the background to pan, tap to open</Text>
+        </>
       )}
     </SafeAreaView>
   );
@@ -442,10 +444,10 @@ const createStyles = (theme) => StyleSheet.create({
     height: CANVAS_SIZE,
   },
   hintText: {
-    position: 'absolute',
-    bottom: 40, // clear of the raised center tab button
-    left: 0,
-    right: 0,
+    // Its own row under the canvas (not floating over it), so it can never sit on top of bubbles
+    paddingTop: 8,
+    paddingBottom: 30, // clears the raised center tab button
+    paddingHorizontal: 16,
     textAlign: 'center',
     fontSize: 12,
     color: theme.textMuted,
