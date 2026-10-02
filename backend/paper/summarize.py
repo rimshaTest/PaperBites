@@ -27,7 +27,8 @@ from typing import Dict, List, Optional
 import aiohttp
 
 from config import Config
-from paper.llm_text import response_text
+import llm_usage
+from paper.llm_text import response_text, response_tokens
 
 config_instance = Config()
 logger = logging.getLogger("paperbites.summarize")
@@ -103,6 +104,60 @@ def _get_llm_for_model(model_name: str):
     return _llm_cache[model_name]
 
 
+async def _generate(
+    models: List[str], payload, prompt_text: str, accept, label: str, rotate: bool = True,
+    estimated_tokens: Optional[int] = None,
+):
+    """Call Gemini through the usage tracker (llm_usage.py), trying models until one yields an
+    answer `accept` approves.
+
+    Each attempt picks a model with budget left: one available now if any, else the one whose
+    per-minute limit clears soonest (waiting for it), never one whose daily budget is spent. A
+    model that errors is skipped for this call; a 429 from the API itself updates the tracker
+    (a daily-quota error retires the model for the day). `accept(text)` turns the raw reply into
+    the value to return, or None to try the next model (e.g. unparseable JSON). Returns None if
+    nothing worked or every model is out of budget.
+    """
+    estimated = estimated_tokens or llm_usage.estimate_tokens(prompt_text)
+    remaining = list(models)
+    if rotate and remaining:
+        first = await _next_model_name(remaining)
+        remaining = [first] + [m for m in remaining if m != first]
+
+    while remaining:
+        model_name = llm_usage.tracker.choose(remaining, estimated)
+        if model_name is None:
+            return None  # every remaining model is out of budget for today
+        remaining.remove(model_name)
+
+        llm = _get_llm_for_model(model_name)
+        if not llm:
+            continue
+        try:
+            reservation = await llm_usage.tracker.acquire(model_name, estimated)
+        except llm_usage.LLMQuotaExhausted:
+            continue
+        try:
+            response = await llm.ainvoke(payload)
+        except Exception as e:
+            llm_usage.tracker.finish(reservation, None)
+            if llm_usage.is_quota_error(e):
+                llm_usage.tracker.note_api_quota_error(model_name, str(e))
+            logger.warning(f"Gemini model '{model_name}' failed for {label}: {e}")
+            continue
+
+        llm_usage.tracker.finish(reservation, response_tokens(response))
+        try:
+            result = accept(response_text(response).strip())
+        except Exception as e:
+            logger.warning(f"Gemini model '{model_name}' gave an unusable reply for {label}: {e}")
+            continue
+        if result:
+            return result
+
+    return None
+
+
 async def summarize_text(title: str, text: str, source_label: str = "Abstract") -> Optional[str]:
     """Summarize arbitrary paper text (abstract or full PDF text) into a <=200 word description.
 
@@ -121,21 +176,9 @@ async def summarize_text(title: str, text: str, source_label: str = "Abstract") 
         text=text[:_PDF_TEXT_CHAR_LIMIT],
     )
 
-    models = _configured_model_names()
-    for _ in range(len(models)):
-        model_name = await _next_model_name(models)
-        llm = _get_llm_for_model(model_name)
-        if not llm:
-            continue
-        try:
-            response = await llm.ainvoke(prompt)
-            summary = response_text(response).strip()
-            if summary:
-                return summary
-        except Exception as e:
-            logger.warning(f"Gemini model '{model_name}' failed for '{title}': {e}")
-
-    return None
+    return await _generate(
+        _configured_model_names(), prompt, prompt, accept=lambda reply: reply or None, label=f"'{title}'"
+    )
 
 
 _SUMMARY_AND_CATEGORY_PROMPT = (
@@ -182,31 +225,24 @@ async def summarize_and_classify(
         text=text[:_PDF_TEXT_CHAR_LIMIT],
     )
 
-    models = _configured_model_names()
-    for _ in range(len(models)):
-        model_name = await _next_model_name(models)
-        llm = _get_llm_for_model(model_name)
-        if not llm:
-            continue
-        try:
-            response = await llm.ainvoke(prompt)
-            raw = response_text(response).strip()
-            # Models occasionally wrap JSON in a ```json fence despite being told not to - strip
-            # it rather than failing classification over formatting alone.
-            if raw.startswith("```"):
-                raw = raw.strip("`")
-                if raw.lower().startswith("json"):
-                    raw = raw[4:]
-            parsed = json.loads(raw)
-            summary = (parsed.get("summary") or "").strip()
-            category = (parsed.get("category") or "").strip()
-            matched_category = next((c for c in categories if c.lower() == category.lower()), None)
-            if summary and matched_category:
-                return {"summary": summary, "category": matched_category}
-        except Exception as e:
-            logger.warning(f"Gemini model '{model_name}' failed to summarize+classify '{title}': {e}")
+    def parse(raw: str) -> Optional[Dict[str, str]]:
+        # Models occasionally wrap JSON in a ```json fence despite being told not to - strip
+        # it rather than failing classification over formatting alone.
+        if raw.startswith("```"):
+            raw = raw.strip("`")
+            if raw.lower().startswith("json"):
+                raw = raw[4:]
+        parsed = json.loads(raw)
+        summary = (parsed.get("summary") or "").strip()
+        category = (parsed.get("category") or "").strip()
+        matched_category = next((c for c in categories if c.lower() == category.lower()), None)
+        if summary and matched_category:
+            return {"summary": summary, "category": matched_category}
+        return None
 
-    return None
+    return await _generate(
+        _configured_model_names(), prompt, prompt, accept=parse, label=f"summarize+classify '{title}'"
+    )
 
 
 async def summarize_and_classify_paper(
@@ -301,19 +337,16 @@ async def extract_citation_text_from_image(image_bytes: bytes, mime_type: str) -
         {"type": "image_url", "image_url": f"data:{mime_type};base64,{b64_image}"},
     ])
 
-    for model_name in _configured_image_model_names():
-        llm = _get_llm_for_model(model_name)
-        if not llm:
-            continue
-        try:
-            response = await llm.ainvoke([message])
-            text = response_text(response).strip()
-            if text and text.upper() != "NONE":
-                return text
-        except Exception as e:
-            logger.warning(f"Gemini model '{model_name}' failed to read image for citation extraction: {e}")
+    def accept(reply: str) -> Optional[str]:
+        return reply if reply and reply.upper() != "NONE" else None
 
-    return None
+    # Fixed best-to-worst order (rotate=False), but still budget-aware: a model whose daily
+    # quota is spent is skipped in favor of the next.
+    return await _generate(
+        _configured_image_model_names(), [message], _IMAGE_CITATION_PROMPT,
+        accept=accept, label="image citation extraction", rotate=False,
+        estimated_tokens=2000,  # a photo costs far more than its (short) text prompt
+    )
 
 
 async def _download_pdf_text(session: aiohttp.ClientSession, url: str) -> Optional[str]:

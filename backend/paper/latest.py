@@ -983,14 +983,16 @@ async def _attach_images(papers: List[Dict], category: str) -> None:
             paper["image_url"] = image_url or category_image or None
 
 
-async def get_latest_papers(
+async def find_candidate_papers(
     category: str, days_back: int = 7, limit: int = 20, sort_by: str = "date"
 ) -> List[Dict]:
-    """Fetch papers for a category from Semantic Scholar + OpenAlex + Crossref, deduped.
+    """Search Semantic Scholar + OpenAlex + Crossref for a category and return the deduped,
+    sorted, limited candidates - metadata only, nothing enriched yet.
 
-    Semantic Scholar and OpenAlex are filtered to open access at fetch time; Crossref's own
-    open-access flag isn't reliable, so its results get a real open-access link resolved (or
-    ruled out) via Unpaywall below before anything from it is kept.
+    This is the one step that has to look at a whole result list (the sources return lists, and
+    deduping needs to see them together). Everything expensive or fallible - open-access
+    confirmation, abstracts, translation, the LLM summary, embeddings, images - happens later,
+    one paper at a time, in process_candidate().
 
     `sort_by="date"` (default) gives the normal "latest papers" feed. `sort_by="citations"`
     instead returns the most-cited papers within the date window - mainly useful for
@@ -1014,25 +1016,124 @@ async def get_latest_papers(
         combined.sort(key=lambda p: p.get("citation_count") or 0, reverse=True)
     else:
         combined.sort(key=lambda p: p.get("published_date") or "", reverse=True)
-    combined = combined[:limit]
+    return combined[:limit]
 
-    await _fill_open_access_links(combined)
-    before_oa_drop = len(combined)
-    combined = [p for p in combined if p.get("is_open_access") is not False]
-    if before_oa_drop != len(combined):
-        logger.info(f"Dropped {before_oa_drop - len(combined)} Crossref paper(s) Unpaywall couldn't confirm as open access")
 
-    combined = await _fill_missing_abstracts(combined)
-    await _apply_language_and_translation(combined)
-    await _apply_summaries(combined)
+_MIN_DESCRIPTION_CHARS = 20
+_MAX_TITLE_CHARS = 1000
 
-    before_drop = len(combined)
-    combined = [p for p in combined if p.get("description")]
-    if before_drop != len(combined):
-        logger.info(f"Dropped {before_drop - len(combined)} paper(s) with no description available from any source")
 
-    await _apply_embeddings(combined)
-    await _attach_images(combined, category)
+def validate_paper(paper: Dict) -> Optional[str]:
+    """Why this paper shouldn't be stored, or None if it's fine. Checked on each paper right
+    before it's saved, so a bad record is skipped on its own instead of poisoning a batch."""
+    for key in ("source", "source_id", "title"):
+        if not isinstance(paper.get(key), str) or not paper[key].strip():
+            return f"missing {key}"
+    if len(paper["title"]) > _MAX_TITLE_CHARS:
+        return "title is implausibly long"
+    description = paper.get("description")
+    if not isinstance(description, str) or len(description.strip()) < _MIN_DESCRIPTION_CHARS:
+        return "no description available from any source"
+    if paper.get("is_open_access") is False:
+        return "not open access"
+    return None
 
-    logger.info(f"Found {len(combined)} latest papers for '{category}'")
-    return combined
+
+async def process_candidate(paper: Dict, category: str) -> Optional[Dict]:
+    """Take one candidate through every enrichment step and return it ready to store, or None
+    if it should be dropped (not open access, no usable description, failed validation). Each
+    step runs on just this paper, so the LLM quota is spent paper by paper and a failure here
+    affects only this paper."""
+    # Crossref's own open-access flag isn't reliable, so confirm (or rule out) a real
+    # open-access link via Unpaywall; Semantic Scholar and OpenAlex are already filtered.
+    await _fill_open_access_links([paper])
+    if paper.get("is_open_access") is False:
+        logger.info(f"Dropped '{paper.get('title', '')[:60]}': Unpaywall couldn't confirm open access")
+        return None
+
+    filled = await _fill_missing_abstracts([paper])
+    paper = filled[0]
+    await _apply_language_and_translation([paper])
+    await _apply_summaries([paper])  # description = LLM summary, else the raw abstract
+
+    problem = validate_paper(paper)
+    if problem:
+        logger.info(f"Dropped '{paper.get('title', '')[:60]}': {problem}")
+        return None
+
+    await _apply_embeddings([paper])
+    await _attach_images([paper], category)
+    return paper
+
+
+async def iter_latest_papers(
+    category: str,
+    days_back: int = 7,
+    limit: int = 20,
+    sort_by: str = "date",
+    skip_existing: bool = True,
+    stop_when_llm_exhausted: bool = True,
+    stats: Optional[Dict[str, int]] = None,
+):
+    """Yield this category's papers one at a time, each fully enriched and validated, so the
+    caller can store each the moment it's ready - an interrupted run keeps everything finished
+    before the interruption.
+
+    skip_existing: a candidate already stored with a description is skipped before any LLM call,
+    so re-running after a crash or a quota stop doesn't spend quota redoing finished papers.
+    stop_when_llm_exhausted: once every Gemini model's daily budget is spent, raise
+    LLMQuotaExhausted instead of carrying on and storing papers whose description is just the
+    raw abstract (they'd never be re-summarized later). `stats` (optional) collects counts:
+    candidates, skipped_existing, dropped, produced.
+    """
+    import db
+    import llm_usage
+    from paper.summarize import _configured_model_names
+
+    stats = stats if stats is not None else {}
+    for key in ("candidates", "skipped_existing", "dropped", "produced"):
+        stats.setdefault(key, 0)
+
+    candidates = await find_candidate_papers(category, days_back, limit, sort_by)
+    stats["candidates"] += len(candidates)
+    uses_llm = bool(config_instance.get("api.gemini_key"))
+
+    for paper in candidates:
+        if skip_existing and db.paper_is_stored(paper.get("source"), paper.get("source_id")):
+            stats["skipped_existing"] += 1
+            continue
+
+        if uses_llm and stop_when_llm_exhausted:
+            models = _configured_model_names()
+            if llm_usage.tracker.all_exhausted(models):
+                raise llm_usage.LLMQuotaExhausted(llm_usage.seconds_until_pacific_reset(llm_usage._time_now()))
+
+        try:
+            processed = await process_candidate(paper, category)
+        except llm_usage.LLMQuotaExhausted:
+            raise
+        except Exception as e:
+            # One paper blowing up shouldn't end the run
+            logger.exception(f"Skipping '{paper.get('title', '')[:60]}' after an error: {e}")
+            stats["dropped"] += 1
+            continue
+
+        if processed is None:
+            stats["dropped"] += 1
+            continue
+        stats["produced"] += 1
+        yield processed
+
+
+async def get_latest_papers(
+    category: str, days_back: int = 7, limit: int = 20, sort_by: str = "date"
+) -> List[Dict]:
+    """All of a category's enriched papers as one list. Kept for callers that want a list;
+    the CLI streams them with iter_latest_papers() and stores each one as it's produced."""
+    papers = [
+        paper async for paper in iter_latest_papers(
+            category, days_back, limit, sort_by, skip_existing=False, stop_when_llm_exhausted=False
+        )
+    ]
+    logger.info(f"Found {len(papers)} latest papers for '{category}'")
+    return papers

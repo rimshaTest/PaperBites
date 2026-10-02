@@ -8,8 +8,9 @@ from typing import Optional
 
 from config import Config
 from utils.logging import setup_logging
+import llm_usage
 from paper.latest import (
-    get_latest_papers,
+    iter_latest_papers,
     CATEGORIES,
     backfill_language_and_translation,
     diagnose_language,
@@ -17,22 +18,60 @@ from paper.latest import (
     backfill_doi_and_url,
 )
 from paper.embeddings import backfill_missing_embeddings
-from db import upsert_papers
+from db import upsert_paper
 
 
-async def fetch_latest_command(category: Optional[str], days: int, limit: int, sort_by: str = "date") -> int:
-    """Fetch papers for one or all known categories and upsert them into MongoDB."""
+async def fetch_latest_command(
+    category: Optional[str], days: int, limit: int, sort_by: str = "date",
+    refresh: bool = False, continue_without_llm: bool = False,
+) -> int:
+    """Fetch papers for one or all known categories, storing each paper the moment it's ready.
+
+    Each paper is retrieved, enriched (open-access check, abstract, translation, LLM summary,
+    embedding, image), validated, and upserted before the next one starts - so a crash, Ctrl+C or
+    quota stop never loses papers that were already finished. Papers already stored are skipped
+    (unless `refresh`), so re-running resumes instead of redoing work and burning LLM quota.
+    When every Gemini model's daily budget is spent the run stops with a clear message (rather
+    than storing papers with raw-abstract descriptions) unless `continue_without_llm`.
+    """
     logger = logging.getLogger("paperbites.cli")
     categories = [category] if category else CATEGORIES
-    total = 0
+    saved = 0
 
-    for cat in categories:
-        papers = await get_latest_papers(cat, days_back=days, limit=limit, sort_by=sort_by)
-        written = upsert_papers(papers)
-        total += written
-        logger.info(f"'{cat}': fetched {len(papers)} papers, upserted {written}")
+    try:
+        for cat in categories:
+            stats = {}
+            cat_saved = 0
+            try:
+                async for paper in iter_latest_papers(
+                    cat, days_back=days, limit=limit, sort_by=sort_by,
+                    skip_existing=not refresh, stop_when_llm_exhausted=not continue_without_llm,
+                    stats=stats,
+                ):
+                    try:
+                        upsert_paper(paper)
+                    except Exception as e:
+                        logger.error(f"Couldn't store '{paper.get('title', '')[:60]}': {e}")
+                        continue
+                    saved += 1
+                    cat_saved += 1
+                    logger.info(f"[{cat}] saved {cat_saved}: {paper['title'][:80]}")
+            except llm_usage.LLMQuotaExhausted as e:
+                logger.warning(
+                    f"Stopping: {e}. Saved {saved} paper(s) so far; they're kept. "
+                    f"Re-run after the reset (midnight Pacific) to continue - already-saved papers are skipped."
+                )
+                break
+            logger.info(
+                f"'{cat}': {stats.get('candidates', 0)} candidates, saved {cat_saved}, "
+                f"skipped {stats.get('skipped_existing', 0)} already stored, dropped {stats.get('dropped', 0)}"
+            )
+    finally:
+        usage = llm_usage.tracker.format_report()
+        if usage:
+            logger.info("Gemini usage:\n" + usage)
 
-    return total
+    return saved
 
 
 def main():
@@ -48,7 +87,21 @@ def main():
         "--sort-by", help="'date' for the latest papers, 'citations' for the most-cited in the window",
         choices=["date", "citations"], default="date",
     )
+    fetch_parser.add_argument(
+        "--refresh", action="store_true",
+        help="Re-process papers that are already stored (default: skip them, which saves LLM quota)",
+    )
+    fetch_parser.add_argument(
+        "--continue-without-llm", action="store_true",
+        help="When the daily Gemini quota is spent, keep going and store papers with their raw "
+             "abstract as the description (default: stop, so they can be summarized after the reset)",
+    )
     fetch_parser.add_argument("--config", "-c", help="Path to config file", default="config.json")
+
+    usage_parser = subparsers.add_parser(
+        "llm-usage", help="Show today's Gemini usage per model against its RPM / TPM / RPD limits"
+    )
+    usage_parser.add_argument("--config", "-c", help="Path to config file", default="config.json")
 
     backfill_parser = subparsers.add_parser(
         "backfill-embeddings",
@@ -97,8 +150,15 @@ def main():
 
     async def run():
         if args.command == "fetch-latest":
-            total = await fetch_latest_command(args.category, args.days, args.limit, sort_by=args.sort_by)
-            logger.info(f"Upserted {total} papers total")
+            total = await fetch_latest_command(
+                args.category, args.days, args.limit, sort_by=args.sort_by,
+                refresh=args.refresh, continue_without_llm=args.continue_without_llm,
+            )
+            logger.info(f"Saved {total} papers total")
+        elif args.command == "llm-usage":
+            from paper.summarize import _configured_model_names
+            print(llm_usage.tracker.format_report(_configured_model_names()))
+            print(f"Daily quotas reset in {llm_usage.seconds_until_pacific_reset(llm_usage._time_now()) / 3600:.1f}h (midnight Pacific)")
         elif args.command == "backfill-embeddings":
             result = await backfill_missing_embeddings()
             logger.info(f"Backfill complete: {result}")

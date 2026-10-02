@@ -25,3 +25,4 @@ sentry-sdk
 better-profanity
 geonamescache
 pycountry
+tzdata

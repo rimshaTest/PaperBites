@@ -52,17 +52,30 @@ def get_db():
     return _db
 
 
+def upsert_paper(paper):
+    """Insert or update one paper by (source, source_id)."""
+    get_db().papers.update_one(
+        {"source": paper["source"], "source_id": paper["source_id"]},
+        {"$set": paper},
+        upsert=True,
+    )
+
+
 def upsert_papers(papers):
     """Insert or update papers by (source, source_id). Returns the number of papers written."""
-    db = get_db()
     written = 0
-
     for paper in papers:
-        db.papers.update_one(
-            {"source": paper["source"], "source_id": paper["source_id"]},
-            {"$set": paper},
-            upsert=True,
-        )
+        upsert_paper(paper)
         written += 1
-
     return written
+
+
+def paper_is_stored(source, source_id):
+    """True if this (source, source_id) is already stored with a non-empty description - used to
+    skip re-enriching (and re-spending LLM quota on) papers a previous run already finished."""
+    if not source or not source_id:
+        return False
+    doc = get_db().papers.find_one(
+        {"source": source, "source_id": source_id}, {"description": 1}
+    )
+    return bool(doc and (doc.get("description") or "").strip())

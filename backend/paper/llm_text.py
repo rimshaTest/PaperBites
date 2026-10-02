@@ -28,3 +28,17 @@ def response_text(response: Any) -> str:
                     parts.append(text)
         return "".join(parts)
     return str(content)
+
+
+def response_tokens(response: Any) -> "int | None":
+    """Total tokens a call used, from the response's usage metadata when the library provides it
+    (LangChain puts it on AIMessage.usage_metadata); None if unknown."""
+    usage = getattr(response, "usage_metadata", None)
+    if isinstance(usage, dict):
+        total = usage.get("total_tokens")
+        if isinstance(total, int):
+            return total
+        parts = [usage.get("input_tokens"), usage.get("output_tokens")]
+        if all(isinstance(p, int) for p in parts):
+            return sum(parts)
+    return None

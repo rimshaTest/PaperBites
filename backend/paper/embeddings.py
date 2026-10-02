@@ -19,6 +19,7 @@ import asyncio
 import logging
 from typing import Dict, List, Optional
 
+import llm_usage
 from config import Config
 
 config_instance = Config()
@@ -63,6 +64,7 @@ async def embed_document(text: str) -> Optional[List[float]]:
 
     try:
         vectors = await client.aembed_documents([text])
+        llm_usage.tracker.log_call(_configured_embedding_model(), len(text) // 4 + 1)
         return vectors[0] if vectors else None
     except Exception as e:
         logger.warning(f"Embedding a paper's text failed: {e}")
@@ -78,7 +80,9 @@ async def embed_query(text: str) -> Optional[List[float]]:
         return None
 
     try:
-        return await client.aembed_query(text)
+        vector = await client.aembed_query(text)
+        llm_usage.tracker.log_call(_configured_embedding_model(), len(text) // 4 + 1)
+        return vector
     except Exception as e:
         logger.warning(f"Embedding a search query failed: {e}")
         return None

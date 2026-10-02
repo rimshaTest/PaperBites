@@ -36,7 +36,10 @@ build isolation.
 python api_server.py
 
 # Fetch/refresh papers into MongoDB - run this at least once before the app has anything to show
-python cli.py fetch-latest [--category "Physics"] [--days 7] [--limit 20] [--sort-by date|citations]
+python cli.py fetch-latest [--category "Physics"] [--days 7] [--limit 20] [--sort-by date|citations] [--refresh] [--continue-without-llm]
+
+# Show today's Gemini usage per model against its limits (RPM / TPM / RPD)
+python cli.py llm-usage
 ```
 
 `fetch-latest` with no `--category` fetches all categories in `paper/latest.py`'s `CATEGORIES`
@@ -48,6 +51,24 @@ via `PAPERBITES_GEMINI_MODELS`) so no single model's free-tier cap gates the who
 that's rate-limited or invalid is skipped immediately in favor of the next one, with no delay.
 Each paper is also embedded exactly once here (`paper/embeddings.py`, one Gemini embedding call
 per paper - not repeated on later reloads/views) for `GET /papers/search`'s semantic search.
+
+**How `fetch-latest` runs.** Papers are processed one at a time: each is enriched (open-access
+check, abstract, translation, Gemini summary, embedding, image), validated, and saved to MongoDB
+before the next one starts, so a crash, Ctrl+C or quota stop keeps everything already finished.
+Papers already stored (with a description) are skipped, so re-running resumes where you left off
+and doesn't spend Gemini quota again; `--refresh` reprocesses them. When every Gemini model's
+daily budget is spent the run stops with a message (rather than storing papers whose description
+is just the raw abstract); `--continue-without-llm` overrides that.
+
+**Gemini usage tracking** (`llm_usage.py`). Every Gemini call is counted against per-model limits
+- requests per minute, tokens per minute, requests per day - and a per-minute limit is waited
+out, while a spent daily budget skips that model. Daily counts are saved in the `llm_usage`
+collection so they carry across runs; the day resets at midnight Pacific, when Google resets
+quotas. Built-in limit: `gemini-3.5-flash` = 5 RPM, 250k TPM, 20 RPD. Set others with
+`api.gemini_limits` in config.json or `PAPERBITES_GEMINI_LIMITS` as JSON, e.g.
+`{"gemini-3.5-flash-lite": {"rpm": 15, "tpm": 250000, "rpd": 500}}`. A model with no configured
+limit is counted but not gated. A 429 from the API itself is also honored (a daily-quota error
+retires the model for the day).
 
 ## API
 
