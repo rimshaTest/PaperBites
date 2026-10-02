@@ -19,7 +19,6 @@ const TIER2_FIELDS = [
   { key: 'age', label: 'Age' },
   { key: 'gender', label: 'Gender' },
   { key: 'sex', label: 'Sex' },
-  { key: 'location_precise', label: 'Precise location' },
   { key: 'mental_disabilities', label: 'Mental disabilities' },
   { key: 'physical_disabilities', label: 'Physical disabilities' },
   { key: 'chronic_illnesses', label: 'Chronic illnesses' },
@@ -194,10 +193,9 @@ export default function ProfileDetailsScreen() {
           />
         </View>
 
-        <Text style={styles.sectionTitle}>Sensitive info (optional)</Text>
+        <Text style={styles.sectionTitle}>Demographic Information</Text>
         <Text style={styles.sectionSubtitle}>
-          Each field below has its own switches for how it can be used - leave both off to store
-          it without using it for anything yet.
+          Each field below has its own switches for using your information to personalize your feed.
         </Text>
 
         {TIER2_FIELDS.map(({ key, label }) => (
@@ -212,17 +210,6 @@ export default function ProfileDetailsScreen() {
             <View style={styles.consentRow}>
               <TouchableOpacity
                 style={styles.consentToggle}
-                onPress={() => toggleConsent(key, 'used_for_personalization')}
-              >
-                <Ionicons
-                  name={tier2Consent[key]?.used_for_personalization ? 'checkbox' : 'square-outline'}
-                  size={20}
-                  color={tier2Consent[key]?.used_for_personalization ? theme.accent : theme.textMuted}
-                />
-                <Text style={styles.consentLabel}>Personalize reading</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.consentToggle}
                 onPress={() => toggleConsent(key, 'used_for_feed_relevance')}
               >
                 <Ionicons
@@ -230,7 +217,7 @@ export default function ProfileDetailsScreen() {
                   size={20}
                   color={tier2Consent[key]?.used_for_feed_relevance ? theme.accent : theme.textMuted}
                 />
-                <Text style={styles.consentLabel}>Match my feed</Text>
+                <Text style={styles.consentLabel}>Personalize my feed with this  </Text>
               </TouchableOpacity>
             </View>
           </View>

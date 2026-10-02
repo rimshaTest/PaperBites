@@ -65,7 +65,7 @@ export default function SavedScreen() {
       ) : !user ? (
         <View style={styles.centerContainer}>
           <Ionicons name="lock-closed-outline" size={40} color={theme.textMuted} />
-          <Text style={styles.emptyText}>Log in to see your saved papers.</Text>
+          <Text style={styles.emptyText}> Log in to see your saved papers. </Text>
           <TouchableOpacity style={styles.loginButton} onPress={() => router.push('/login')}>
             <Text style={styles.loginButtonText}>Log In</Text>
           </TouchableOpacity>

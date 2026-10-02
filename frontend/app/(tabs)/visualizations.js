@@ -275,7 +275,7 @@ export default function VisualizationsScreen() {
       ) : !user ? (
         <View style={styles.centerContainer}>
           <Ionicons name="lock-closed-outline" size={40} color={theme.textMuted} />
-          <Text style={styles.emptyText}>Log in to see a map of the papers you've read.</Text>
+          <Text style={styles.emptyText}> Log in to see a map of the papers you've read. </Text>
           <TouchableOpacity style={styles.loginButton} onPress={() => router.push('/login')}>
             <Text style={styles.loginButtonText}>Log In</Text>
           </TouchableOpacity>
@@ -408,8 +408,10 @@ const createStyles = (theme) => StyleSheet.create({
     color: theme.text,
   },
   centerContainer: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    padding: 30,
   },
   emptyText: {
     fontSize: 15,

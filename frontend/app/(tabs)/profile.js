@@ -129,13 +129,13 @@ export default function ProfileScreen() {
           <View style={styles.avatar}>
             <Ionicons name="person" size={40} color={theme.textMuted} />
           </View>
-          <Text style={styles.email}>Not signed in</Text>
+          <Text style={styles.email}> Not signed in </Text>
 
           <TouchableOpacity style={styles.primaryButton} onPress={() => router.push('/login')}>
             <Text style={styles.primaryButtonText}>Log In</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={() => router.push('/signup')}>
-            <Text style={styles.secondaryLink}>Sign Up</Text>
+            <Text style={styles.secondaryLink}> Sign Up </Text>
           </TouchableOpacity>
         </View>
       )}
