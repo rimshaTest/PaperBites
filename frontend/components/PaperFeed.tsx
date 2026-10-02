@@ -279,7 +279,7 @@ const FeedPaperCard: React.FC<{
               <TouchableOpacity style={styles.journalPill} onPress={goToJournal}>
                 <Text style={styles.journalText}>
                   {item.journal}
-                  {item.publication_type ? ` · ${item.publication_type === 'conference' ? 'Conference' : 'Journal'}` : ''}
+                  {item.publication_type ? ` · ${item.publication_type === 'conference' ? 'Conference' : 'Journal'}`+'  ' : ''}
                 </Text>
               </TouchableOpacity>
             )}
@@ -290,7 +290,7 @@ const FeedPaperCard: React.FC<{
               <Text
                 style={styles.statLabel}
               >
-                DOI: {item.doi}
+                DOI: {item.doi}  
               </Text>
             </View>
           )}
@@ -496,14 +496,18 @@ const PaperFeed: React.FC = () => {
   const fixedHeader = (
     <View pointerEvents="box-none" style={[styles.brandBar]}>
       <View style={[styles.brandBarSpacer, { paddingTop: BRAND_BAR_TOP_OFFSET }]} pointerEvents="none" />
-      <Text style={styles.brandText} pointerEvents="none">PaperBites</Text>
-      <TouchableOpacity
+      <View style={styles.brandBarContent}>
+        <Image source={require('../assets/icon.png')} style={styles.brandImage} />
+        <Text style={styles.brandText} pointerEvents="none">PaperBites</Text>
+        <TouchableOpacity
         style={styles.searchIconButton}
         onPress={() => router.push('/search')}
         hitSlop={10}
       >
         <Ionicons name="search" size={16} color={theme.accent} />
       </TouchableOpacity>
+      </View>
+      
     </View>
   );
 
@@ -621,8 +625,21 @@ const createStyles = (theme: any) => StyleSheet.create({
     padding: 10,
     backgroundColor: theme.surface,
   },
+  brandBarContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    paddingHorizontal: 16,
+    left: -15,
+  },
   brandBarSpacer: {
     width: 28,
+  },
+  brandImage: {
+    width: 50,
+    height: 50,
+    left:-20,
   },
   brandText: {
     flex: 1,
@@ -632,6 +649,7 @@ const createStyles = (theme: any) => StyleSheet.create({
     fontWeight: 'bold',
     color: theme.text,
     top: -5,
+    left: -15,
     textShadowColor: 'rgba(0, 0, 0, 0.5)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
@@ -777,13 +795,13 @@ const createStyles = (theme: any) => StyleSheet.create({
     color: theme.textMuted,
   },
   journalPill: {
-    flex: 1,
     backgroundColor: theme.surface,
     borderWidth: 1,
     borderColor: theme.border,
     borderRadius: 12,
     paddingHorizontal: 10,
     paddingVertical: 4,
+    flexShrink: 1,
   },
   journalText: {
     fontSize: 12,
@@ -791,8 +809,6 @@ const createStyles = (theme: any) => StyleSheet.create({
     textDecorationLine: 'underline',
   },
   metaRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: 12,
     marginBottom: 10,
   },

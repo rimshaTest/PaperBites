@@ -194,7 +194,7 @@ export default function PaperDetailScreen() {
 
         {paper.doi && (
           <View style={styles.infoRow}>
-            <Text style={styles.infoText}>DOI: {paper.doi}</Text>
+            <Text style={styles.infoText}>DOI: {paper.doi+'  '}</Text>
           </View>
         )}
 
