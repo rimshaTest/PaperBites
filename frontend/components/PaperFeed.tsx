@@ -43,6 +43,10 @@ import { playWhenReady } from '../utils/sound';
 // It stops short of true 0 (see BRAND_BAR_RESERVED_HEIGHT below) so the "PaperBites" brand bar
 // stays visible and tappable even when a card is fully expanded.
 const COLLAPSED_TOP_RATIO = 0.42;
+// At and above this window width the card switches from the phone-style swipe-up sheet to a
+// side-by-side layout: image on the left, details panel on the right.
+const WIDE_BREAKPOINT = 900;
+const WIDE_IMAGE_RATIO = 0.45;
 const ACTION_COLUMN_HEIGHT = 140; // three 40px buttons + gaps
 const BRAND_BAR_RESERVED_HEIGHT = 44;
 
@@ -86,6 +90,8 @@ const FeedPaperCard: React.FC<{
   // Live window size (not a module-level snapshot) so the layout follows browser resizes and rotation
   const { width, height } = useWindowDimensions();
   const tabBarHeight = useBottomTabBarHeight();
+  const isWide = width >= WIDE_BREAKPOINT;
+  const imageWidth = width * WIDE_IMAGE_RATIO;
   // Normally 42% down, but never so high that the card covers the action buttons stacked under
   // the header (relevant on short windows) - capped so the card stays usable.
   const COLLAPSED_TOP = Math.min(
@@ -192,12 +198,12 @@ const FeedPaperCard: React.FC<{
     });
 
   const animatedCardStyle = useAnimatedStyle(() => ({
-    top: top.value,
+    top: isWide ? expandedTop : top.value,
   }));
 
   return (
     <View style={[styles.card, { top: brandBarTop }]}>
-      <View style={styles.imageContainer}>
+      <View style={[styles.imageContainer, isWide && { right: undefined, width: imageWidth }]}>
         {item.image_url ? (
           <Image source={{ uri: item.image_url }} style={styles.image} contentFit="cover" />
         ) : (
@@ -252,7 +258,14 @@ const FeedPaperCard: React.FC<{
         </View>
       </View>
 
-      <Animated.View style={[styles.infoCard, animatedCardStyle]}>
+      <Animated.View
+        style={[
+          styles.infoCard,
+          animatedCardStyle,
+          isWide && { left: imageWidth, borderTopLeftRadius: 0, borderTopRightRadius: 0 },
+        ]}
+      >
+        {!isWide && (
         <GestureDetector gesture={panGesture}>
           <View style={styles.dragHandleArea}>
             <View style={styles.dragHandle} />
@@ -263,11 +276,16 @@ const FeedPaperCard: React.FC<{
             />
           </View>
         </GestureDetector>
+        )}
 
         <ScrollView
           style={styles.infoCardScroll}
-          contentContainerStyle={[styles.infoCardContent, { paddingBottom: 40 + tabBarHeight }]}
-          scrollEnabled={isExpanded}
+          contentContainerStyle={[
+            styles.infoCardContent,
+            { paddingBottom: 40 + tabBarHeight },
+            isWide && { paddingHorizontal: 40, paddingTop: 24 },
+          ]}
+          scrollEnabled={isExpanded || isWide}
           nestedScrollEnabled
           showsVerticalScrollIndicator={false}
         >
