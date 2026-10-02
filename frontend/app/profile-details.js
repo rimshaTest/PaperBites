@@ -18,6 +18,7 @@ import {
   validateInterests,
   validateOtherField,
   validateBirthDate,
+  validateDisabilityOther,
   daysInMonth,
   toIsoDate,
   fromIsoDate,
@@ -35,6 +36,16 @@ const MONTHS = [
 
 // Which Tier 2 questions get a card, and the consent key each one stores under
 const CONSENT_KEYS = ['birth_date', 'gender', 'sex', 'disability'];
+
+// Older saves stored {status, conditions}; fold those into the single checklist so they still show
+function readDisability(saved, opts) {
+  if (!saved) return { conditions: [], other: '' };
+  if (saved.status !== undefined) {
+    if (saved.status.startsWith('No')) return { conditions: [opts.disability_none], other: '' };
+    return { conditions: (saved.conditions || []).filter((c) => opts.disability_options.includes(c)), other: '' };
+  }
+  return { conditions: saved.conditions || [], other: saved.other || '' };
+}
 
 const EMPTY_TIER1 = {
   field_of_study: '',
@@ -65,7 +76,7 @@ export default function ProfileDetailsScreen() {
   const [gender, setGender] = useState('');
   const [sex, setSex] = useState('');
   const [birth, setBirth] = useState({ year: '', month: '', day: '' });
-  const [disability, setDisability] = useState({ status: '', conditions: [] });
+  const [disability, setDisability] = useState({ conditions: [], other: '' });
   const [tier2Consent, setTier2Consent] = useState({});
 
   const load = async () => {
@@ -83,10 +94,7 @@ export default function ProfileDetailsScreen() {
       setGender(fields.gender || '');
       setSex(fields.sex || '');
       setBirth(fromIsoDate(fields.birth_date));
-      setDisability({
-        status: fields.disability?.status || '',
-        conditions: fields.disability?.conditions || [],
-      });
+      setDisability(readDisability(fields.disability, opts));
       setTier2Consent(profile.tier2?.consent || {});
     } catch (err) {
       console.error('Failed to load profile:', err);
@@ -152,6 +160,10 @@ export default function ProfileDetailsScreen() {
     if (locationText.current.trim() && !tier1.location) found.location = 'Pick a place from the suggestions.';
     const birthError = validateBirthDate(birth, options?.min_birth_year ?? 1920);
     if (birthError) found.birth_date = birthError;
+    if (disability.conditions.includes(options?.disability_other)) {
+      const err = validateDisabilityOther(disability.other);
+      if (err) found.disability = err;
+    }
     return found;
   };
 
@@ -184,8 +196,8 @@ export default function ProfileDetailsScreen() {
           gender,
           sex,
           disability: {
-            status: disability.status,
-            conditions: disability.status === options.disability_yes ? disability.conditions : [],
+            conditions: disability.conditions,
+            other: disability.conditions.includes(options.disability_other) ? disability.other : '',
           },
         },
         Object.fromEntries(CONSENT_KEYS.filter((k) => tier2Consent[k]).map((k) => [k, tier2Consent[k]]))
@@ -368,7 +380,7 @@ export default function ProfileDetailsScreen() {
         <Text style={styles.sectionTitle}>Demographic Information</Text>
         <Text style={styles.sectionSubtitle}>
           Each question below has its own switch for using your answer to personalize your feed.
-          Every question includes a "prefer not to say" choice.
+          Every question is optional - leave it blank, or choose "prefer not to say" where offered.
         </Text>
 
         <View style={styles.tier2Card}>
@@ -455,33 +467,46 @@ export default function ProfileDetailsScreen() {
         <View style={styles.tier2Card}>
           <Text style={styles.label}>Disability</Text>
           <Select
-            title="Do you have a disability?"
-            placeholder="Select"
-            options={options.disability_statuses}
-            value={disability.status}
-            onChange={(v) => {
+            multiple
+            title="Select all that apply"
+            placeholder="Select all that apply"
+            options={options.disability_options}
+            value={disability.conditions}
+            onChange={(next) => {
               touched();
-              setDisability({ status: v, conditions: v === options.disability_yes ? disability.conditions : [] });
+              clearError('disability');
+              setDisability((prev) => {
+                const none = options.disability_none;
+                // "None" excludes everything else: picking it clears the rest, and picking
+                // anything else while it's selected drops it
+                const justPickedNone = next.includes(none) && !prev.conditions.includes(none);
+                const conditions = justPickedNone ? [none] : next.filter((c) => c !== none || next.length === 1);
+                return { ...prev, conditions };
+              });
             }}
-            error={errors.disability}
+            error={disability.conditions.includes(options.disability_other) ? undefined : errors.disability}
           />
-          {disability.status === options.disability_yes && (
-            <View style={styles.conditions}>
-              <Text style={styles.label}>Which apply? (optional)</Text>
-              <Select
-                multiple
-                title="Select all that apply"
-                placeholder="Select all that apply"
-                options={options.disability_conditions}
-                value={disability.conditions}
-                onChange={(v) => {
+          {disability.conditions.length > 0 && (
+            <Text style={styles.hint}>
+              {disability.conditions.map((c) => (c === options.disability_other ? 'Other' : c)).join('; ')}
+            </Text>
+          )}
+          {disability.conditions.includes(options.disability_other) && (
+            <View style={styles.otherInput}>
+              <TextInput
+                style={[styles.input, !!errors.disability && styles.inputError]}
+                value={disability.other}
+                onChangeText={(v) => {
                   touched();
-                  setDisability((prev) => ({ ...prev, conditions: v }));
+                  clearError('disability');
+                  setDisability((prev) => ({ ...prev, other: v }));
                 }}
+                placeholder="Describe your disability or condition"
+                placeholderTextColor={theme.textMuted}
+                maxLength={OTHER_FIELD_MAX_LENGTH}
+                accessibilityLabel="Other disability or condition"
               />
-              {disability.conditions.length > 0 && (
-                <Text style={styles.hint}>{disability.conditions.join('; ')}</Text>
-              )}
+              {!!errors.disability && <Text style={styles.errorText}>{errors.disability}</Text>}
             </View>
           )}
           {consentToggle('disability')}

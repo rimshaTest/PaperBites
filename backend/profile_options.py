@@ -5,8 +5,8 @@ validation in profile_validation.py can never drift apart. The one dynamic list 
 study - comes from categories.current_categories() instead of being listed here.
 
 Gender / sex / disability options follow the voluntary self-identification wording used on US
-job applications (EEO-1 style gender, and the OFCCP Form CC-305 disability question), each with
-a "prefer not to say" choice, since every field in this form is optional.
+job applications (EEO-1 style gender, and the OFCCP Form CC-305 disability list). Every field
+in this form is optional; gender and sex also offer "prefer not to say".
 """
 
 OTHER = "Other"
@@ -27,16 +27,12 @@ GENDERS = ["Man", "Woman", "Non-binary", PREFER_NOT_TO_SAY]
 
 SEXES = ["Male", "Female", "Intersex", PREFER_NOT_TO_SAY]
 
-# Form CC-305's three answers to "do you have a disability?"
-DISABILITY_STATUSES = [
-    "Yes, I have a disability, or have had one in the past",
-    "No, I do not have a disability and have not had one in the past",
-    "I do not want to answer",
-]
-DISABILITY_YES = DISABILITY_STATUSES[0]
-
-# The condition checklist from Form CC-305, shown only when the answer above is "Yes". Mental,
-# physical and chronic conditions are one combined list, as on the form.
+# One checklist, as on the voluntary self-identification form: the condition list from Form
+# CC-305 (mental, physical and chronic conditions together), plus "None" and "Other" (which
+# takes a free-text description). Leaving it empty means "not answered". "None" can't be
+# combined with other choices.
+DISABILITY_NONE = "None"
+DISABILITY_OTHER = OTHER
 DISABILITY_CONDITIONS = [
     "Autism",
     "Autoimmune disorder (e.g. lupus, fibromyalgia, rheumatoid arthritis, HIV/AIDS)",
@@ -61,7 +57,8 @@ DISABILITY_CONDITIONS = [
     "Short stature (dwarfism)",
     "Traumatic brain injury",
     "Wheelchair user for mobility",
-    "Another disability or condition not listed",
 ]
+# What the form shows, in order
+DISABILITY_OPTIONS = [DISABILITY_NONE] + DISABILITY_CONDITIONS + [DISABILITY_OTHER]
 
 MIN_BIRTH_YEAR = 1920

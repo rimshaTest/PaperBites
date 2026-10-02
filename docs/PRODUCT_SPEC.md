@@ -45,7 +45,8 @@ All fields optional, collected starting in Phase 1. Every field is entered throu
 - **General interests**: free text, comma-separated, letters and numbers only (max 10), screened for SQL-style phrases, gibberish and profanity.
 - **Location**: autocomplete over cities, states/regions and countries; the user must pick a suggestion, and doesn't need to give every part.
 - **Date of birth**: month / day / year dropdowns, from 1920.
-- **Gender, sex, disability**: the standard voluntary self-identification options used on job applications, each with "prefer not to say". All disabilities and chronic conditions are one combined question with a checklist, as on the standard form.
+- **Gender, sex**: the standard voluntary self-identification options used on job applications, each with "prefer not to say".
+- **Disability**: one combined checklist of conditions, as on the standard form (mental, physical and chronic conditions together), plus **None** (exclusive) and **Other** (with a short description). Leaving it blank means not answered.
 
 Profile-driven personalization is labeled Experimental alongside Simplest itself.
 

@@ -345,9 +345,9 @@ async def get_profile_options(request):
         "education_levels": profile_options.EDUCATION_LEVELS,
         "genders": profile_options.GENDERS,
         "sexes": profile_options.SEXES,
-        "disability_statuses": profile_options.DISABILITY_STATUSES,
-        "disability_yes": profile_options.DISABILITY_YES,
-        "disability_conditions": profile_options.DISABILITY_CONDITIONS,
+        "disability_options": profile_options.DISABILITY_OPTIONS,
+        "disability_none": profile_options.DISABILITY_NONE,
+        "disability_other": profile_options.DISABILITY_OTHER,
         "min_birth_year": profile_options.MIN_BIRTH_YEAR,
     })
 
@@ -359,7 +359,11 @@ async def autocomplete_places(request):
         limit = int(request.query_params.get("limit", "8"))
     except ValueError:
         limit = 8
-    return JSONResponse({"places": places.search(query, limit)})
+    try:
+        return JSONResponse({"places": places.search(query, limit)})
+    except places.PlacesUnavailable as e:
+        print(f"Place autocomplete unavailable: {e}")
+        return JSONResponse({"detail": "Location suggestions are unavailable right now."}, status_code=503)
 
 
 async def admin_field_of_study_report(request):

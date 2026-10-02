@@ -60,14 +60,27 @@ export function validateInterests(value) {
   return textQualityError(items.join(', '), 'Interests');
 }
 
-export function validateOtherField(value) {
+export function validateOtherField(value, emptyMessage = 'Tell us your field of study.') {
   const text = (value || '').replace(/\s+/g, ' ').trim();
-  if (!text) return 'Tell us your field of study.';
+  if (!text) return emptyMessage;
   if (text.length < ITEM_MIN_LENGTH || text.length > OTHER_FIELD_MAX_LENGTH) {
     return `Use ${ITEM_MIN_LENGTH}-${OTHER_FIELD_MAX_LENGTH} characters.`;
   }
   if (![...text].every((c) => isLetter(c) || c === ' ')) return 'Use letters and spaces only.';
   return textQualityError(text, 'Field of study');
+}
+
+/** The free-text description for "Other" in the disability checklist: letters, spaces, hyphens and apostrophes. */
+export function validateDisabilityOther(value) {
+  const text = (value || '').replace(/\s+/g, ' ').trim();
+  if (!text) return 'Describe your disability or condition.';
+  if (text.length < ITEM_MIN_LENGTH || text.length > OTHER_FIELD_MAX_LENGTH) {
+    return `Use ${ITEM_MIN_LENGTH}-${OTHER_FIELD_MAX_LENGTH} characters.`;
+  }
+  if (![...text].every((c) => isLetter(c) || ' -\''.includes(c))) {
+    return 'Use letters, spaces, hyphens and apostrophes only.';
+  }
+  return textQualityError(text, 'This answer');
 }
 
 /** Letters (any script), spaces, and the punctuation real place names use. */

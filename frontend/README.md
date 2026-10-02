@@ -125,7 +125,7 @@ Then open in Expo Go, an iOS/Android simulator, or a browser.
   "Other" with a free-text box), education level (dropdown), general interests (comma-separated,
   letters and numbers only), and location (autocomplete over cities, regions and countries - you
   must pick a suggestion). Tier 2: date of birth (month / day / year dropdowns from 1920), gender,
-  sex, and one combined disability question with the condition checklist - each with its own
+  sex, and one combined disability checklist (conditions plus "None" and "Other") - each with its own
   "Personalize my feed with this" switch. Dropdowns use `components/Select.js` and the location box
   `components/PlaceAutocomplete.js`; client-side rules live in `utils/profileValidation.js`.
 - **Settings > Manage Feed > Interests**: pick topics to hard-filter the Home feed to. Also

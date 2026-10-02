@@ -147,14 +147,16 @@ All routes are under `/api`. Auth-required routes take `Authorization: Bearer <t
   question and condition checklist. The app builds its dropdowns from this, so nothing is hardcoded
   there.
 - `GET /places/autocomplete?q=&limit=` (no auth) - city / region / country suggestions from an
-  offline index (`places.py`: `geonamescache` + `pycountry`; no external API).
+  offline index (`places.py`: `geonamescache` + `pycountry`; no external API). Answers 503 if those
+  packages aren't installed (`pip install -r requirements.txt`).
 - `PUT /profile/tier1` `{fields}` - cache-safe fields: `field_of_study` (a current category or
   "Other"), `field_of_study_other` (required when "Other"), `education_level`, `general_interests`
   (comma-separated; letters, numbers, spaces and commas only), `location` (must be a place from the
   autocomplete index; `location_region` / `location_country` are derived server-side).
 - `PUT /profile/tier2` `{fields, consent}` - sensitive-context fields: `birth_date` (YYYY-MM-DD,
-  1920 or later, not in the future), `gender`, `sex`, `disability` (`{status, conditions}`, the
-  conditions only kept when the status is "Yes"), `location_precise`. Each field has its own
+  1920 or later, not in the future), `gender`, `sex`, `disability` (`{conditions, other}`: a subset of the
+  checklist from `/profile/options`, which includes "None" - exclusive - and "Other", which requires
+  the `other` description), `location_precise`. Each field has its own
   `used_for_personalization`/`used_for_feed_relevance` consent flags. Every Tier 2 read/write is
   appended to a separate audit log. The old `age`, `mental_disabilities`, `physical_disabilities`
   and `chronic_illnesses` fields are retired (no longer writable).

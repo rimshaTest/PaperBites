@@ -15,6 +15,10 @@ MAX_QUERY_LENGTH = 60
 # cities and countries but above small towns when matches tie on how the name matches.
 REGION_POP = 1_000_000
 
+class PlacesUnavailable(RuntimeError):
+    """The place-data packages aren't installed in this environment."""
+
+
 _index: Optional[List[Dict]] = None
 _by_label: Dict[str, Dict] = {}
 
@@ -31,8 +35,13 @@ def is_alphabetic_label(text: str) -> bool:
 
 
 def _build_index() -> List[Dict]:
-    import geonamescache
-    import pycountry
+    try:
+        import geonamescache
+        import pycountry
+    except ImportError as e:
+        raise PlacesUnavailable(
+            f"{e}. Install the backend requirements: pip install -r requirements.txt"
+        ) from e
 
     gc = geonamescache.GeonamesCache()
     entries: List[Dict] = []

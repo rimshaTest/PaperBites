@@ -159,7 +159,13 @@ def validate_location(value: Any) -> Tuple[Optional[Dict[str, Optional[str]]], O
         return {"label": "", "city": None, "region": None, "country": None}, None
     if not isinstance(value, str) or not places.is_alphabetic_label(value):
         return None, "Use letters only for your location."
-    place = places.resolve(value)
+    try:
+        place = places.resolve(value)
+    except places.PlacesUnavailable as e:
+        # Missing optional place data shouldn't block saving a profile: accept the (already
+        # letters-only) text as typed and log it, rather than failing the whole save.
+        print(f"Place data unavailable, accepting location unverified: {e}")
+        return {"label": value.strip(), "city": None, "region": None, "country": None}, None
     if not place:
         return None, "Pick a place from the suggestions."
     return place, None
@@ -182,24 +188,39 @@ def validate_birth_date(value: Any) -> Tuple[Optional[str], Optional[str]]:
 
 
 def validate_disability(value: Any) -> Tuple[Optional[Dict], Optional[str]]:
-    """{status, conditions}: conditions only apply (and are only kept) when status is "Yes"."""
+    """{conditions: [...], other: "..."}: a subset of the checklist (which includes "None" and
+    "Other"). "None" can't be combined with anything else; "Other" requires a description."""
+    empty = {"conditions": [], "other": ""}
     if value in (None, "", {}):
-        return {"status": "", "conditions": []}, None
+        return empty, None
     if not isinstance(value, dict):
-        return None, "Choose a valid disability response."
-    status = value.get("status") or ""
+        return None, "Choose from the list."
     conditions = value.get("conditions") or []
-    if status and status not in opts.DISABILITY_STATUSES:
-        return None, "Choose one of the listed options."
+    other = value.get("other") or ""
     if not isinstance(conditions, list) or not all(isinstance(c, str) for c in conditions):
-        return None, "Choose conditions from the list."
-    if status != opts.DISABILITY_YES:
-        return {"status": status, "conditions": []}, None
-    unknown = [c for c in conditions if c not in opts.DISABILITY_CONDITIONS]
-    if unknown:
-        return None, "Choose conditions from the list."
-    deduped = [c for c in opts.DISABILITY_CONDITIONS if c in set(conditions)]
-    return {"status": status, "conditions": deduped}, None
+        return None, "Choose from the list."
+    if any(c not in opts.DISABILITY_OPTIONS for c in conditions):
+        return None, "Choose from the list."
+
+    chosen = set(conditions)
+    if opts.DISABILITY_NONE in chosen and len(chosen) > 1:
+        return None, '"None" can\'t be combined with other choices.'
+
+    cleaned_other = ""
+    if opts.DISABILITY_OTHER in chosen:
+        cleaned_other = re.sub(r"\s+", " ", other).strip() if isinstance(other, str) else ""
+        if not cleaned_other:
+            return None, "Describe your disability or condition."
+        if not (INTEREST_MIN_LENGTH <= len(cleaned_other) <= OTHER_FIELD_MAX_LENGTH):
+            return None, f"Use {INTEREST_MIN_LENGTH}-{OTHER_FIELD_MAX_LENGTH} characters."
+        if not all(c.isalpha() or c in " -'" for c in cleaned_other):
+            return None, "Use letters, spaces, hyphens and apostrophes only."
+        problem = _check_text_quality(cleaned_other, "This answer")
+        if problem:
+            return None, problem
+
+    ordered = [o for o in opts.DISABILITY_OPTIONS if o in chosen]  # canonical order, deduped
+    return {"conditions": ordered, "other": cleaned_other}, None
 
 
 def validate_tier1(fields: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, str]]:

@@ -128,11 +128,31 @@ def test_tier2_choices():
     assert v.validate_tier2({"gender": "robot"})[1]
 
 
-def test_disability_conditions_only_kept_for_yes():
-    yes = opts.DISABILITY_YES
-    cleaned, err = v.validate_disability({"status": yes, "conditions": ["Diabetes", "Autism"]})
-    assert err is None and cleaned["conditions"] == ["Autism", "Diabetes"]  # canonical order
-    cleaned, err = v.validate_disability({"status": opts.DISABILITY_STATUSES[1], "conditions": ["Diabetes"]})
-    assert err is None and cleaned["conditions"] == []
-    assert v.validate_disability({"status": yes, "conditions": ["Made up"]})[1]
-    assert v.validate_disability({"status": "maybe"})[1]
+def test_disability_checklist():
+    cleaned, err = v.validate_disability({"conditions": ["Diabetes", "Autism"]})
+    assert err is None and cleaned == {"conditions": ["Autism", "Diabetes"], "other": ""}  # canonical order
+    assert v.validate_disability({"conditions": [opts.DISABILITY_NONE]})[1] is None
+    assert v.validate_disability({})[0] == {"conditions": [], "other": ""}
+    assert v.validate_disability({"conditions": ["Made up"]})[1]
+
+
+def test_disability_none_is_exclusive():
+    assert v.validate_disability({"conditions": [opts.DISABILITY_NONE, "Diabetes"]})[1]
+
+
+def test_disability_other_needs_clean_text():
+    other = opts.DISABILITY_OTHER
+    cleaned, err = v.validate_disability({"conditions": [other, "Diabetes"], "other": "  Chronic  fatigue "})
+    assert err is None and cleaned["other"] == "Chronic fatigue"
+    for bad in ["", "x", "drop table users", "fuck", "asdfghjk", "abc123"]:
+        assert v.validate_disability({"conditions": [other], "other": bad})[1], bad
+    # text is dropped when Other isn't chosen
+    assert v.validate_disability({"conditions": ["Diabetes"], "other": "ignored"})[0]["other"] == ""
+
+
+def test_location_accepted_unverified_when_place_data_missing(monkeypatch):
+    def boom(_label):
+        raise places.PlacesUnavailable("no geonamescache")
+    monkeypatch.setattr(places, "resolve", boom)
+    place, err = v.validate_location("Seattle")
+    assert err is None and place["label"] == "Seattle"

@@ -45,7 +45,7 @@ def test_set_tier1_unknown_field():
 
 def test_set_tier2_and_retired_fields():
     out = profile_store.set_tier2("u1", {"birth_date": "1999-05-17", "gender": "Woman",
-        "disability": {"status": opts.DISABILITY_YES, "conditions": ["Diabetes"]}},
+        "disability": {"conditions": ["Diabetes"]}},
         {"disability": {"used_for_feed_relevance": True}})
     assert out["fields"]["disability"]["conditions"] == ["Diabetes"]
     assert out["consent"]["disability"]["used_for_feed_relevance"] is True

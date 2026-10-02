@@ -23,6 +23,8 @@ export default function PlaceAutocomplete({ value, onChange, onTextChange, error
   const [suggestions, setSuggestions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [typedError, setTypedError] = useState(null);
+  // Set when the suggestions service can't be reached; the text is then accepted as typed
+  const [unavailable, setUnavailable] = useState(false);
   const requestId = useRef(0);
 
   // Show the saved place when it loads in from outside. Only non-empty values sync: typing
@@ -37,8 +39,10 @@ export default function PlaceAutocomplete({ value, onChange, onTextChange, error
   const handleChange = (next) => {
     setText(next);
     if (onTextChange) onTextChange(next);
-    onChange(''); // typing again un-picks the previous place until a new one is chosen
     setTypedError(null);
+    // Typing again un-picks the previous place until a new one is chosen - unless suggestions
+    // are down, in which case the typed text itself is the value.
+    onChange(unavailable && isAlphabeticPlace(next) ? next.trim() : '');
 
     if (next.trim().length < 2) {
       setSuggestions([]);
@@ -58,7 +62,11 @@ export default function PlaceAutocomplete({ value, onChange, onTextChange, error
         const places = await searchPlaces(next.trim());
         if (id === requestId.current) setSuggestions(places);
       } catch (err) {
-        if (id === requestId.current) setSuggestions([]);
+        if (id === requestId.current) {
+          setSuggestions([]);
+          setUnavailable(true);
+          onChange(isAlphabeticPlace(next) ? next.trim() : '');
+        }
       } finally {
         if (id === requestId.current) setLoading(false);
       }
@@ -74,7 +82,7 @@ export default function PlaceAutocomplete({ value, onChange, onTextChange, error
     onChange(place.label);
   };
 
-  const showUnpicked = !!text.trim() && !value && !loading && suggestions.length === 0 && !typedError;
+  const showUnpicked = !unavailable && !!text.trim() && !value && !loading && suggestions.length === 0 && !typedError;
   const message = error || typedError || (showUnpicked && text.trim().length >= 2 ? 'Pick a place from the suggestions.' : null);
 
   return (
@@ -94,6 +102,9 @@ export default function PlaceAutocomplete({ value, onChange, onTextChange, error
         {loading && <ActivityIndicator style={styles.spinner} size="small" color={theme.textMuted} />}
       </View>
       {!!message && <Text style={styles.errorText}>{message}</Text>}
+      {unavailable && !message && (
+        <Text style={styles.noteText}>Suggestions are unavailable right now - your text will be saved as typed.</Text>
+      )}
       {suggestions.length > 0 && (
         <View style={styles.list}>
           {suggestions.map((place) => (
@@ -129,6 +140,7 @@ const createStyles = (theme) =>
     inputError: { borderColor: theme.danger },
     spinner: { position: 'absolute', right: 12, top: 12 },
     errorText: { color: theme.danger, fontSize: 12, marginTop: 4 },
+    noteText: { color: theme.textMuted, fontSize: 12, marginTop: 4 },
     list: {
       marginTop: 6,
       borderWidth: 1.5,
