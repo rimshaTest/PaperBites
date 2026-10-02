@@ -150,16 +150,13 @@ const createStyles = (theme) => StyleSheet.create({
     backgroundColor: theme.background,
   },
   // The padding lives inside the scroll area (not on the screen container) so content scrolls
-  // all the way to the tab bar instead of being clipped 20px above it. Capped width keeps it
-  // readable on wide screens.
+  // all the way to the tab bar instead of being clipped 20px above it. Spans the full width,
+  // like the other tab screens.
   scroll: {
     flex: 1,
   },
   scrollContent: {
     padding: 20,
-    width: '100%',
-    maxWidth: 720,
-    alignSelf: 'center',
   },
   headerTitle: {
     fontFamily: theme.serif,
