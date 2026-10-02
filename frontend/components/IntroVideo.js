@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useRef } from 'react';
-import { View, Image, StyleSheet } from 'react-native';
+import { View, Image, StyleSheet, useWindowDimensions } from 'react-native';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { useTheme } from '../hooks/useTheme';
 
-const VIDEO_SOURCE = require('../assets/splash-video.mp4');
+const PORTRAIT_VIDEO = require('../assets/splash-video.mp4');
+const LANDSCAPE_VIDEO = require('../assets/splash-video-landscape.mp4');
 const POSTER_SOURCE = require('../assets/splash-static.png');
 
 // Safety net: if the video never fires an end/error event (a corrupt file, a platform quirk),
@@ -19,6 +20,10 @@ export default function IntroVideo({ onFinish }) {
   const { theme } = useTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const finishedRef = useRef(false);
+  // Phones (portrait) get the tall cut; laptops/tablets (landscape) get the wide one. Picked once
+  // at mount - the intro is short, so a rotation mid-playback isn't worth swapping sources for.
+  const { width, height } = useWindowDimensions();
+  const videoSource = useRef(width > height ? LANDSCAPE_VIDEO : PORTRAIT_VIDEO).current;
 
   const finish = () => {
     if (finishedRef.current) return;
@@ -26,7 +31,7 @@ export default function IntroVideo({ onFinish }) {
     onFinish();
   };
 
-  const player = useVideoPlayer(VIDEO_SOURCE, (p) => {
+  const player = useVideoPlayer(videoSource, (p) => {
     p.loop = false;
     p.play();
   });
@@ -48,8 +53,8 @@ export default function IntroVideo({ onFinish }) {
 
   return (
     <View style={styles.container}>
-      <Image source={POSTER_SOURCE} style={StyleSheet.absoluteFill} resizeMode="contain" />
-      <VideoView player={player} style={styles.video} contentFit="contain" nativeControls={false} />
+      <Image source={POSTER_SOURCE} style={StyleSheet.absoluteFill} resizeMode="stretch" />
+      <VideoView player={player} style={styles.video} contentFit="fill" nativeControls={false} />
     </View>
   );
 }
