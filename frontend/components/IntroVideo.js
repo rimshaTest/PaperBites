@@ -23,7 +23,8 @@ export default function IntroVideo({ onFinish }) {
   // Phones (portrait) get the tall cut; laptops/tablets (landscape) get the wide one. Picked once
   // at mount - the intro is short, so a rotation mid-playback isn't worth swapping sources for.
   const { width, height } = useWindowDimensions();
-  const videoSource = useRef(width > height ? LANDSCAPE_VIDEO : PORTRAIT_VIDEO).current;
+  const isLandscape = useRef(width > height).current;
+  const videoSource = isLandscape ? LANDSCAPE_VIDEO : PORTRAIT_VIDEO;
 
   const finish = () => {
     if (finishedRef.current) return;
@@ -39,7 +40,10 @@ export default function IntroVideo({ onFinish }) {
   useEffect(() => {
     const endSubscription = player.addListener('playToEnd', finish);
     const statusSubscription = player.addListener('statusChange', (event) => {
-      if (event.status === 'error') finish();
+      if (event.status === 'error') {
+        console.warn('Intro video failed to play:', event.error?.message ?? event.error);
+        finish();
+      }
     });
     const timeout = setTimeout(finish, MAX_INTRO_MS);
 
@@ -53,8 +57,17 @@ export default function IntroVideo({ onFinish }) {
 
   return (
     <View style={styles.container}>
-      <Image source={POSTER_SOURCE} style={StyleSheet.absoluteFill} resizeMode="stretch" />
-      <VideoView player={player} style={styles.video} contentFit="fill" nativeControls={false} />
+      {/* The poster is only a portrait still, so it's skipped on wide screens rather than stretched */}
+      {!isLandscape && (
+        <Image source={POSTER_SOURCE} style={StyleSheet.absoluteFill} resizeMode="stretch" />
+      )}
+      {/* Explicit pixel size (not flex) so the web player can't shrink to the video's own aspect ratio */}
+      <VideoView
+        player={player}
+        style={{ position: 'absolute', top: 0, left: 0, width, height }}
+        contentFit="fill"
+        nativeControls={false}
+      />
     </View>
   );
 }
@@ -65,8 +78,5 @@ const createStyles = (theme) => StyleSheet.create({
     backgroundColor: theme.background,
     zIndex: 999,
     elevation: 999,
-  },
-  video: {
-    flex: 1,
   },
 });
