@@ -8,13 +8,18 @@ detailed history).
 
 ## What's actually built
 
-- **Home feed**: full-screen paging cards (`components/PaperFeed.tsx`) - drag the info panel up
-  to expand it and read the full description; paginated with pull-to-refresh; a whoosh sound
-  plays right as you release each swipe, and a one-time logo intro video plays on cold app start.
+- **Explore feed**: paging cards (`components/PaperFeed.tsx`) - on phones, drag the info panel up
+  to read the full description; on wide screens (900px+) the image and details sit side by side.
+  Paginated with pull-to-refresh; a whoosh sound plays on each swipe, and a one-time logo intro
+  video (portrait or landscape version) plays on cold app start.
+- **Reading engagement**: likes, a "Have you read this?" confirmation, milestone badges, a
+  reading-streak level, achievement pop-ups, and a "Trending" badge - all stored per account on
+  the server.
+- **Light/dark theme** and a responsive layout across phone and laptop screens.
 - **Visualize tab**: a pannable bubble map (`frontend/app/(tabs)/visualizations.js`) of every
   paper you've clicked "View Original Paper" for, connected by cosine similarity of their stored
-  embeddings (`GET /api/papers/viewed/graph`) - not by shared category tags. Replaced the old
-  middle Saved tab; Saved is now reached from Profile instead.
+  embeddings (`GET /api/papers/viewed/graph`) - not by shared category tags - with a live physics
+  simulation, draggable bubbles, and a legend.
 - **Papers pipeline**: `backend/cli.py fetch-latest` pulls recent open-access papers from
   Semantic Scholar, OpenAlex, and Crossref (with Unpaywall resolving a real open-access link for
   Crossref results), dedupes them, generates a plain-English description (Gemini, when
@@ -35,7 +40,7 @@ detailed history).
 - **Card images**: a Pexels stock photo keyed on the paper's title, not AI/user-generated.
 - **Add a paper by citation, URL, or photo**: paste a citation (MLA, APA, or any other style), a
   direct link to the paper's page (e.g. an open-access journal article), or - experimentally -
-  photograph a title page/poster or pick a screenshot, from Saved > "+" (`frontend/app/add-paper.js`).
+  photograph a title page/poster or pick a screenshot, from the center "+" tab (`frontend/app/add-paper.js`).
   A citation is fuzzy-matched against Crossref; a URL is scraped for its `citation_*` meta tags to
   find a DOI (or embedded directly in the URL itself), falling back to a bibliographic search on
   the page's title/authors if no DOI turns up anywhere; a photo is read by Gemini vision into a

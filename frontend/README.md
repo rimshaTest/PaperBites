@@ -11,10 +11,11 @@ logo intro played on cold app start (`components/IntroVideo.js`).
 frontend/
 ├── app/                          # Screens (Expo Router - file-based routing)
 │   ├── (tabs)/
-│   │   ├── index.js              # Home tab - renders PaperFeed
+│   │   ├── index.js              # Explore tab - renders PaperFeed
 │   │   ├── visualizations.js     # Visualize tab - the paper-relationship bubble map
-│   │   ├── profile.js            # Profile tab
-│   │   ├── saved.js              # Saved papers (not a tab itself - reachable from Profile)
+│   │   ├── add.js                # Center "+" tab - add a paper
+│   │   ├── saved.js              # Saved tab (two columns on wide screens)
+│   │   ├── profile.js            # Profile tab - stats, milestones, streak badge
 │   │   └── interests.tsx         # Interests editor (not a tab itself - reachable from
 │   │                              # Profile > Settings > Manage Feed)
 │   ├── author/[id].js            # Every paper by one author
@@ -23,9 +24,9 @@ frontend/
 │   │                              # records the click for the Visualize tab's bubble map
 │   ├── chat/[id].js              # Per-paper chat - NOT wired in, see "Known gaps" below
 │   ├── login.js / signup.js      # Auth screens
-│   ├── add-paper.js              # Add-a-paper modal, reached from Saved > "+" - citation, URL,
+│   ├── add-paper.js              # Add-a-paper modal, reached from the center "+" tab - citation, URL,
 │   │                              # or (experimental) a camera/screenshot photo
-│   ├── search.js                 # Semantic paper search modal, reached from Home's search icon
+│   ├── search.js                 # Semantic paper search modal, reached from the feed's search icon
 │   ├── interests-onboarding.js   # One-time modal shown right after signup
 │   ├── profile-details.js        # Tier 1/2 profile fields with per-field consent toggles
 │   ├── settings.js               # Settings > Manage Feed > Interests
@@ -35,16 +36,26 @@ frontend/
 │   ├── PaperFeed.tsx             # The actual Home feed: full-screen paging cards, drag the
 │   │                              # info panel up to expand and read the full description;
 │   │                              # plays a whoosh sound on each page-to-page swipe
-│   ├── PaperCard.js              # Simpler list-row card, used by the Saved tab and Search
-│   └── IntroVideo.js             # Full-screen logo intro (assets/splash-video.mp4), played once
-│                                   # on cold app start, then never shown again that session
+│   ├── PaperCard.js              # List-row card, used by the Saved tab and Search; fills its
+│   │                              # parent's width (no fixed width)
+│   ├── AchievementOverlay.js     # Celebration pop-up on milestone / streak-level events
+│   └── IntroVideo.js             # Full-screen logo intro, played once on cold app start. Plays
+│                                   # splash-video.mp4 on portrait screens and
+│                                   # splash-video-landscape.mp4 on landscape ones, stretched to fill
 ├── hooks/
 │   ├── useAuth.js                # Session context (signup/login/logout, persisted + re-
 │   │                              # validated against the backend on mount)
+│   ├── useTheme.js               # Light/dark theme (follows the OS, pinnable in Settings)
+│   ├── useLike.js / useConfirmRead.js / useAchievements.js  # likes, confirmed reads, pop-ups
 │   └── useStorage.js             # useFavoritePapers (account-scoped bookmarks) - also plays
 │                                   # the bookmark confirm "ding" (assets/sounds/bookmark-ding.wav)
+├── constants/
+│   ├── theme.js                  # lightTheme / darkTheme color tokens - the single source of
+│   │                              # colors; no hardcoded hex values in components
+│   └── milestones.js             # Mirrors backend MILESTONES (1, 10, 25, 50, 100, 200)
 ├── assets/
-│   ├── splash-video.mp4          # Logo intro animation (played by IntroVideo.js)
+│   ├── splash-video.mp4          # Portrait logo intro (IntroVideo.js)
+│   ├── splash-video-landscape.mp4 # Landscape logo intro
 │   ├── splash-static.png         # Poster frame shown while the video loads
 │   └── sounds/
 │       ├── bookmark-ding.wav     # Played once per bookmark add (not remove)
@@ -81,21 +92,27 @@ Then open in Expo Go, an iOS/Android simulator, or a browser.
 
 ## Screens
 
-- **Home**: `PaperFeed` - swipe/page vertically between papers; drag a card's info panel up to
-  expand it full-screen and read the description; pull to refresh; paginates automatically. The
-  search icon next to the "PaperBites" title opens **Search** (`search.js`): free-text semantic
+- **Explore** (the feed): `PaperFeed` - under 900px wide, swipe vertically between papers and
+  drag a card's info panel up to expand it; at 900px and wider the image sits on the left and the
+  details in a scrolling panel on the right. Pull to refresh; paginates automatically; like,
+  bookmark and share buttons sit over the image, and a "Trending" badge marks papers several
+  people read this week. The search icon next to the "PaperBites" title opens **Search** (`search.js`): free-text semantic
   search over papers, ranked by meaning (Gemini embeddings) rather than exact keyword match.
 - **Visualize**: a pannable bubble map (`visualizations.js`, `react-native-svg` + `d3-force`) of
   every paper you've clicked "View Original Paper" for on the paper detail screen - connected to
   each other by cosine similarity of their stored embeddings (backend's `paper/embeddings.py`),
   not by shared category tags. Two economics papers you've read cluster together; a paper that
-  spans economics and biology bridges both clusters. The layout is computed once per load (d3-force
-  run to convergence, not a live simulation) and rendered as static SVG you drag around; tap a
-  bubble to open that paper. Empty until you've viewed a few papers' originals.
-- **Profile**: shows the signed-in account, with links to Saved, Profile Details, and Settings,
-  or a login/signup prompt when signed out.
-- **Saved**: bookmarked papers, account-scoped (requires login), reached from Profile > Saved
-  (not a tab anymore). The "+" button opens **Add a Paper**: paste a citation (MLA, APA, or any
+  spans economics and biology bridges both clusters. Bubbles run a live physics simulation
+  (d3-force: springs, collisions) that you can drag individually; drag the background to pan, tap
+  a bubble to open the paper. Solid lines = similar content, dashed = shared category; bubble
+  color = first category. A collapsible legend explains this. Empty until you've confirmed
+  reading a few papers.
+- **Profile**: the signed-in account, reading streak badge, papers-read count, milestone
+  badges, favorite topics, and links to Profile Details and Settings - or a login/signup prompt
+  when signed out. Streak and stats come from the server per account, so they match across
+  devices pointed at the same backend.
+- **Saved**: bookmarked papers, account-scoped (requires login); a tab again. The center "+"
+  tab opens **Add a Paper**: paste a citation (MLA, APA, or any
   other style) or a link to the paper's page, tap the right match, and it's saved and
   auto-bookmarked - Gemini picks the category itself from the paper's text, same as it does for
   the paper's summary. If nothing matches, "Submit for manual review" queues it for a human to
@@ -111,7 +128,17 @@ Then open in Expo Go, an iOS/Android simulator, or a browser.
 - **Author / Journal pages**: reached by tapping an author or journal name anywhere in the app.
 - **Paper detail**: full description, DOI, categories, and a link to the original paper.
 
+## Layout & theming conventions
+
+- Read the window size with `useWindowDimensions()`, never `Dimensions.get` at module load, so
+  layouts follow browser resizes and rotation. The wide-screen breakpoint is 900px.
+- Read colors from `useTheme()`; add a token to `constants/theme.js` instead of hardcoding hex.
+- Tab screens use `SafeAreaView edges={['top']}` and put bottom padding inside their scroll
+  area so content clears the raised center button (and, on iOS, the floating tab bar).
+
 ## Known gaps
+
+- The Visualize canvas size is computed once at load, so it doesn't resize with the window.
 
 - `app/chat/[id].js` exists but isn't registered in `app/_layout.tsx`'s Stack, so it's
   unreachable - and it imports `chatAboutPaper` from `services/api.js`, which doesn't exist

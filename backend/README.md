@@ -113,7 +113,21 @@ All routes are under `/api`. Auth-required routes take `Authorization: Bearer <t
 - `POST /auth/signup` `{email, password}` → `{token, user}`
 - `POST /auth/login` `{email, password}` → `{token, user}`
 - `POST /auth/logout` (auth required)
+- `POST /auth/forgot-password` / `POST /auth/reset-password` - emailed reset code flow
 - `GET /auth/me` (auth required) → `{user}`
+
+**Reading engagement** (auth required unless noted)
+- `POST /papers/{paper_id}/view` - record a confirmed read (counted once per user per paper;
+  feeds milestones and the streak).
+- `POST /papers/{paper_id}/like` / `DELETE /papers/{paper_id}/like` - like or unlike a paper.
+  `GET /papers/{paper_id}` returns `is_liked` only when called with the auth token.
+- `GET /stats/reading` → `{total_read, by_category, milestones_reached, streak: {level, label}}`.
+  Streak levels (`streaks.py`): The Practical Thinker → The Fact Collector → The Intellectual →
+  The Scholar; +1 per consecutive read day, level up at +2, a single missed day is forgiven, two
+  in a row cost a level. State is per user in MongoDB and "today" is the server's local date.
+- `GET /papers` also tags a paper with `trending_category` when it has at least 2 confirmed
+  reads in the past 7 days (one trending paper per category).
+- `GET /papers/viewed/graph` - the user's read papers plus similarity edges for the Visualize tab.
 
 **Bookmarks** (auth required)
 - `GET /bookmarks` - full paper objects for everything the user has bookmarked.
