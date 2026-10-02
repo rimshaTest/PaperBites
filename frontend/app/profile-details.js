@@ -319,9 +319,6 @@ export default function ProfileDetailsScreen() {
               {!!errors.field_of_study_other && (
                 <Text style={styles.errorText}>{errors.field_of_study_other}</Text>
               )}
-              <Text style={styles.hint}>
-                If enough people tell us the same field, we may start covering it in the feed.
-              </Text>
             </View>
           )}
         </View>
@@ -374,13 +371,11 @@ export default function ProfileDetailsScreen() {
             error={errors.location}
             placeholder="Start typing a city, state or country"
           />
-          <Text style={styles.hint}>You don't have to give every part - a country is enough.</Text>
         </View>
 
         <Text style={styles.sectionTitle}>Demographic Information</Text>
         <Text style={styles.sectionSubtitle}>
           Each question below has its own switch for using your answer to personalize your feed.
-          Every question is optional - leave it blank, or choose "prefer not to say" where offered.
         </Text>
 
         <View style={styles.tier2Card}>

@@ -51,4 +51,5 @@ fi
 cd backend
 ~/.pyenv/pyenv-win/versions/3.11.9/python.exe -m venv venv
 source venv/Scripts/activate
+pip install -r requirements.txt
 ./run_api.sh
