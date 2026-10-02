@@ -1,9 +1,10 @@
 import React, { useState, useCallback, useMemo } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../hooks/useAuth';
+import { useBottomTabBarHeight } from 'expo-router/js-tabs';
 import { useTheme } from '../../hooks/useTheme';
 import { fetchReadingStats } from '../../services/api';
 import { MILESTONES } from '../../constants/milestones';
@@ -12,6 +13,8 @@ export default function ProfileScreen() {
   const router = useRouter();
   const { user, token, loading, logout } = useAuth();
   const { theme } = useTheme();
+  const tabBarHeight = useBottomTabBarHeight();
+  const bottomPadding = 48 + (Platform.OS === 'ios' ? tabBarHeight : 0);
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [stats, setStats] = useState(null);
 
@@ -41,7 +44,11 @@ export default function ProfileScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        style={styles.scroll}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: bottomPadding }]}
+      >
       <Text style={styles.headerTitle}>Profile</Text>
 
       {loading ? (
@@ -147,7 +154,18 @@ const createStyles = (theme) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.background,
+  },
+  // The padding lives inside the scroll area (not on the screen container) so content scrolls
+  // all the way to the tab bar instead of being clipped 20px above it. Capped width keeps it
+  // readable on wide screens.
+  scroll: {
+    flex: 1,
+  },
+  scrollContent: {
     padding: 20,
+    width: '100%',
+    maxWidth: 720,
+    alignSelf: 'center',
   },
   headerTitle: {
     fontFamily: theme.serif,

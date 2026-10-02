@@ -5,6 +5,8 @@ import {
   FlatList,
   StyleSheet,
   TouchableOpacity,
+  Platform,
+  useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -12,12 +14,19 @@ import { Ionicons } from '@expo/vector-icons';
 import PaperCard from '../../components/PaperCard';
 import { useFavoritePapers } from '../../hooks/useStorage';
 import { useAuth } from '../../hooks/useAuth';
+import { useBottomTabBarHeight } from 'expo-router/js-tabs';
 import { useTheme } from '../../hooks/useTheme';
 
 export default function SavedScreen() {
   const router = useRouter();
   const { user, token, loading: authLoading } = useAuth();
   const { theme } = useTheme();
+  const { width } = useWindowDimensions();
+  const tabBarHeight = useBottomTabBarHeight();
+  // Two columns on wide screens; on phones, one
+  const numColumns = width >= 900 ? 2 : 1;
+  // Leave room for the raised center button; on iOS the tab bar floats over content too
+  const bottomPadding = 48 + (Platform.OS === 'ios' ? tabBarHeight : 0);
   const styles = React.useMemo(() => createStyles(theme), [theme]);
   const { favorites, loading, isFavorite, removeFavorite, refetch } = useFavoritePapers(token);
 
@@ -70,8 +79,11 @@ export default function SavedScreen() {
         </View>
       ) : (
         <FlatList
+          key={numColumns}
+          numColumns={numColumns}
           data={favorites}
           renderItem={({ item }) => (
+            <View style={styles.gridCell}>
             <PaperCard
               paper={item}
               onPress={handlePaperPress}
@@ -80,10 +92,11 @@ export default function SavedScreen() {
               onAuthorPress={handleAuthorPress}
               onJournalPress={handleJournalPress}
             />
+            </View>
           )}
           keyExtractor={(item) => item.id}
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.papersList}
+          contentContainerStyle={[styles.papersList, { paddingBottom: bottomPadding }]}
         />
       )}
     </SafeAreaView>
@@ -143,6 +156,9 @@ const createStyles = (theme) => StyleSheet.create({
     fontWeight: 'bold',
   },
   papersList: {
-    paddingVertical: 10,
+    paddingTop: 10,
+  },
+  gridCell: {
+    flex: 1,
   },
 });

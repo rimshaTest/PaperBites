@@ -1,12 +1,9 @@
 import React, { useMemo } from 'react';
-import { View, Text, Image, StyleSheet, TouchableOpacity, Dimensions, Share } from 'react-native';
+import { View, Text, Image, StyleSheet, TouchableOpacity, Share } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../hooks/useTheme';
 import { useAuth } from '../hooks/useAuth';
 import { useLike } from '../hooks/useLike';
-
-const { width } = Dimensions.get('window');
-const CARD_WIDTH = width * 0.9;
 
 const PaperCard = ({ paper, onPress, isBookmarked = false, onToggleBookmark, onAuthorPress, onJournalPress }) => {
   const { theme } = useTheme();
@@ -138,8 +135,10 @@ const PaperCard = ({ paper, onPress, isBookmarked = false, onToggleBookmark, onA
 
 const createStyles = (theme) => StyleSheet.create({
   container: {
-    width: CARD_WIDTH,
-    marginHorizontal: width * 0.05,
+    // Fills whatever space its parent gives it (full row on phones, one column of the grid on
+    // wide screens) instead of a width computed once from the window at load time.
+    flex: 1,
+    marginHorizontal: 16,
     marginVertical: 10,
     borderRadius: 10,
     backgroundColor: theme.accent,

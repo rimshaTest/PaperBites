@@ -443,7 +443,7 @@ const createStyles = (theme) => StyleSheet.create({
   },
   hintText: {
     position: 'absolute',
-    top: '97%',
+    bottom: 40, // clear of the raised center tab button
     left: 0,
     right: 0,
     textAlign: 'center',
