@@ -1,6 +1,6 @@
 # PaperBites — Technical Spec
 
-2026-09-18 · @Someone
+2026-09-18 · @Someone · updated 2026-10-02 to reflect what's built
 
 ## Architecture Overview
 
@@ -94,70 +94,47 @@ Sensitive profile data (Tier 2) requires:
 
 Given GDPR-style special-category data is involved, plan for a documented lawful basis (consent) and a retention/deletion policy before public launch, not after.
 
-## Navigation Redesign (Instagram-style 5-tab bar)
+## Navigation (5-tab bar)
 
-Planned restructure of the bottom tab bar from the current 3 visible tabs (Home/Visualize/Profile,
-with Saved and Interests reachable from Profile) to 5, modeled on Instagram's layout: two content
-tabs, a center action button, a notifications tab, and profile. This is a design decision to build
-against, not yet implemented - each sub-section below calls out what already exists vs. what's net
-new.
+**Built.** Bottom tabs, in order: Explore (`app/(tabs)/index.js` → `PaperFeed`), Visualize, a raised center **+** (`AddPaperTabButton`, opens `app/add.js`/the add-paper flow), Saved, Profile. Interests is a hidden tab route (`href: null`) reached from Settings. On iOS the tab bar floats over content (`position: absolute`), so screens add bottom padding from `useBottomTabBarHeight()`; on Android/web it is in normal layout flow.
 
-**Tab 1 — Home (subscriptions feed).** Cards for every journal and author the user has
-subscribed to - not a chronological paper feed (that's Explore, below). Net new:
+**Not built (planned):**
 
-- No "subscribe" concept exists today at all - `author/[id].js`/`journal/[name].js` only list a
-  page's papers, no follow action. Needs a `subscriptions(user_id, target_type [author|journal],
-  target_id, subscribed_at)` store (flat JSON, same account-scoped pattern as `bookmarks.py`) and
-  a Subscribe/Following toggle on both pages.
-- **Open decision, needs product input before building**: does a Home card represent *one
-  subscribed source* (a directory of who/what you follow, tap through to their page - like
-  Instagram's own profile grid) or *one new paper* from a subscription (a feed, like Instagram's
-  main feed)? These are meaningfully different builds - the former is a simple list keyed on
-  `subscriptions`; the latter needs a per-user "new since last visit" query across every
-  subscription's papers, closer to Explore's own pagination. Given the user's phrasing ("shows
-  all journals and authors subscribed to... in card format"), the source-directory reading is the
-  default assumption until confirmed otherwise.
+- **Home (subscriptions)**. No "subscribe" concept exists: `author/[id].js` and `journal/[name].js` only list papers. Needs `subscriptions(user_id, target_type [author|journal], target_id, subscribed_at)` (same account-scoped pattern as `bookmarks.py`) and a Subscribe/Following toggle on both pages. **Open product decision**: does a Home card represent one subscribed *source* (a directory of who you follow) or one *new paper* from a subscription (a feed)? The source-directory reading is the default until confirmed; the feed reading needs a per-user "new since last visit" query across every subscription.
+- **Notifications**. Needs a comments system first (`comments(id, paper_id, user_id, text, parent_comment_id, created_at)` plus create/list/reply routes), then `notifications(user_id, type [comment|reply|trending], payload, created_at, read_at)` and an unread badge. Notify on comments on saved papers, replies to the user's comments, and a weekly trending digest. The digest needs a scheduler (none exists; `cli.py` is run by hand) and a cross-user engagement aggregate over `paper_views`.
+- **Explore search/filter/sort**. Search is a modal reached from the feed header's icon (`app/search.js`, `GET /api/papers/search`). A filter/sort popup (category, open access, sort by citations) is not built; `get_latest_papers` supports `sort_by=citations` but `GET /api/papers` does not expose it.
 
-**Tab 2 — Explore (the current Home/PaperFeed).** Existing `PaperFeed.tsx` paging-card feed,
-relocated here unchanged, plus:
+## Reading Engagement Backend (likes, reads, milestones, streaks, trending)
 
-- A search field - reuses `search.js`'s semantic search (`GET /api/papers/search`) rather than
-  building a second search path; likely inlined into this screen instead of a separate modal, or
-  kept as today's modal reached from an icon here instead of Home.
-- A filter/sort button opening a popup (bottom sheet or modal) - filter by category (the existing
-  fixed `CATEGORIES` list) and/or open-access status; sort by date (current default) or citation
-  count (`sort_by=citations`, already supported by `backend/cli.py fetch-latest` and
-  `paper/latest.py`'s `get_latest_papers`, just not exposed through the feed API/UI yet - `GET
-  /api/papers` would need a `sort_by` param added to reach it).
-- Interests' hard category-exclusion filter (unchanged) keeps applying underneath whatever this
-  screen's own filter/sort picks.
+All state is per user in MongoDB, so every device sees the same values.
 
-**Tab 3 — Add (center icon).** Consolidates the existing add-paper-by-citation/URL/photo flow
-(`app/add-paper.js`, `backend/paper/citation.py`) here as its own tab entry point, replacing its
-current placement behind Saved's "+" button (Saved itself is unaffected and stays reachable from
-Profile - it isn't one of the 5 tabs). No backend changes needed - this is purely moving the
-existing screen's entry point.
+| Concern | Module | Notes |
+| --- | --- | --- |
+| Likes | `paper_likes.py` | One doc per (user, paper). `POST/DELETE /api/papers/{id}/like`. `GET /api/papers/{id}` needs the auth token to return whether the caller liked it, so the client must send it. |
+| Confirmed reads | `paper_views.py` | `POST /api/papers/{id}/view`. Counted once per user per paper. |
+| Milestones | `paper_views.MILESTONES` = 1, 10, 25, 50, 100, 200 | Mirrored in `frontend/constants/milestones.js`; keep the two in sync. |
+| Streaks | `streaks.py` | Collection `streaks`, keyed by user id: `level`, `buffer`, `last_read_date`. +1 buffer per consecutive read day, level up at +2; −1 per fully missed day, level down at −2. `get_streak` applies decay for missed days when read, so the badge reflects today. "Today" is the **server's local date**. |
+| Stats | `GET /api/stats/reading` | `total_read`, `by_category`, `milestones_reached`, `streak {level, label}`. |
+| Trending | `api_server._trending_category_by_paper_id` | A paper is trending if it has ≥ 2 confirmed reads in the last 7 days; one per category (most read). |
 
-**Tab 4 — Notifications.** Net new; nothing in this category exists yet:
+The client never computes streaks or milestones itself; Profile renders the stats response. If two devices disagree, they are talking to different backends or databases (see Frontend Configuration), not computing differently.
 
-- **Comments on saved papers**: requires a comments system that doesn't exist at all today -
-  `comments(id, paper_id, user_id, text, parent_comment_id [null for a top-level comment],
-  created_at)`, plus API routes to create/list/reply. A notification fires when someone comments
-  on a paper the notified user has bookmarked (`bookmarks.py` already has the needed
-  user-to-paper mapping to know who to notify).
-- **Replies to the user's own comments**: same comments table, filtered by
-  `parent_comment_id`'s author instead of the paper's bookmarkers.
-- **Weekly trending-paper digest**: a scheduled job (no scheduler currently exists in this
-  backend - `cli.py` is invoked manually) computing, once a week, which paper gained the most
-  engagement in the trailing 7 days and generating one notification per user. "Engagement" needs
-  a concrete definition - candidates: aggregate `paper_views.py` view-clicks across *all* users
-  (currently that store is read per-user, for the Visualize tab's graph; a trending job would
-  need a cross-user aggregate query instead), bookmark counts, or both weighted together.
-- Needs a `notifications(user_id, type [comment|reply|trending], payload, created_at, read_at)`
-  store and a bell-icon unread-count badge on the tab.
+## Visualize Graph
 
-**Tab 5 — Profile.** Unchanged from today - account info, Saved, Profile Details, Settings, log
-out.
+`GET /api/papers/viewed/graph` returns `{nodes, edges}` for papers the user has confirmed reading; edges come from cosine similarity of stored embeddings (`paper/embeddings.py`), computed server-side — raw embeddings never reach the client. The client (`visualizations.js`) adds weaker edges for shared categories (dashed), runs a live d3-force simulation (spring links, collision, repulsion), and renders with `react-native-svg`. Bubble color comes from a fixed palette hashed on the paper's first category. The legend lists the categories present. The canvas size is computed once at load from the window size (known gap: it does not resize with the window).
+
+## Frontend Theming & Responsive Layout
+
+- **Theme**: `constants/theme.js` defines `lightTheme` and `darkTheme` with the same tokens: `background`, `surface`, `text`, `textMuted`, `border`, `accent`, `danger`, plus `like`, `streak`, `onAccent`, and `serif`. Components read colors through `useTheme()` (follows the OS, overridable and persisted). Do not hardcode hex values in components; add a token instead. `constants/Colors.ts` was removed, and the Expo-template helpers (`useThemeColor`, `ThemedText`, `Collapsible`) now read from the same theme.
+- **Responsive**: layout reads the live window size with `useWindowDimensions()`, never `Dimensions.get` at module load. Breakpoint **900px**. The feed card (`PaperFeed.tsx`) switches from a draggable bottom sheet to image-left / details-right. Saved switches to two columns. The feed header's content row spans the full width. Overlay controls are positioned from the **measured** header height (`onLayout`), because the header height differs by platform; `FlatList` gets `extraData` so cards re-render when it changes. Tab screens use `SafeAreaView edges={['top']}` only, since the tab bar already accounts for the bottom inset, and their scroll areas carry their own bottom padding so content clears the raised center button.
+- **Intro video**: `components/IntroVideo.js` picks `splash-video.mp4` (portrait) or `splash-video-landscape.mp4` (landscape) from the window shape at start, sizes the player to the window with `contentFit="fill"`, skips the portrait-only poster on wide screens, and finishes on end, error (logged), or after a 6s safety timeout.
+
+## Frontend Configuration & Known Issues
+
+- **Backend URL** (`services/api.js`): `EXPO_PUBLIC_API_URL` if set, else `http://localhost:8000/api` on web, else a hardcoded Cloudflare quick-tunnel URL (changes every restart) or LAN IP on devices. A phone and a laptop can therefore reach **different backends**; prefer setting `EXPO_PUBLIC_API_URL` on both.
+- **Secrets in the repo**: `backend/config.json` contains a MongoDB connection string with credentials. Rotate it and supply `PAPERBITES_MONGODB_URI` through the environment (the config loader already supports this). See `SECURITY_TODO.md`.
+- **Streak mismatch across devices** has been seen once (phone showed level 0, laptop level 1). Streak state is server-side and keyed by user id, so the likely cause is two backends, not a client bug; unconfirmed.
+- **Android text sizing**: chips sized to their text can clip on devices with a bold-text accessibility setting; the Interests chips use a trailing buffer to absorb it.
 
 ## Build Notes & Decisions
 

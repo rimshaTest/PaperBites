@@ -1,6 +1,6 @@
 # PaperBites — Product Spec
 
-2026-09-18 · @Someone
+2026-09-18 · @Someone · updated 2026-10-02 to reflect what's built
 
 ## Vision & People Outcome
 
@@ -9,6 +9,14 @@ People problem, stated plainly: "I hear about interesting research but can't get
 Target user (v1): college students in intro-to-major courses who get handed a citation or paper and need to actually understand it, not just skim an abstract.
 
 Success, if this is wildly successful: people routinely turn a citation or a photo of a paper/poster into something they can read, do so at a level that fits them, and come back to save a second paper within a week — not just "downloaded once."
+
+## Build Status (as of 2026-10-02)
+
+**Shipped**: accounts (signup, login, password reset); the discovery feed (swipe-up cards on phones, side-by-side image + details on wide screens); semantic search; add-a-paper by citation, link, or photo, with a confirm step and a manual-review fallback; bookmarks and the Saved tab; interests (hard filter on the feed); author and journal pages; tiered profile fields with per-field consent toggles; likes; confirmed reads, milestone badges, reading streaks and achievement pop-ups; a "Trending" badge; the Visualize bubble map; light/dark theme; a one-time logo intro video.
+
+**Not built yet**: the Original / Simpler / Simplest reading-level toggle (the feed currently shows the original abstract with a plain-English description alongside), QR-code decoding for photos, the rating widget, comments and moderation, the parental-consent flow for minors, and the Home "subscriptions" tab and Notifications tab described in the technical spec.
+
+The rest of this page mixes shipped behavior and planned behavior; use this list to tell which is which.
 
 ## MVP Scope & Phasing
 
@@ -62,6 +70,29 @@ Because the profile may include sensitive health/disability data, moderation nee
 An automated job pulls recent open-access papers on a schedule from day one (Phase 1), feeding a non-personalized "Recent" feed. Interest-matched ranking — weighting papers by topic against a user's interests, including relevant health/condition mentions in the paper text where a user has opted their health data into feed personalization — lands in Phase 2, once there's a real topic-tagging pipeline and enough volume for "matched" to feel meaningfully different from "recent."
 
 Cold start: new users with no saved papers and no filled profile need a fallback — an editorial/curated default set or a trending-within-app list, rather than an empty or random feed.
+
+## Reading Engagement: Likes, Confirmed Reads, Milestones & Streaks
+
+These reward real reading rather than scrolling, and they are all per account, so they match across a user's devices.
+
+- **Likes**: a heart on every paper card, separate from saving. A user can like a paper without opening it. Cards show a like count.
+- **Confirmed read**: a read only counts after the user opens the original paper and then confirms it ("Have you read this?"), or confirms directly from the card. Each paper counts once per user.
+- **Milestone badges**: earned at 1, 10, 25, 50, 100 and 200 confirmed reads, shown on Profile. Reaching one triggers a celebratory pop-up.
+- **Reading streak badge**: a level shown on Profile — The Practical Thinker → The Fact Collector → The Intellectual → The Scholar. Everyone starts as The Practical Thinker. Reading on 2 consecutive days earns a level. One day off is forgiven; two days in a row with no read costs a level.
+- **Favorite topics**: Profile lists the categories the user has read most.
+- **Trending badge**: a paper shows "Trending in <category>" when at least 2 people confirmed reading it in the past 7 days. There is one trending paper per category, the most-read.
+
+## Visualize
+
+A map of the papers the user has read, shown as bubbles on a pannable canvas. Closeness reflects how similar the papers' content is, not just shared tags. Solid lines link papers with similar content, dashed lines link papers sharing a category, thicker lines mean a stronger link, and bigger bubbles mean more links. Bubble color shows a paper's first category. A collapsible legend explains all of this. Bubbles can be dragged, and tapping one opens the paper. It stays empty until the user has read a few papers.
+
+## Navigation & Layout
+
+Bottom tab bar, left to right: **Explore** (the feed), **Visualize**, a raised **+** button (add a paper), **Saved**, **Profile**. Interests are managed from Settings (and offered once after signup). The planned Home (subscriptions) and Notifications tabs are described in the technical spec and are not built.
+
+The app is responsive. Below 900px wide (phones, narrow windows) the feed uses swipe-up cards and lists are a single column. At 900px and wider (laptops, tablets in landscape) the feed shows the image on the left and details on the right, Saved shows two columns, and screens use the full window width. The logo intro plays a portrait video on tall screens and a landscape video on wide ones, stretched to fill the screen.
+
+Light and dark themes follow the device setting, and the user can pin one in Settings.
 
 ## Saved Papers & Feed Interactions
 
