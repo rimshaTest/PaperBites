@@ -521,9 +521,47 @@ export const fetchProfile = async (token) => {
 };
 
 /**
+ * Turn a failed profile save into an Error carrying the server's per-field messages
+ * (`error.fieldErrors`, {fieldName: message}) so the form can show them under the right input.
+ */
+const profileSaveError = async (response) => {
+  const body = await response.json().catch(() => ({}));
+  const error = new Error(body.detail || `API error: ${response.status}`);
+  error.fieldErrors = body.errors || {};
+  return error;
+};
+
+/**
+ * The answer sets for the Profile Details form (education levels, gender/sex/disability options,
+ * and the live paper-category list for field of study), so none of them are hardcoded here.
+ * @returns {Promise<Object>}
+ */
+export const fetchProfileOptions = async () => {
+  const response = await fetch(`${API_BASE_URL}/profile/options`);
+  if (!response.ok) {
+    throw new Error(`API error: ${response.status}`);
+  }
+  return response.json();
+};
+
+/**
+ * City / region / country suggestions for the Profile location field.
+ * @param {string} query
+ * @returns {Promise<Array<{label: string, type: string, city: string|null, region: string|null, country: string}>>}
+ */
+export const searchPlaces = async (query) => {
+  const response = await fetch(`${API_BASE_URL}/places/autocomplete?q=${encodeURIComponent(query)}`);
+  if (!response.ok) {
+    throw new Error(`API error: ${response.status}`);
+  }
+  const data = await response.json();
+  return data.places || [];
+};
+
+/**
  * Update the signed-in user's Tier 1 (cache-safe) profile fields.
  * @param {string} token - Session token from login/signup
- * @param {Object} fields - field_of_study, education_level, general_interests, location
+ * @param {Object} fields - field_of_study, field_of_study_other, education_level, general_interests, location
  * @returns {Promise<Object>} - the updated Tier 1 fields
  */
 export const saveProfileTier1 = async (token, fields) => {
@@ -537,7 +575,7 @@ export const saveProfileTier1 = async (token, fields) => {
   });
 
   if (!response.ok) {
-    throw new Error(`API error: ${response.status}`);
+    throw await profileSaveError(response);
   }
 
   const data = await response.json();
@@ -563,7 +601,7 @@ export const saveProfileTier2 = async (token, fields, consent) => {
   });
 
   if (!response.ok) {
-    throw new Error(`API error: ${response.status}`);
+    throw await profileSaveError(response);
   }
 
   const data = await response.json();

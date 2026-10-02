@@ -38,7 +38,16 @@ After a Simpler or Simplest version finishes generating, a small corner prompt a
 
 ## User Profile & Personalization
 
-All fields optional, collected starting in Phase 1: age, gender, sex, field of study, education level, location, mental disabilities, physical disabilities, chronic illnesses, interests. Profile-driven personalization is labeled Experimental alongside Simplest itself.
+All fields optional, collected starting in Phase 1. Every field is entered through a constrained control and validated, so the data is clean enough to use:
+
+- **Field of study**: a dropdown of the paper categories we currently pull, always in step with the live category list, plus **Other** with a free-text box. If "Other" answers for the same field reach a meaningful share of users (default: at least 5% of users who set a field of study, and at least 10 users), that field becomes a candidate new category to pull papers for. An admin report lists the common "other" names.
+- **Education level**: High school, Undergraduate, Graduate, Post-doctoral, Professional / self-directed.
+- **General interests**: free text, comma-separated, letters and numbers only (max 10), screened for SQL-style phrases, gibberish and profanity.
+- **Location**: autocomplete over cities, states/regions and countries; the user must pick a suggestion, and doesn't need to give every part.
+- **Date of birth**: month / day / year dropdowns, from 1920.
+- **Gender, sex, disability**: the standard voluntary self-identification options used on job applications, each with "prefer not to say". All disabilities and chronic conditions are one combined question with a checklist, as on the standard form.
+
+Profile-driven personalization is labeled Experimental alongside Simplest itself.
 
 **Consent**: opted into per sensitive category, not bundled into one blanket signup form. Plain-language purpose statement (e.g. "used only to tailor analogies to your background; pseudonymized, never shown to other users or used for ads").
 

@@ -22,3 +22,6 @@ python-dotenv
 langdetect
 langchain-google-genai
 sentry-sdk
+better-profanity
+geonamescache
+pycountry

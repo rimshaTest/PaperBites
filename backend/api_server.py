@@ -11,6 +11,10 @@ from typing import List, Dict, Optional
 import bookmarks as bookmarks_store
 import interests as interests_store
 import profile as profile_store
+import places
+import profile_options
+from categories import current_categories
+from profile import ProfileValidationError
 import paper_reviews as paper_reviews_store
 import paper_views as paper_views_store
 import paper_likes as paper_likes_store
@@ -296,6 +300,8 @@ async def set_profile_tier1(request):
 
     try:
         updated = profile_store.set_tier1(user_id, fields)
+    except ProfileValidationError as e:
+        return JSONResponse({"detail": str(e), "errors": e.errors}, status_code=400)
     except ValueError as e:
         return JSONResponse({"detail": str(e)}, status_code=400)
 
@@ -321,10 +327,52 @@ async def set_profile_tier2(request):
 
     try:
         updated = profile_store.set_tier2(user_id, fields, consent)
+    except ProfileValidationError as e:
+        return JSONResponse({"detail": str(e), "errors": e.errors}, status_code=400)
     except ValueError as e:
         return JSONResponse({"detail": str(e)}, status_code=400)
 
     return JSONResponse({"tier2": updated})
+
+
+async def get_profile_options(request):
+    """The answer sets for the Profile Details form. Served from here (not hardcoded in the app)
+    so the form and the server-side validation share one source; field of study comes from the
+    live paper-category list, so a new category appears in the dropdown without an app release."""
+    return JSONResponse({
+        "field_of_study": current_categories() + [profile_options.OTHER],
+        "other_label": profile_options.OTHER,
+        "education_levels": profile_options.EDUCATION_LEVELS,
+        "genders": profile_options.GENDERS,
+        "sexes": profile_options.SEXES,
+        "disability_statuses": profile_options.DISABILITY_STATUSES,
+        "disability_yes": profile_options.DISABILITY_YES,
+        "disability_conditions": profile_options.DISABILITY_CONDITIONS,
+        "min_birth_year": profile_options.MIN_BIRTH_YEAR,
+    })
+
+
+async def autocomplete_places(request):
+    """City / region / country suggestions for the Profile location field (offline index)."""
+    query = request.query_params.get("q", "")
+    try:
+        limit = int(request.query_params.get("limit", "8"))
+    except ValueError:
+        limit = 8
+    return JSONResponse({"places": places.search(query, limit)})
+
+
+async def admin_field_of_study_report(request):
+    """Admin: how common "Other" is for field of study, and which "other" names are frequent
+    enough to consider adding as a new paper category."""
+    if not _check_admin_key(request):
+        return JSONResponse({"detail": "Forbidden"}, status_code=403)
+    from config import Config
+    config = Config()
+    return JSONResponse(profile_store.other_field_of_study_report(
+        threshold_pct=float(config.get("profile.other_category_threshold_percent", 5.0)),
+        min_users=int(config.get("profile.other_category_min_users", 10)),
+    ))
 
 
 async def get_paper(request):
@@ -573,23 +621,9 @@ async def get_journal(request):
     return JSONResponse(result)
 
 
-# Mirrors paper.latest.CATEGORIES. Importing that module pulls in its heavy fetch-pipeline
-# dependencies (aiohttp, langdetect) just to read a static list - if those aren't installed
-# in this deployment, fall back to this copy rather than 500ing on a trivial lookup.
-_FALLBACK_CATEGORIES = [
-    "Artificial Intelligence", "Medicine", "Physics", "Biology",
-    "Psychology", "Climate Science", "Economics", "Neuroscience",
-]
-
-
 async def get_categories(request):
     """Get the fixed list of paper categories used both for fetching and for filtering."""
-    try:
-        from paper.latest import CATEGORIES
-        return JSONResponse(CATEGORIES)
-    except ImportError as e:
-        print(f"Falling back to hardcoded categories, paper.latest failed to import: {e}")
-        return JSONResponse(_FALLBACK_CATEGORIES)
+    return JSONResponse(current_categories())
 
 
 async def search_paper_by_citation(request):
@@ -927,6 +961,9 @@ routes = [
     Route("/api/interests", get_interests, methods=["GET"]),
     Route("/api/interests", set_interests, methods=["POST"]),
     Route("/api/profile", get_profile, methods=["GET"]),
+    Route("/api/profile/options", get_profile_options, methods=["GET"]),
+    Route("/api/places/autocomplete", autocomplete_places, methods=["GET"]),
+    Route("/api/admin/field-of-study-report", admin_field_of_study_report, methods=["GET"]),
     Route("/api/profile/tier1", set_profile_tier1, methods=["PUT"]),
     Route("/api/profile/tier2", set_profile_tier2, methods=["PUT"]),
     Route("/api/bookmarks", list_bookmarked_videos, methods=["GET"]),

@@ -120,9 +120,14 @@ Then open in Expo Go, an iOS/Android simulator, or a browser.
   an "Experimental feature" note) lets you photograph a title page/poster or pick an existing
   screenshot instead of typing; Gemini vision reads a citation off it server-side and searches
   with that.
-- **Profile Details**: Tier 1 (cache-safe: field of study, education level, general interests,
-  location) and Tier 2 (sensitive: age, gender, sex, precise location, disabilities, chronic
-  illnesses) fields, each Tier 2 field with its own two consent toggles.
+- **Profile Details**: every field is optional and validated as you go (the server re-validates).
+  Tier 1: field of study (dropdown of the current paper categories, fetched from the server, plus
+  "Other" with a free-text box), education level (dropdown), general interests (comma-separated,
+  letters and numbers only), and location (autocomplete over cities, regions and countries - you
+  must pick a suggestion). Tier 2: date of birth (month / day / year dropdowns from 1920), gender,
+  sex, and one combined disability question with the condition checklist - each with its own
+  "Personalize my feed with this" switch. Dropdowns use `components/Select.js` and the location box
+  `components/PlaceAutocomplete.js`; client-side rules live in `utils/profileValidation.js`.
 - **Settings > Manage Feed > Interests**: pick topics to hard-filter the Home feed to. Also
   shown once as a modal popup right after signup (Skip for now / Continue).
 - **Author / Journal pages**: reached by tapping an author or journal name anywhere in the app.

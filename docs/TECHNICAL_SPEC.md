@@ -33,9 +33,15 @@ Original renders immediately so the paper feels like it "loaded instantly." Simp
 Two-tier split:
 
 - **Tier 1 (cache-safe)**: field of study, education level, broad interests, coarse location (country/region). Drives `profile_signature` for shared Simplest caching.
-- **Tier 2 (sensitive-context)**: age, gender, sex, precise location, mental/physical disabilities, chronic illnesses. Stored in a separate, more access-restricted table with its own audit trail. Used only as per-request generation context — never a cache key, never logged alongside full prompt/response pairs longer than needed for the request itself.
+- **Tier 2 (sensitive-context)**: birth date, gender, sex, precise location, and one combined disability field (`{status, conditions[]}`, using the voluntary self-ID wording of US job applications; replaces the old age, mental/physical disability and chronic-illness fields). Stored in a separate, more access-restricted table with its own audit trail. Used only as per-request generation context — never a cache key, never logged alongside full prompt/response pairs longer than needed for the request itself.
 
 All fields optional; consent is opted into per category rather than one bundled form (see product doc).
+
+**Validation and option lists.** The server is authoritative (`profile_validation.py`); the app mirrors the rules for instant feedback (`frontend/utils/profileValidation.js`). Answer sets come from `GET /api/profile/options` and are not hardcoded in the app; field of study is `categories.current_categories()` plus "Other", the same list the paper fetcher uses, so a new category appears in the form automatically. Free text uses a character whitelist (the real injection protection), plus a defense-in-depth SQL-phrase pattern, conservative gibberish heuristics (acronyms like CRISPR and fMRI pass) and profanity screening (`better-profanity`). Storage uses the MongoDB driver (not SQL). Failed saves return 400 `{detail, errors: {field: message}}`.
+
+**Location** is validated against an offline index (`places.py`, built from `geonamescache` + `pycountry`; no third-party API at runtime). The server stores the resolved label and derives `location_region` / `location_country` itself. Because a city is finer than the "coarse location" Tier 1 is meant to hold, `profile_signature` should use `location_country` (optionally `location_region`) only, never the city. Non-US cities show as "City, Country"; the index does not carry non-US state names for cities.
+
+**"Other" field of study.** `field_of_study = "Other"` requires `field_of_study_other` (letters and spaces). `GET /api/admin/field-of-study-report` (admin key) groups the "other" names case-insensitively and suggests any that are at least `profile.other_category_threshold_percent` (default 5) of users with a field of study and at least `profile.other_category_min_users` (default 10) users. Near-synonyms are counted separately and merged by hand.
 
 **Consent is tracked per use, not per field**: each Tier 2 field carries two independent flags — `used_for_personalization` (Simplest analogy generation) and `used_for_feed_relevance` (surfacing matched content in the discovery feed). A user can enable one without the other.
 

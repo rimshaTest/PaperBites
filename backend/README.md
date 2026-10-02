@@ -142,12 +142,32 @@ All routes are under `/api`. Auth-required routes take `Authorization: Bearer <t
 
 **Profile** (auth required)
 - `GET /profile` → `{tier1, tier2}`
-- `PUT /profile/tier1` `{fields}` - cache-safe fields (`field_of_study`, `education_level`,
-  `general_interests`, `location`).
-- `PUT /profile/tier2` `{fields, consent}` - sensitive-context fields (`age`, `gender`, `sex`,
-  `location_precise`, `mental_disabilities`, `physical_disabilities`, `chronic_illnesses`), each
-  with its own `used_for_personalization`/`used_for_feed_relevance` consent flags. Every Tier 2
-  read/write is appended to a separate audit log.
+- `GET /profile/options` (no auth) - the answer sets for the Profile Details form: field of study
+  (the live paper-category list plus "Other"), education levels, genders, sexes, and the disability
+  question and condition checklist. The app builds its dropdowns from this, so nothing is hardcoded
+  there.
+- `GET /places/autocomplete?q=&limit=` (no auth) - city / region / country suggestions from an
+  offline index (`places.py`: `geonamescache` + `pycountry`; no external API).
+- `PUT /profile/tier1` `{fields}` - cache-safe fields: `field_of_study` (a current category or
+  "Other"), `field_of_study_other` (required when "Other"), `education_level`, `general_interests`
+  (comma-separated; letters, numbers, spaces and commas only), `location` (must be a place from the
+  autocomplete index; `location_region` / `location_country` are derived server-side).
+- `PUT /profile/tier2` `{fields, consent}` - sensitive-context fields: `birth_date` (YYYY-MM-DD,
+  1920 or later, not in the future), `gender`, `sex`, `disability` (`{status, conditions}`, the
+  conditions only kept when the status is "Yes"), `location_precise`. Each field has its own
+  `used_for_personalization`/`used_for_feed_relevance` consent flags. Every Tier 2 read/write is
+  appended to a separate audit log. The old `age`, `mental_disabilities`, `physical_disabilities`
+  and `chronic_illnesses` fields are retired (no longer writable).
+- Both PUTs validate every field (`profile_validation.py`) and answer 400 with
+  `{detail, errors: {field: message}}`. Free text is screened for disallowed characters, SQL-style
+  phrases, gibberish and profanity (`better-profanity`).
+- `GET /admin/field-of-study-report` (admin key) - how many users chose "Other" for field of study
+  and which "other" names are common enough to add as a new paper category (thresholds:
+  `profile.other_category_threshold_percent`, default 5, and `profile.other_category_min_users`,
+  default 10).
+
+Run the backend tests with `pip install -r requirements-dev.txt` then `python -m pytest tests -q`
+from `backend/` (they use `mongomock`; no database needed).
 
 ## Storage
 

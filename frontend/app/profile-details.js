@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -11,18 +11,38 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { fetchProfile, saveProfileTier1, saveProfileTier2 } from '../services/api';
+import { fetchProfile, fetchProfileOptions, saveProfileTier1, saveProfileTier2 } from '../services/api';
+import Select from '../components/Select';
+import PlaceAutocomplete from '../components/PlaceAutocomplete';
+import {
+  validateInterests,
+  validateOtherField,
+  validateBirthDate,
+  daysInMonth,
+  toIsoDate,
+  fromIsoDate,
+  INTERESTS_MAX_ITEMS,
+  INTERESTS_MAX_TOTAL_LENGTH,
+  OTHER_FIELD_MAX_LENGTH,
+} from '../utils/profileValidation';
 import { useAuth } from '../hooks/useAuth';
 import { useTheme } from '../hooks/useTheme';
 
-const TIER2_FIELDS = [
-  { key: 'age', label: 'Age' },
-  { key: 'gender', label: 'Gender' },
-  { key: 'sex', label: 'Sex' },
-  { key: 'mental_disabilities', label: 'Mental disabilities' },
-  { key: 'physical_disabilities', label: 'Physical disabilities' },
-  { key: 'chronic_illnesses', label: 'Chronic illnesses' },
+const MONTHS = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
 ];
+
+// Which Tier 2 questions get a card, and the consent key each one stores under
+const CONSENT_KEYS = ['birth_date', 'gender', 'sex', 'disability'];
+
+const EMPTY_TIER1 = {
+  field_of_study: '',
+  field_of_study_other: '',
+  education_level: '',
+  general_interests: '',
+  location: '',
+};
 
 export default function ProfileDetailsScreen() {
   const router = useRouter();
@@ -31,80 +51,169 @@ export default function ProfileDetailsScreen() {
   const styles = useMemo(() => createStyles(theme), [theme]);
 
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState(null);
+  const [errors, setErrors] = useState({});
 
-  const [tier1, setTier1] = useState({
-    field_of_study: '',
-    education_level: '',
-    general_interests: '',
-    location: '',
-  });
-  const [tier2Fields, setTier2Fields] = useState({});
+  // Answer sets come from the server (GET /api/profile/options) - field of study in particular
+  // tracks the live paper-category list, so a new category shows up here with no app release.
+  const [options, setOptions] = useState(null);
+
+  const [tier1, setTier1] = useState(EMPTY_TIER1);
+  const [gender, setGender] = useState('');
+  const [sex, setSex] = useState('');
+  const [birth, setBirth] = useState({ year: '', month: '', day: '' });
+  const [disability, setDisability] = useState({ status: '', conditions: [] });
   const [tier2Consent, setTier2Consent] = useState({});
 
-  useEffect(() => {
+  const load = async () => {
     if (!token) {
       setLoading(false);
       return;
     }
+    try {
+      setLoading(true);
+      setLoadError(false);
+      const [profile, opts] = await Promise.all([fetchProfile(token), fetchProfileOptions()]);
+      setOptions(opts);
+      setTier1({ ...EMPTY_TIER1, ...(profile.tier1 || {}) });
+      const fields = profile.tier2?.fields || {};
+      setGender(fields.gender || '');
+      setSex(fields.sex || '');
+      setBirth(fromIsoDate(fields.birth_date));
+      setDisability({
+        status: fields.disability?.status || '',
+        conditions: fields.disability?.conditions || [],
+      });
+      setTier2Consent(profile.tier2?.consent || {});
+    } catch (err) {
+      console.error('Failed to load profile:', err);
+      setLoadError(true);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    const load = async () => {
-      try {
-        setLoading(true);
-        const profile = await fetchProfile(token);
-        setTier1((prev) => ({ ...prev, ...(profile.tier1 || {}) }));
-        setTier2Fields(profile.tier2?.fields || {});
-        setTier2Consent(profile.tier2?.consent || {});
-      } catch (err) {
-        console.error('Failed to load profile:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
+  useEffect(() => {
     load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
-  const updateTier1 = (key, value) => {
+  const touched = () => {
     setSaved(false);
+    setSaveError(null);
+  };
+
+  const clearError = (key) => setErrors((prev) => (prev[key] ? { ...prev, [key]: undefined } : prev));
+
+  const updateTier1 = (key, value) => {
+    touched();
+    clearError(key);
     setTier1((prev) => ({ ...prev, [key]: value }));
   };
 
-  const updateTier2Field = (key, value) => {
-    setSaved(false);
-    setTier2Fields((prev) => ({ ...prev, [key]: value }));
+  const updateBirth = (part, value) => {
+    touched();
+    clearError('birth_date');
+    setBirth((prev) => {
+      const next = { ...prev, [part]: value };
+      // Keep the day valid if the month/year changed under it (e.g. Jan 31 -> Feb)
+      if (next.year && next.month && next.day && next.day > daysInMonth(next.year, next.month)) {
+        next.day = daysInMonth(next.year, next.month);
+      }
+      return next;
+    });
   };
 
-  const toggleConsent = (key, flag) => {
-    setSaved(false);
+  const toggleConsent = (key) => {
+    touched();
     setTier2Consent((prev) => ({
       ...prev,
       [key]: {
         used_for_personalization: prev[key]?.used_for_personalization || false,
-        used_for_feed_relevance: prev[key]?.used_for_feed_relevance || false,
-        [flag]: !prev[key]?.[flag],
+        used_for_feed_relevance: !prev[key]?.used_for_feed_relevance,
       },
     }));
   };
 
+  const isOther = tier1.field_of_study === options?.other_label;
+
+  const validateAll = () => {
+    const found = {};
+    if (isOther) {
+      const err = validateOtherField(tier1.field_of_study_other);
+      if (err) found.field_of_study_other = err;
+    }
+    const interestsError = validateInterests(tier1.general_interests);
+    if (interestsError) found.general_interests = interestsError;
+    // Location is only valid once picked from the suggestions (the box reports '' otherwise)
+    if (locationText.current.trim() && !tier1.location) found.location = 'Pick a place from the suggestions.';
+    const birthError = validateBirthDate(birth, options?.min_birth_year ?? 1920);
+    if (birthError) found.birth_date = birthError;
+    return found;
+  };
+
+  // What the location box currently shows, so save can tell "empty" from "typed but not picked"
+  const locationText = useRef('');
+
   const handleSave = async () => {
     if (!token) return;
+    const found = validateAll();
+    setErrors(found);
+    if (Object.keys(found).length > 0) {
+      setSaveError('Please fix the highlighted fields.');
+      return;
+    }
+
     setSaving(true);
+    setSaveError(null);
     try {
-      await saveProfileTier1(token, tier1);
-      // Only send Tier 2 fields that actually have a value, so clearing a field doesn't
-      // re-save it as an empty string every time.
-      const nonEmptyTier2Fields = Object.fromEntries(
-        Object.entries(tier2Fields).filter(([, value]) => value !== '' && value != null)
+      await saveProfileTier1(token, {
+        field_of_study: tier1.field_of_study,
+        field_of_study_other: isOther ? tier1.field_of_study_other : '',
+        education_level: tier1.education_level,
+        general_interests: tier1.general_interests,
+        location: tier1.location,
+      });
+      await saveProfileTier2(
+        token,
+        {
+          birth_date: toIsoDate(birth),
+          gender,
+          sex,
+          disability: {
+            status: disability.status,
+            conditions: disability.status === options.disability_yes ? disability.conditions : [],
+          },
+        },
+        Object.fromEntries(CONSENT_KEYS.filter((k) => tier2Consent[k]).map((k) => [k, tier2Consent[k]]))
       );
-      await saveProfileTier2(token, nonEmptyTier2Fields, tier2Consent);
       setSaved(true);
     } catch (err) {
       console.error('Failed to save profile:', err);
+      // Show the server's per-field messages under the matching inputs
+      if (err.fieldErrors && Object.keys(err.fieldErrors).length > 0) {
+        setErrors((prev) => ({ ...prev, ...err.fieldErrors }));
+        setSaveError('Please fix the highlighted fields.');
+      } else {
+        setSaveError("Couldn't save your profile. Please try again.");
+      }
     } finally {
       setSaving(false);
     }
   };
+
+  const header = (
+    <View style={styles.header}>
+      <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
+        <Ionicons name="arrow-back" size={24} color={theme.text} />
+      </TouchableOpacity>
+      <Text style={styles.headerTitle}>Profile Details</Text>
+      <View style={styles.headerButton} />
+    </View>
+  );
 
   if (authLoading || (loading && token)) {
     return (
@@ -117,13 +226,7 @@ export default function ProfileDetailsScreen() {
   if (!user) {
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
-            <Ionicons name="arrow-back" size={24} color={theme.text} />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Profile Details</Text>
-          <View style={styles.headerButton} />
-        </View>
+        {header}
         <View style={styles.centerContainer}>
           <Ionicons name="lock-closed-outline" size={40} color={theme.textMuted} />
           <Text style={styles.emptyText}>Log in to fill out your profile.</Text>
@@ -135,94 +238,256 @@ export default function ProfileDetailsScreen() {
     );
   }
 
+  if (loadError || !options) {
+    return (
+      <SafeAreaView style={styles.container}>
+        {header}
+        <View style={styles.centerContainer}>
+          <Text style={styles.emptyText}>Couldn't load your profile.</Text>
+          <TouchableOpacity style={styles.loginButton} onPress={load}>
+            <Text style={styles.loginButtonText}>Try Again</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  const years = Array.from(
+    { length: new Date().getFullYear() - options.min_birth_year + 1 },
+    (_, i) => String(new Date().getFullYear() - i)
+  );
+  const monthDays = birth.year && birth.month ? daysInMonth(birth.year, birth.month) : 31;
+  const days = Array.from({ length: monthDays }, (_, i) => String(i + 1));
+
+  const consentToggle = (key) => (
+    <View style={styles.consentRow}>
+      <TouchableOpacity style={styles.consentToggle} onPress={() => toggleConsent(key)}>
+        <Ionicons
+          name={tier2Consent[key]?.used_for_feed_relevance ? 'checkbox' : 'square-outline'}
+          size={20}
+          color={tier2Consent[key]?.used_for_feed_relevance ? theme.accent : theme.textMuted}
+        />
+        <Text style={styles.consentLabel}>Personalize my feed with this</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
-          <Ionicons name="arrow-back" size={24} color={theme.text} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Profile Details</Text>
-        <View style={styles.headerButton} />
-      </View>
+      {header}
 
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <Text style={styles.disclaimer}>
           Everything below is optional. It's used only to make your feed and reading experience
-          more relevant, and is kept anonymized - never shared or shown to other users.
+          more relevant, and is kept private and pseudonymized - never shown to other users.
         </Text>
 
         <Text style={styles.sectionTitle}>About you</Text>
         <View style={styles.field}>
           <Text style={styles.label}>Field of study</Text>
-          <TextInput
-            style={styles.input}
+          <Select
+            title="Field of study"
+            placeholder="Select a field"
+            options={options.field_of_study}
             value={tier1.field_of_study}
-            onChangeText={(v) => updateTier1('field_of_study', v)}
-            placeholder="e.g. Neuroscience"
-            placeholderTextColor={theme.textMuted}
+            onChange={(v) => updateTier1('field_of_study', v)}
+            error={errors.field_of_study}
           />
+          {isOther && (
+            <View style={styles.otherInput}>
+              <TextInput
+                style={[styles.input, !!errors.field_of_study_other && styles.inputError]}
+                value={tier1.field_of_study_other}
+                onChangeText={(v) => updateTier1('field_of_study_other', v)}
+                placeholder="Your field of study"
+                placeholderTextColor={theme.textMuted}
+                maxLength={OTHER_FIELD_MAX_LENGTH}
+                accessibilityLabel="Other field of study"
+              />
+              {!!errors.field_of_study_other && (
+                <Text style={styles.errorText}>{errors.field_of_study_other}</Text>
+              )}
+              <Text style={styles.hint}>
+                If enough people tell us the same field, we may start covering it in the feed.
+              </Text>
+            </View>
+          )}
         </View>
+
         <View style={styles.field}>
           <Text style={styles.label}>Education level</Text>
-          <TextInput
-            style={styles.input}
+          <Select
+            title="Education level"
+            placeholder="Select a level"
+            options={options.education_levels}
             value={tier1.education_level}
-            onChangeText={(v) => updateTier1('education_level', v)}
-            placeholder="e.g. Undergraduate"
-            placeholderTextColor={theme.textMuted}
+            onChange={(v) => updateTier1('education_level', v)}
+            error={errors.education_level}
           />
         </View>
+
         <View style={styles.field}>
           <Text style={styles.label}>General interests</Text>
           <TextInput
-            style={styles.input}
+            style={[styles.input, !!errors.general_interests && styles.inputError]}
             value={tier1.general_interests}
             onChangeText={(v) => updateTier1('general_interests', v)}
+            onBlur={() => {
+              const err = validateInterests(tier1.general_interests);
+              setErrors((prev) => ({ ...prev, general_interests: err || undefined }));
+            }}
             placeholder="e.g. climate policy, genetics"
             placeholderTextColor={theme.textMuted}
+            maxLength={INTERESTS_MAX_TOTAL_LENGTH}
+            autoCorrect={false}
+            accessibilityLabel="General interests"
           />
+          {errors.general_interests ? (
+            <Text style={styles.errorText}>{errors.general_interests}</Text>
+          ) : (
+            <Text style={styles.hint}>
+              Separate with commas. Letters and numbers only, up to {INTERESTS_MAX_ITEMS} interests.
+            </Text>
+          )}
         </View>
+
         <View style={styles.field}>
-          <Text style={styles.label}>Location (country/region)</Text>
-          <TextInput
-            style={styles.input}
+          <Text style={styles.label}>Location</Text>
+          <PlaceAutocomplete
             value={tier1.location}
-            onChangeText={(v) => updateTier1('location', v)}
-            placeholder="e.g. Pacific Northwest, US"
-            placeholderTextColor={theme.textMuted}
+            onChange={(label) => updateTier1('location', label)}
+            onTextChange={(text) => {
+              locationText.current = text;
+            }}
+            error={errors.location}
+            placeholder="Start typing a city, state or country"
           />
+          <Text style={styles.hint}>You don't have to give every part - a country is enough.</Text>
         </View>
 
         <Text style={styles.sectionTitle}>Demographic Information</Text>
         <Text style={styles.sectionSubtitle}>
-          Each field below has its own switches for using your information to personalize your feed.
+          Each question below has its own switch for using your answer to personalize your feed.
+          Every question includes a "prefer not to say" choice.
         </Text>
 
-        {TIER2_FIELDS.map(({ key, label }) => (
-          <View key={key} style={styles.tier2Card}>
-            <Text style={styles.label}>{label}</Text>
-            <TextInput
-              style={styles.input}
-              value={tier2Fields[key] != null ? String(tier2Fields[key]) : ''}
-              onChangeText={(v) => updateTier2Field(key, v)}
-              placeholderTextColor={theme.textMuted}
+        <View style={styles.tier2Card}>
+          <Text style={styles.label}>Date of birth</Text>
+          <View style={styles.dateRow}>
+            <Select
+              compact
+              title="Month"
+              placeholder="Month"
+              allowClear={false}
+              options={MONTHS}
+              value={birth.month ? MONTHS[birth.month - 1] : ''}
+              onChange={(v) => updateBirth('month', MONTHS.indexOf(v) + 1)}
+              error={errors.birth_date ? ' ' : undefined}
             />
-            <View style={styles.consentRow}>
-              <TouchableOpacity
-                style={styles.consentToggle}
-                onPress={() => toggleConsent(key, 'used_for_feed_relevance')}
-              >
-                <Ionicons
-                  name={tier2Consent[key]?.used_for_feed_relevance ? 'checkbox' : 'square-outline'}
-                  size={20}
-                  color={tier2Consent[key]?.used_for_feed_relevance ? theme.accent : theme.textMuted}
-                />
-                <Text style={styles.consentLabel}>Personalize my feed with this  </Text>
-              </TouchableOpacity>
-            </View>
+            <Select
+              compact
+              title="Day"
+              placeholder="Day"
+              allowClear={false}
+              options={days}
+              value={birth.day ? String(birth.day) : ''}
+              onChange={(v) => updateBirth('day', Number(v))}
+              error={errors.birth_date ? ' ' : undefined}
+            />
+            <Select
+              compact
+              title="Year"
+              placeholder="Year"
+              allowClear={false}
+              options={years}
+              value={birth.year ? String(birth.year) : ''}
+              onChange={(v) => updateBirth('year', Number(v))}
+              error={errors.birth_date ? ' ' : undefined}
+            />
           </View>
-        ))}
+          {!!errors.birth_date && <Text style={styles.errorText}>{errors.birth_date}</Text>}
+          {!!(birth.year || birth.month || birth.day) && (
+            <TouchableOpacity
+              onPress={() => {
+                touched();
+                clearError('birth_date');
+                setBirth({ year: '', month: '', day: '' });
+              }}
+            >
+              <Text style={styles.clearLink}>Clear date</Text>
+            </TouchableOpacity>
+          )}
+          {consentToggle('birth_date')}
+        </View>
 
+        <View style={styles.tier2Card}>
+          <Text style={styles.label}>Gender</Text>
+          <Select
+            title="Gender"
+            placeholder="Select"
+            options={options.genders}
+            value={gender}
+            onChange={(v) => {
+              touched();
+              setGender(v);
+            }}
+            error={errors.gender}
+          />
+          {consentToggle('gender')}
+        </View>
+
+        <View style={styles.tier2Card}>
+          <Text style={styles.label}>Sex</Text>
+          <Select
+            title="Sex"
+            placeholder="Select"
+            options={options.sexes}
+            value={sex}
+            onChange={(v) => {
+              touched();
+              setSex(v);
+            }}
+            error={errors.sex}
+          />
+          {consentToggle('sex')}
+        </View>
+
+        <View style={styles.tier2Card}>
+          <Text style={styles.label}>Disability</Text>
+          <Select
+            title="Do you have a disability?"
+            placeholder="Select"
+            options={options.disability_statuses}
+            value={disability.status}
+            onChange={(v) => {
+              touched();
+              setDisability({ status: v, conditions: v === options.disability_yes ? disability.conditions : [] });
+            }}
+            error={errors.disability}
+          />
+          {disability.status === options.disability_yes && (
+            <View style={styles.conditions}>
+              <Text style={styles.label}>Which apply? (optional)</Text>
+              <Select
+                multiple
+                title="Select all that apply"
+                placeholder="Select all that apply"
+                options={options.disability_conditions}
+                value={disability.conditions}
+                onChange={(v) => {
+                  touched();
+                  setDisability((prev) => ({ ...prev, conditions: v }));
+                }}
+              />
+              {disability.conditions.length > 0 && (
+                <Text style={styles.hint}>{disability.conditions.join('; ')}</Text>
+              )}
+            </View>
+          )}
+          {consentToggle('disability')}
+        </View>
+
+        {!!saveError && <Text style={[styles.errorText, styles.saveError]}>{saveError}</Text>}
         <TouchableOpacity style={styles.saveButton} onPress={handleSave} disabled={saving}>
           <Text style={styles.saveButtonText}>
             {saving ? 'Saving...' : saved ? 'Saved' : 'Save Profile'}
@@ -320,6 +585,40 @@ const createStyles = (theme) => StyleSheet.create({
   consentLabel: {
     fontSize: 12,
     color: theme.textMuted,
+  },
+  inputError: {
+    borderColor: theme.danger,
+  },
+  otherInput: {
+    marginTop: 10,
+  },
+  errorText: {
+    color: theme.danger,
+    fontSize: 12,
+    marginTop: 4,
+  },
+  saveError: {
+    marginTop: 6,
+    fontSize: 13,
+  },
+  hint: {
+    fontSize: 12,
+    color: theme.textMuted,
+    marginTop: 4,
+    lineHeight: 16,
+  },
+  dateRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  conditions: {
+    marginTop: 12,
+  },
+  clearLink: {
+    fontSize: 12,
+    color: theme.textMuted,
+    textDecorationLine: 'underline',
+    marginTop: 6,
   },
   saveButton: {
     backgroundColor: theme.accent,
