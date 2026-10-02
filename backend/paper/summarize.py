@@ -27,6 +27,7 @@ from typing import Dict, List, Optional
 import aiohttp
 
 from config import Config
+from paper.llm_text import response_text
 
 config_instance = Config()
 logger = logging.getLogger("paperbites.summarize")
@@ -128,7 +129,7 @@ async def summarize_text(title: str, text: str, source_label: str = "Abstract") 
             continue
         try:
             response = await llm.ainvoke(prompt)
-            summary = (response.content or "").strip()
+            summary = response_text(response).strip()
             if summary:
                 return summary
         except Exception as e:
@@ -189,7 +190,7 @@ async def summarize_and_classify(
             continue
         try:
             response = await llm.ainvoke(prompt)
-            raw = (response.content or "").strip()
+            raw = response_text(response).strip()
             # Models occasionally wrap JSON in a ```json fence despite being told not to - strip
             # it rather than failing classification over formatting alone.
             if raw.startswith("```"):
@@ -306,7 +307,7 @@ async def extract_citation_text_from_image(image_bytes: bytes, mime_type: str) -
             continue
         try:
             response = await llm.ainvoke([message])
-            text = (response.content or "").strip()
+            text = response_text(response).strip()
             if text and text.upper() != "NONE":
                 return text
         except Exception as e:

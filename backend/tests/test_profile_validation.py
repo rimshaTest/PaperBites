@@ -156,3 +156,16 @@ def test_location_accepted_unverified_when_place_data_missing(monkeypatch):
     monkeypatch.setattr(places, "resolve", boom)
     place, err = v.validate_location("Seattle")
     assert err is None and place["label"] == "Seattle"
+
+
+# ---- LLM response text (summarizer regression) -----------------------------------------------
+def test_response_text_handles_string_and_block_lists():
+    from types import SimpleNamespace
+    from paper.llm_text import response_text
+
+    assert response_text(SimpleNamespace(content="  hello ")) == "  hello "
+    assert response_text(SimpleNamespace(content=None)) == ""
+    blocks = [{"type": "text", "text": "Part one. "}, {"type": "thinking", "thinking": "hidden"},
+              {"type": "text", "text": "Part two."}, "tail"]
+    assert response_text(SimpleNamespace(content=blocks)) == "Part one. Part two.tail"
+    assert response_text(SimpleNamespace(content=[])) == ""
