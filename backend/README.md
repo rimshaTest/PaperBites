@@ -65,9 +65,18 @@ stops once the limit is reached. A source that stays rate-limited (e.g. Semantic
 key) is skipped for 10 minutes instead of being waited on for every category. When every Gemini model's
 daily budget is spent the run stops with a message (rather than storing papers whose description
 is just the raw abstract); `--continue-without-llm` overrides that.
-If Gemini is up but failing (e.g. a 503 "high demand" on every model), a paper that can't be summarized
-is *not saved* - so it isn't stuck with a raw-abstract description - and after 3 such papers in a row
-the run stops with a message; just re-run in a few minutes. Papers saved without a real summary
+**Overload (503) handling.** A 503 / timeout means Gemini is briefly overloaded, not out of quota, so
+the run keeps trying instead of giving up: it moves to the next model immediately, and when every
+model has been overloaded in one lap it waits 60 seconds and goes around again, indefinitely. These
+failed attempts aren't counted against the per-minute or daily budget. Ctrl+C, a spent daily quota,
+or the optional limit below are the only ways it stops. Tune with `api.gemini_overload_wait_seconds`
+(default 60) and `api.gemini_overload_max_wait_seconds` (give up on a paper after this much total
+waiting; default: never). Other errors (an unknown model name, an unusable reply) skip just that
+model for the call.
+
+If a paper still can't be summarized (every model failed for a non-overload reason, or the optional
+max wait was reached), it is *not saved* - so it isn't stuck with a raw-abstract description - and
+after 3 such papers in a row the run stops with a message. Papers saved without a real summary
 (`--continue-without-llm`, or no API key) carry `description_source: "abstract"` so they can be
 found and redone later.
 

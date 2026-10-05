@@ -112,38 +112,78 @@ def _get_llm_for_model(model_name: str):
     return _llm_cache[model_name]
 
 
+# When every model is overloaded (503 etc.) in a lap, wait this long (a minute, by default) and go
+# around again rather than failing the paper. api.gemini_overload_wait_seconds changes the wait;
+# api.gemini_overload_max_wait_seconds gives up after that long in total (default: keep trying).
+_OVERLOAD_WAIT_SECONDS = 60.0
+
+
+async def _backoff_sleep(seconds: float) -> None:
+    await asyncio.sleep(seconds)
+
+
 async def _generate(
     models: List[str], payload, prompt_text: str, accept, label: str, rotate: bool = True,
     estimated_tokens: Optional[int] = None,
 ):
-    """Call Gemini through the usage tracker (llm_usage.py), trying models until one yields an
+    """Call Gemini through the usage tracker (llm_usage.py), cycling models until one yields an
     answer `accept` approves.
 
     Each attempt picks a model with budget left: one available now if any, else the one whose
-    per-minute limit clears soonest (waiting for it), never one whose daily budget is spent. A
-    model that errors is skipped for this call; a 429 from the API itself updates the tracker
-    (a daily-quota error retires the model for the day). `accept(text)` turns the raw reply into
-    the value to return, or None to try the next model (e.g. unparseable JSON). Returns None if
-    nothing worked or every model is out of budget.
+    per-minute limit clears soonest (waiting for it), never one whose daily budget is spent.
+
+    Failures are handled by kind:
+    - Overload / temporary server errors (503, timeouts): the call is refunded (it never ran, so
+      it doesn't use budget) and the NEXT model is tried immediately. When every model has been
+      overloaded in a lap, wait a minute and go around again - indefinitely by default, since
+      overload passes. Only Ctrl+C, a spent quota, or the optional
+      api.gemini_overload_max_wait_seconds ends it.
+    - Quota (429): the tracker is told; a daily-quota error retires that model for the day.
+    - Anything else (e.g. an unknown model name, or a reply `accept` can't use): that model is
+      skipped for this call.
+    `accept(text)` turns the raw reply into the value to return, or None to try the next model.
+    Returns None if nothing worked or every model is out of budget.
     """
     estimated = estimated_tokens or llm_usage.estimate_tokens(prompt_text)
-    remaining = list(models)
+    remaining = list(models)  # models not permanently out for this call
     if rotate and remaining:
         first = await _next_model_name(remaining)
         remaining = [first] + [m for m in remaining if m != first]
 
+    max_wait = config_instance.get("api.gemini_overload_max_wait_seconds")
+    waited = 0.0
+    lap_wait = float(config_instance.get("api.gemini_overload_wait_seconds") or _OVERLOAD_WAIT_SECONDS)
+    overloaded_this_lap = set()  # transient-failed models, tried again after the backoff
+    lap = 1
+
     while remaining:
-        model_name = llm_usage.tracker.choose(remaining, estimated)
+        available = [m for m in remaining if m not in overloaded_this_lap]
+        if not available:
+            # Every model was overloaded this lap: wait, then start a new lap with all of them
+            if max_wait is not None and waited >= float(max_wait):
+                logger.warning(f"Gemini stayed overloaded for {waited:.0f}s; giving up on {label}")
+                return None
+            logger.warning(
+                f"All Gemini models are overloaded (lap {lap}); waiting {lap_wait:.0f}s, then retrying {label}"
+            )
+            await _backoff_sleep(lap_wait)
+            waited += lap_wait
+            overloaded_this_lap.clear()
+            lap += 1
+            continue
+
+        model_name = llm_usage.tracker.choose(available, estimated)
         if model_name is None:
-            return None  # every remaining model is out of budget for today
-        remaining.remove(model_name)
+            return None  # every available model is out of budget for today
 
         llm = _get_llm_for_model(model_name)
         if not llm:
+            remaining.remove(model_name)
             continue
         try:
             reservation = await llm_usage.tracker.acquire(model_name, estimated)
         except llm_usage.LLMQuotaExhausted:
+            remaining.remove(model_name)
             continue
         # The Google client's own retry messages (e.g. "503 high demand") don't name the model, so
         # say which one this call is going to.
@@ -151,10 +191,19 @@ async def _generate(
         try:
             response = await llm.ainvoke(payload)
         except Exception as e:
-            llm_usage.tracker.finish(reservation, None)
             if llm_usage.is_quota_error(e):
+                llm_usage.tracker.finish(reservation, None)
                 llm_usage.tracker.note_api_quota_error(model_name, str(e))
-            logger.warning(f"Gemini model '{model_name}' failed for {label}: {e}")
+                logger.warning(f"Gemini model '{model_name}' hit a quota limit for {label}")
+                remaining.remove(model_name)
+            elif llm_usage.is_transient_error(e):
+                llm_usage.tracker.refund(reservation)
+                overloaded_this_lap.add(model_name)
+                logger.warning(f"Gemini model '{model_name}' is overloaded or unavailable for {label}; trying the next one")
+            else:
+                llm_usage.tracker.finish(reservation, None)
+                logger.warning(f"Gemini model '{model_name}' failed for {label}: {e}")
+                remaining.remove(model_name)
             continue
 
         llm_usage.tracker.finish(reservation, response_tokens(response))
@@ -162,9 +211,11 @@ async def _generate(
             result = accept(response_text(response).strip())
         except Exception as e:
             logger.warning(f"Gemini model '{model_name}' gave an unusable reply for {label}: {e}")
+            remaining.remove(model_name)
             continue
         if result:
             return result
+        remaining.remove(model_name)
 
     return None
 

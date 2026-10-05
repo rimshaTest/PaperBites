@@ -273,6 +273,19 @@ class LLMUsageTracker:
         self._day(reservation.model, date)["tokens"] += delta
         self._persist(reservation.model, date, tokens=delta)
 
+    def refund(self, reservation: Reservation) -> None:
+        """Undo a reservation for a call that failed for a server-side reason (e.g. a 503): the
+        request never ran, so it shouldn't count against the model's per-minute or daily budget."""
+        window = self._windows.get(reservation.model)
+        if window is not None and reservation.entry in window:
+            window.remove(reservation.entry)
+        date = pacific_date(reservation.started)
+        tokens = reservation.entry[1]
+        day = self._day(reservation.model, date)
+        day["requests"] = max(0, day["requests"] - 1)
+        day["tokens"] = max(0, day["tokens"] - tokens)
+        self._persist(reservation.model, date, requests=-1, tokens=-tokens)
+
     def log_call(self, model: str, tokens: int = 0) -> None:
         """Count a call that isn't gated (e.g. embeddings) so it shows in the usage report."""
         now = self._clock()
@@ -344,6 +357,18 @@ class LLMUsageTracker:
                 f"{frac(row['tokens_last_minute'], row['tpm'])} tokens) [Pacific day {row['date']}]"
             )
         return "\n".join(lines)
+
+
+def is_transient_error(error: Exception) -> bool:
+    """A temporary server-side failure worth retrying (overload, outage, timeout) - as opposed to
+    a quota limit (handled by the tracker) or a permanent error like an unknown model name."""
+    if isinstance(error, (asyncio.TimeoutError, TimeoutError, ConnectionError)):
+        return True
+    text = str(error).lower()
+    return any(marker in text for marker in (
+        "503", "unavailable", "high demand", "overloaded", "500 internal", "internal error",
+        "504", "deadline_exceeded", "timed out", "timeout", "connection reset", "temporarily",
+    ))
 
 
 def is_quota_error(error: Exception) -> bool:
