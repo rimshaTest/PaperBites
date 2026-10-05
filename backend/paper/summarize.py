@@ -48,6 +48,10 @@ _MAX_SIMPLIFIED_WORDS = 300  # a ceiling, not a target - true simplification can
 # words, and we only need enough to produce a good summary, not the whole document.
 _PDF_TEXT_CHAR_LIMIT = 15000
 
+# google-genai logs two noisy lines per call ("AFC is enabled...", a warning about automatic
+# function calling) that don't apply to how we use it; keep real errors.
+logging.getLogger("google_genai.models").setLevel(logging.ERROR)
+
 _model_cycle_lock = asyncio.Lock()
 _next_model_index = 0
 _llm_cache: Dict[str, object] = {}
@@ -141,6 +145,9 @@ async def _generate(
             reservation = await llm_usage.tracker.acquire(model_name, estimated)
         except llm_usage.LLMQuotaExhausted:
             continue
+        # The Google client's own retry messages (e.g. "503 high demand") don't name the model, so
+        # say which one this call is going to.
+        logger.info(f"Calling Gemini model '{model_name}' for {label}")
         try:
             response = await llm.ainvoke(payload)
         except Exception as e:
