@@ -26,6 +26,8 @@ class Config:
             "gemini_models": "",  # Optional comma-separated override of paper/summarize.py's model list
             "gemini_image_models": "",  # Optional comma-separated override of the add-paper-by-photo model list
             "gemini_embedding_model": "",  # Optional override of paper/embeddings.py's embedding model
+            "gemini_embedding_models": "",  # Optional comma-separated embedding models, in preference order
+            "gemini_limits": None,  # Optional {model: {rpm, tpm, rpd}} overrides for llm_usage.py's free-tier limits
             "resend_key": "",  # For sending password-reset codes (email_sender.py)
             "resend_from_email": "PaperBites <onboarding@resend.dev>",  # Resend's shared sandbox sender, until a custom domain is verified
             "sentry_dsn": "",  # Optional - crash/error monitoring (monitoring.py). Unset = no-op.
@@ -88,6 +90,8 @@ class Config:
             self.set("api.gemini_models", os.getenv("PAPERBITES_GEMINI_MODELS"))
         if os.getenv("PAPERBITES_GEMINI_IMAGE_MODELS"):
             self.set("api.gemini_image_models", os.getenv("PAPERBITES_GEMINI_IMAGE_MODELS"))
+        if os.getenv("PAPERBITES_GEMINI_EMBEDDING_MODELS"):
+            self.set("api.gemini_embedding_models", os.getenv("PAPERBITES_GEMINI_EMBEDDING_MODELS"))
         if os.getenv("PAPERBITES_GEMINI_EMBEDDING_MODEL"):
             self.set("api.gemini_embedding_model", os.getenv("PAPERBITES_GEMINI_EMBEDDING_MODEL"))
         if os.getenv("PAPERBITES_EMAIL"):

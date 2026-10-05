@@ -40,8 +40,18 @@ logger = logging.getLogger("paperbites.summarize")
 # (see summarize_text), so an invalid entry here just reduces the effective pool rather than
 # breaking anything.
 _MODEL_NAMES = [
+    # Full flash models first (best quality; 20 requests/day each on the free tier), then the
+    # lite ones (cheaper, with a much larger daily budget) as the overflow. Each model has its
+    # own quota, so more models = more papers per day. See llm_usage.DEFAULT_LIMITS.
+    "gemini-3.8-flash",
+    "gemini-3.7-flash",
+    "gemini-3.6-flash",
     "gemini-3.5-flash",
-    "gemini-3.5-flash-lite"
+    "gemini-3-flash-preview",
+    "gemini-2.5-flash",
+    "gemini-3.5-flash-lite",
+    "gemini-3.1-flash-lite",
+    "gemini-2.5-flash-lite",
 ]
 _MAX_SIMPLIFIED_WORDS = 300  # a ceiling, not a target - true simplification can run longer than the original
 # Cap how much extracted PDF text goes into the prompt - full papers can be tens of thousands of
@@ -126,98 +136,33 @@ async def _generate(
     models: List[str], payload, prompt_text: str, accept, label: str, rotate: bool = True,
     estimated_tokens: Optional[int] = None,
 ):
-    """Call Gemini through the usage tracker (llm_usage.py), cycling models until one yields an
-    answer `accept` approves.
+    """Call Gemini through the usage tracker, cycling models (llm_usage.cycle_models) until one
+    yields an answer `accept` approves. `accept(text)` turns the raw reply into the value to
+    return, or None/raise to skip that model. Returns None if nothing worked or every model is
+    out of budget. With rotate=True the starting model advances each call so load spreads across
+    the list."""
+    ordered = list(models)
+    if rotate and ordered:
+        first = await _next_model_name(ordered)
+        ordered = [first] + [m for m in ordered if m != first]
 
-    Each attempt picks a model with budget left: one available now if any, else the one whose
-    per-minute limit clears soonest (waiting for it), never one whose daily budget is spent.
-
-    Failures are handled by kind:
-    - Overload / temporary server errors (503, timeouts): the call is refunded (it never ran, so
-      it doesn't use budget) and the NEXT model is tried immediately. When every model has been
-      overloaded in a lap, wait a minute and go around again - indefinitely by default, since
-      overload passes. Only Ctrl+C, a spent quota, or the optional
-      api.gemini_overload_max_wait_seconds ends it.
-    - Quota (429): the tracker is told; a daily-quota error retires that model for the day.
-    - Anything else (e.g. an unknown model name, or a reply `accept` can't use): that model is
-      skipped for this call.
-    `accept(text)` turns the raw reply into the value to return, or None to try the next model.
-    Returns None if nothing worked or every model is out of budget.
-    """
-    estimated = estimated_tokens or llm_usage.estimate_tokens(prompt_text)
-    remaining = list(models)  # models not permanently out for this call
-    if rotate and remaining:
-        first = await _next_model_name(remaining)
-        remaining = [first] + [m for m in remaining if m != first]
-
-    max_wait = config_instance.get("api.gemini_overload_max_wait_seconds")
-    waited = 0.0
-    lap_wait = float(config_instance.get("api.gemini_overload_wait_seconds") or _OVERLOAD_WAIT_SECONDS)
-    overloaded_this_lap = set()  # transient-failed models, tried again after the backoff
-    lap = 1
-
-    while remaining:
-        available = [m for m in remaining if m not in overloaded_this_lap]
-        if not available:
-            # Every model was overloaded this lap: wait, then start a new lap with all of them
-            if max_wait is not None and waited >= float(max_wait):
-                logger.warning(f"Gemini stayed overloaded for {waited:.0f}s; giving up on {label}")
-                return None
-            logger.warning(
-                f"All Gemini models are overloaded (lap {lap}); waiting {lap_wait:.0f}s, then retrying {label}"
-            )
-            await _backoff_sleep(lap_wait)
-            waited += lap_wait
-            overloaded_this_lap.clear()
-            lap += 1
-            continue
-
-        model_name = llm_usage.tracker.choose(available, estimated)
-        if model_name is None:
-            return None  # every available model is out of budget for today
-
+    async def attempt(model_name: str):
         llm = _get_llm_for_model(model_name)
         if not llm:
-            remaining.remove(model_name)
-            continue
-        try:
-            reservation = await llm_usage.tracker.acquire(model_name, estimated)
-        except llm_usage.LLMQuotaExhausted:
-            remaining.remove(model_name)
-            continue
-        # The Google client's own retry messages (e.g. "503 high demand") don't name the model, so
-        # say which one this call is going to.
-        logger.info(f"Calling Gemini model '{model_name}' for {label}")
-        try:
-            response = await llm.ainvoke(payload)
-        except Exception as e:
-            if llm_usage.is_quota_error(e):
-                llm_usage.tracker.finish(reservation, None)
-                llm_usage.tracker.note_api_quota_error(model_name, str(e))
-                logger.warning(f"Gemini model '{model_name}' hit a quota limit for {label}")
-                remaining.remove(model_name)
-            elif llm_usage.is_transient_error(e):
-                llm_usage.tracker.refund(reservation)
-                overloaded_this_lap.add(model_name)
-                logger.warning(f"Gemini model '{model_name}' is overloaded or unavailable for {label}; trying the next one")
-            else:
-                llm_usage.tracker.finish(reservation, None)
-                logger.warning(f"Gemini model '{model_name}' failed for {label}: {e}")
-                remaining.remove(model_name)
-            continue
+            raise llm_usage.SkipModel()
+        response = await llm.ainvoke(payload)
+        return accept(response_text(response).strip()), response_tokens(response)
 
-        llm_usage.tracker.finish(reservation, response_tokens(response))
-        try:
-            result = accept(response_text(response).strip())
-        except Exception as e:
-            logger.warning(f"Gemini model '{model_name}' gave an unusable reply for {label}: {e}")
-            remaining.remove(model_name)
-            continue
-        if result:
-            return result
-        remaining.remove(model_name)
-
-    return None
+    outcome = await llm_usage.cycle_models(
+        ordered,
+        estimated_tokens or llm_usage.estimate_tokens(prompt_text),
+        attempt,
+        label,
+        lap_wait=float(config_instance.get("api.gemini_overload_wait_seconds") or _OVERLOAD_WAIT_SECONDS),
+        max_wait=(lambda v: float(v) if v is not None else None)(config_instance.get("api.gemini_overload_max_wait_seconds")),
+        sleep=_backoff_sleep,
+    )
+    return outcome[1] if outcome else None
 
 
 async def summarize_text(title: str, text: str, source_label: str = "Abstract") -> Optional[str]:

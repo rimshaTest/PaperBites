@@ -184,7 +184,8 @@ def main():
             if args.set_used:
                 llm_usage.tracker.set_daily_requests(args.set_used[0], int(args.set_used[1]))
                 print(f"Recorded {args.set_used[1]} request(s) used today for {args.set_used[0]}")
-            print(llm_usage.tracker.format_report(_configured_model_names()))
+            from paper.embeddings import _configured_embedding_models
+            print(llm_usage.tracker.format_report(_configured_model_names() + _configured_embedding_models()))
             print(f"Daily quotas reset in {llm_usage.seconds_until_pacific_reset(llm_usage._time_now()) / 3600:.1f}h (midnight Pacific)")
         elif args.command == "backfill-embeddings":
             result = await backfill_missing_embeddings()

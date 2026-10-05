@@ -46,7 +46,7 @@ from paper.latest import (
     fetch_crossref_abstract,
     fetch_unpaywall_oa_location,
 )
-from paper.embeddings import embed_document
+from paper.embeddings import embed_document_with_model, embedding_text
 from paper.summarize import summarize_and_classify_paper
 
 config_instance = Config()
@@ -297,9 +297,11 @@ async def add_paper_from_citation(candidate: Dict) -> Dict:
     if not paper.get("description"):
         raise ValueError("Could not generate a description for this paper (no abstract or full text available)")
 
-    vector = await embed_document(paper["description"])
+    result = await embed_document_with_model(embedding_text(paper))
+    vector = result[0] if result else None
     if vector:
         paper["embedding"] = vector
+        paper["embedding_model"] = result[1]
 
     await _attach_images(combined, paper["categories"][0] if paper["categories"] else paper["title"])
 

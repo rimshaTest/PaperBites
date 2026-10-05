@@ -80,11 +80,28 @@ after 3 such papers in a row the run stops with a message. Papers saved without 
 (`--continue-without-llm`, or no API key) carry `description_source: "abstract"` so they can be
 found and redone later.
 
+**Embeddings.** Each paper's *title and description together* are embedded once at ingestion
+(`paper/embeddings.py`), through the same usage tracker and the same cycling/503 handling as the
+summarizer. Models are tried in `api.gemini_embedding_models` order (env
+`PAPERBITES_GEMINI_EMBEDDING_MODELS`, comma-separated; default `gemini-embedding-001`). Vectors from
+different embedding models can't be compared, so every stored paper records its `embedding_model`,
+semantic search embeds the query once per model present and compares each paper only with its own
+model's query vector, and the Visualize graph only links papers embedded by the same model. Papers
+stored without an embedding (all embedding models spent or unavailable) can be filled in later with
+`python cli.py backfill-embeddings`.
+
 **Gemini usage tracking** (`llm_usage.py`). Every Gemini call is counted against per-model limits
 - requests per minute, tokens per minute, requests per day - and a per-minute limit is waited
 out, while a spent daily budget skips that model. Daily counts are saved in the `llm_usage`
 collection so they carry across runs; the day resets at midnight Pacific, when Google resets
-quotas. Built-in limit: `gemini-3.5-flash` = 5 RPM, 250k TPM, 20 RPD. Set others with
+quotas. Built-in limits (free tier, from Google AI Studio's rate-limit page - check
+https://ai.dev/rate-limit and override any of them, since they change): `gemini-3.8-flash`,
+`gemini-3.7-flash`, `gemini-3.6-flash`, `gemini-3.5-flash`, `gemini-3-flash-preview` and
+`gemini-2.5-flash` = 5 RPM / 250k TPM / 20 RPD each; `gemini-2.5-flash-lite` = 10 / 250k / 20;
+`gemini-3.5-flash-lite` and `gemini-3.1-flash-lite` = 15 / 250k / 500; embeddings:
+`gemini-embedding-001` = 100 / 30k / 1,000, `gemini-embedding-2` = 30 / 16k / 14,400. Each model has
+its own quota, so the summarizer's default model list (`paper/summarize.py`) uses all of the text
+models, full flash models first and the lite ones as overflow. Set others with
 `api.gemini_limits` in config.json or `PAPERBITES_GEMINI_LIMITS` as JSON, e.g.
 `{"gemini-3.5-flash-lite": {"rpm": 15, "tpm": 250000, "rpd": 500}}`. A model with no configured
 limit is counted but not gated. A 429 from the API itself is also honored (a daily-quota error

@@ -956,17 +956,19 @@ async def _apply_summaries(papers: List[Dict]) -> None:
 
 
 async def _apply_embeddings(papers: List[Dict]) -> None:
-    """Embed each paper's description for semantic search (paper/embeddings.py), exactly once at
+    """Embed each paper's title and description for semantic search (paper/embeddings.py), exactly once at
     ingestion - never recomputed on a later reload/view. A paper Gemini can't embed (no API key,
     or the call fails) simply has no `embedding` field; semantic search filters those out rather
     than the ingestion pipeline failing over it.
     """
-    from paper.embeddings import embed_document
+    from paper.embeddings import embed_document_with_model, embedding_text
 
     async def embed(paper: Dict) -> None:
-        vector = await embed_document(paper.get("description") or "")
-        if vector:
-            paper["embedding"] = vector
+        # Title + description together, so search can match on either; the model is recorded
+        # because vectors from different embedding models can't be compared
+        result = await embed_document_with_model(embedding_text(paper))
+        if result:
+            paper["embedding"], paper["embedding_model"] = result
 
     await asyncio.gather(*(embed(p) for p in papers))
 

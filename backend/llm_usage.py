@@ -2,14 +2,14 @@
 Tracks and enforces Gemini free-tier usage per model: requests per minute (RPM), tokens per
 minute (TPM) and requests per day (RPD).
 
-Why this exists: the free tier is tiny (gemini-3.5-flash: 5 RPM, 250k TPM, 20 RPD) and a daily cap
+Why this exists: the free tier is tiny (e.g. gemini-3.5-flash: 5 RPM, 250k TPM, 20 RPD) and a daily cap
 that's hit mid-run used to turn into a flood of retries and silently degraded descriptions.
 Every LLM call now goes through `tracker.acquire()` first, which waits out a per-minute limit,
 refuses once a day's budget is spent, and counts the call. Daily counts are persisted in MongoDB
 (`llm_usage` collection, one document per model per day) so they survive across runs - a second
 `fetch-latest` the same day knows how much of the budget the first one used.
 
-Limits are per model. Defaults for known models are in DEFAULT_LIMITS; override or add models with
+Limits are per model (text and embedding models alike). Defaults for known models are in DEFAULT_LIMITS; override or add models with
 `api.gemini_limits` in config.json (or PAPERBITES_GEMINI_LIMITS as JSON), e.g.
 {"gemini-3.5-flash-lite": {"rpm": 15, "tpm": 250000, "rpd": 500}}. A model with no configured
 limit is never gated locally (the API's own 429s are still handled), only counted.
@@ -39,9 +39,30 @@ class Limits(NamedTuple):
     rpd: Optional[int] = None
 
 
+# Free-tier limits per model, read from Google AI Studio's rate-limit page (https://ai.dev/rate-limit).
+# They change over time and differ by account/plan - check that page and override any entry with
+# api.gemini_limits / PAPERBITES_GEMINI_LIMITS. Keys are model names without the "models/" prefix.
+_FLASH = Limits(rpm=5, tpm=250_000, rpd=20)
 DEFAULT_LIMITS: Dict[str, Limits] = {
-    "gemini-3.5-flash": Limits(rpm=5, tpm=250_000, rpd=20),
+    # Text-out models
+    "gemini-3.8-flash": _FLASH,
+    "gemini-3.7-flash": _FLASH,
+    "gemini-3.6-flash": _FLASH,
+    "gemini-3.5-flash": _FLASH,
+    "gemini-3-flash-preview": _FLASH,
+    "gemini-2.5-flash": _FLASH,
+    "gemini-2.5-flash-lite": Limits(rpm=10, tpm=250_000, rpd=20),
+    "gemini-3.5-flash-lite": Limits(rpm=15, tpm=250_000, rpd=500),
+    "gemini-3.1-flash-lite": Limits(rpm=15, tpm=250_000, rpd=500),
+    # Embedding models ("Other models")
+    "gemini-embedding-001": Limits(rpm=100, tpm=30_000, rpd=1_000),
+    "gemini-embedding-2": Limits(rpm=30, tpm=16_000, rpd=14_400),
 }
+
+
+def model_key(name: str) -> str:
+    """The name limits and usage are tracked under: no "models/" prefix."""
+    return name[len("models/"):] if name.startswith("models/") else name
 
 
 class LLMQuotaExhausted(Exception):
@@ -55,6 +76,11 @@ class LLMQuotaExhausted(Exception):
 
 def _time_now() -> float:
     return time.time()
+
+
+class SkipModel(Exception):
+    """Raised by a call attempt to say "this model can't be used for this call" (not configured,
+    unusable reply) without it counting as a server error."""
 
 
 class LLMUnavailable(Exception):
@@ -330,7 +356,7 @@ class LLMUsageTracker:
     def report(self, models: Optional[List[str]] = None) -> List[Dict]:
         now = self._clock()
         date = pacific_date(now)
-        names = set(models or []) | {m for (m, d) in self._daily if d == date} | set(self._limits or _configured_limits())
+        names = {model_key(m) for m in (models or [])} | {m for (m, d) in self._daily if d == date}
         rows = []
         for model in sorted(names):
             limits = self.limits_for(model)
@@ -377,3 +403,87 @@ def is_quota_error(error: Exception) -> bool:
 
 
 tracker = LLMUsageTracker()
+
+
+async def cycle_models(
+    models: List[str],
+    estimated_tokens: int,
+    attempt: Callable,
+    label: str,
+    *,
+    lap_wait: float = 60.0,
+    max_wait: Optional[float] = None,
+    sleep: Optional[Callable] = None,
+) -> Optional[Tuple[str, object]]:
+    """Run `attempt(model)` against the first model that works, cycling through `models` (in
+    preference order) with budget tracking. Used for every Gemini call - text and embeddings.
+
+    `attempt(model)` does the request and returns (value, actual_tokens); a falsy value means the
+    reply was unusable. Failures are handled by kind:
+    - Overload / temporary server errors (503, timeouts): the call is refunded (it never ran, so
+      it uses no budget) and the NEXT model is tried at once. When every model has been overloaded
+      in a lap, wait `lap_wait` seconds and go around again - indefinitely unless `max_wait`
+      (total seconds) is set.
+    - Quota (429): the tracker is told; a daily-quota error retires that model for the day.
+    - Anything else (an unknown model name, SkipModel, an unusable reply): that model is skipped
+      for this call.
+    Models are chosen by tracker.choose: one available now if any, else the one whose per-minute
+    limit clears soonest, never one whose daily budget is spent. Returns (model, value), or None
+    if nothing worked or every model is out of budget.
+    """
+    sleep = sleep or asyncio.sleep
+    remaining = list(models)  # not permanently out for this call
+    overloaded = set()  # transient-failed this lap; retried after the wait
+    waited, lap = 0.0, 1
+
+    while remaining:
+        available = [m for m in remaining if m not in overloaded]
+        if not available:
+            if max_wait is not None and waited >= max_wait:
+                logger.warning(f"Gemini stayed overloaded for {waited:.0f}s; giving up on {label}")
+                return None
+            logger.warning(f"All Gemini models are overloaded (lap {lap}); waiting {lap_wait:.0f}s, then retrying {label}")
+            await sleep(lap_wait)
+            waited += lap_wait
+            overloaded.clear()
+            lap += 1
+            continue
+
+        model = tracker.choose(available, estimated_tokens)
+        if model is None:
+            return None  # every available model is out of budget for today
+        try:
+            reservation = await tracker.acquire(model, estimated_tokens)
+        except LLMQuotaExhausted:
+            remaining.remove(model)
+            continue
+
+        logger.info(f"Calling Gemini model '{model}' for {label}")
+        try:
+            value, tokens = await attempt(model)
+        except SkipModel:
+            tracker.finish(reservation, None)
+            remaining.remove(model)
+            continue
+        except Exception as e:
+            if is_quota_error(e):
+                tracker.finish(reservation, None)
+                tracker.note_api_quota_error(model, str(e))
+                logger.warning(f"Gemini model '{model}' hit a quota limit for {label}")
+                remaining.remove(model)
+            elif is_transient_error(e):
+                tracker.refund(reservation)
+                overloaded.add(model)
+                logger.warning(f"Gemini model '{model}' is overloaded or unavailable for {label}; trying the next one")
+            else:
+                tracker.finish(reservation, None)
+                logger.warning(f"Gemini model '{model}' failed for {label}: {e}")
+                remaining.remove(model)
+            continue
+
+        tracker.finish(reservation, tokens)
+        if value:
+            return model, value
+        remaining.remove(model)
+
+    return None

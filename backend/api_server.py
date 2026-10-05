@@ -44,6 +44,7 @@ def _serialize_paper(doc: Dict) -> Dict:
     doc = dict(doc)
     doc["id"] = str(doc.pop("_id"))
     doc.pop("embedding", None)  # a 768-float vector the client never uses - don't ship it
+    doc.pop("embedding_model", None)
     if doc.get("abstract"):
         doc["abstract"] = clean_abstract(doc["abstract"])
     doc["description"] = clean_abstract(doc.get("description")) or doc.get("abstract", "")
@@ -216,27 +217,24 @@ async def search_papers_semantically(request):
     limit = int(request.query_params.get("limit", "20"))
 
     try:
-        from paper.embeddings import embed_query, cosine_similarity
+        from paper.embeddings import score_documents
     except ImportError as e:
         print(f"Semantic search unavailable, paper.embeddings failed to import: {e}")
         return JSONResponse({"detail": "Semantic search is temporarily unavailable"}, status_code=503)
 
-    query_vector = await embed_query(query)
-    if not query_vector:
-        return JSONResponse({"detail": "Semantic search is temporarily unavailable"}, status_code=503)
-
     try:
         import db
-        cursor = db.get_db().papers.find({"embedding": {"$exists": True}})
-        scored = [
-            (cosine_similarity(query_vector, doc.get("embedding") or []), doc)
-            for doc in cursor
-        ]
+        docs = list(db.get_db().papers.find({"embedding": {"$exists": True}}))
     except Exception as e:
         print(f"Error reading papers for semantic search from MongoDB: {e}")
         return JSONResponse([])
 
-    scored.sort(key=lambda pair: pair[0], reverse=True)
+    # The query is embedded once per embedding model present among the stored papers, and each
+    # paper is compared only to the query vector from its own model (vectors from different
+    # models can't be compared).
+    scored = await score_documents(query, docs)
+    if docs and not scored:
+        return JSONResponse({"detail": "Semantic search is temporarily unavailable"}, status_code=503)
     top_papers = [doc for _, doc in scored[:limit]]
     results = [_serialize_paper(doc) for doc in top_papers]
     _merge_engagement(results, get_authenticated_user_id(request))
@@ -566,7 +564,7 @@ async def get_viewed_papers_graph(request):
     try:
         import db
         from bson import ObjectId
-        from paper.embeddings import cosine_similarity
+        from paper.embeddings import cosine_similarity, doc_embedding_model
 
         object_ids = []
         for pid in paper_ids:
@@ -593,14 +591,17 @@ async def get_viewed_papers_graph(request):
             "journal": doc.get("journal"),
         })
         if doc.get("embedding"):
-            embeddings_by_id[pid] = doc["embedding"]
+            embeddings_by_id[pid] = (doc_embedding_model(doc), doc["embedding"])
 
     embedded_ids = list(embeddings_by_id.keys())
     edges = []
     for i in range(len(embedded_ids)):
         for j in range(i + 1, len(embedded_ids)):
             a_id, b_id = embedded_ids[i], embedded_ids[j]
-            similarity = cosine_similarity(embeddings_by_id[a_id], embeddings_by_id[b_id])
+            (model_a, vec_a), (model_b, vec_b) = embeddings_by_id[a_id], embeddings_by_id[b_id]
+            if model_a != model_b:
+                continue  # vectors from different embedding models can't be compared
+            similarity = cosine_similarity(vec_a, vec_b)
             if similarity >= _GRAPH_SIMILARITY_THRESHOLD:
                 edges.append({"source": a_id, "target": b_id, "similarity": round(similarity, 3)})
 
