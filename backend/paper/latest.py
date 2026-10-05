@@ -948,6 +948,9 @@ async def _apply_summaries(papers: List[Dict]) -> None:
         async def apply(paper: Dict) -> None:
             summary = await summarize_paper(session, paper)
             paper["description"] = summary or paper.get("abstract") or ""
+            # Recorded so descriptions that are only the raw abstract (Gemini unavailable) can be
+            # told apart from real summaries and redone later
+            paper["description_source"] = "summary" if summary else "abstract"
 
         await asyncio.gather(*(apply(p) for p in papers))
 
@@ -1066,11 +1069,20 @@ def validate_paper(paper: Dict) -> Optional[str]:
     return None
 
 
-async def process_candidate(paper: Dict, category: str) -> Optional[Dict]:
+class SummaryUnavailable(Exception):
+    """The LLM was expected to summarize this paper but every model failed (not a quota stop)."""
+
+
+async def process_candidate(paper: Dict, category: str, require_summary: bool = False) -> Optional[Dict]:
     """Take one candidate through every enrichment step and return it ready to store, or None
     if it should be dropped (not open access, no usable description, failed validation). Each
     step runs on just this paper, so the LLM quota is spent paper by paper and a failure here
-    affects only this paper."""
+    affects only this paper.
+
+    require_summary: raise SummaryUnavailable instead of settling for the raw abstract when the
+    LLM was available to use but failed (e.g. a 503 on every model). Otherwise the paper would be
+    stored with an abstract-only description, and re-runs skip stored papers - so it would never
+    get a real summary."""
     # Crossref's own open-access flag isn't reliable, so confirm (or rule out) a real
     # open-access link via Unpaywall; Semantic Scholar and OpenAlex are already filtered.
     await _fill_open_access_links([paper])
@@ -1082,6 +1094,8 @@ async def process_candidate(paper: Dict, category: str) -> Optional[Dict]:
     paper = filled[0]
     await _apply_language_and_translation([paper])
     await _apply_summaries([paper])  # description = LLM summary, else the raw abstract
+    if require_summary and paper.get("description_source") == "abstract" and (paper.get("abstract") or "").strip():
+        raise SummaryUnavailable(paper.get("title", "")[:60])
 
     problem = validate_paper(paper)
     if problem:
@@ -1096,6 +1110,8 @@ async def process_candidate(paper: Dict, category: str) -> Optional[Dict]:
 # Candidates searched per paper wanted: many get skipped (already stored) or dropped (not open
 # access, no usable description), so look wider than the number of papers actually needed.
 DEFAULT_POOL_FACTOR = 5
+# This many papers in a row failing to summarize means Gemini is down, not that those papers are bad.
+LLM_FAILURE_LIMIT = 3
 
 
 async def iter_latest_papers(
@@ -1129,8 +1145,9 @@ async def iter_latest_papers(
     from paper.summarize import _configured_model_names
 
     stats = stats if stats is not None else {}
-    for key in ("candidates", "skipped_existing", "dropped", "produced"):
+    for key in ("candidates", "skipped_existing", "dropped", "produced", "llm_failed"):
         stats.setdefault(key, 0)
+    consecutive_llm_failures = 0
 
     candidates = await find_candidate_papers(category, days_back, limit * max(1, pool_factor), sort_by)
     stats["candidates"] += len(candidates)
@@ -1149,9 +1166,26 @@ async def iter_latest_papers(
                 raise llm_usage.LLMQuotaExhausted(llm_usage.seconds_until_pacific_reset(llm_usage._time_now()))
 
         try:
-            processed = await process_candidate(paper, category)
+            processed = await process_candidate(
+                paper, category, require_summary=uses_llm and stop_when_llm_exhausted
+            )
+            consecutive_llm_failures = 0
         except llm_usage.LLMQuotaExhausted:
             raise
+        except SummaryUnavailable:
+            # Leave it unsaved so a later run can summarize it properly. If several in a row
+            # fail, Gemini is down - stop instead of grinding through the whole pool.
+            consecutive_llm_failures += 1
+            stats["llm_failed"] += 1
+            logger.warning(
+                f"Not saving '{paper.get('title', '')[:60]}': Gemini couldn't summarize it "
+                f"({consecutive_llm_failures} in a row)"
+            )
+            if consecutive_llm_failures >= LLM_FAILURE_LIMIT:
+                raise llm_usage.LLMUnavailable(
+                    f"Gemini failed to summarize {consecutive_llm_failures} papers in a row"
+                )
+            continue
         except Exception as e:
             # One paper blowing up shouldn't end the run
             logger.exception(f"Skipping '{paper.get('title', '')[:60]}' after an error: {e}")

@@ -57,6 +57,13 @@ async def fetch_latest_command(
                     saved += 1
                     cat_saved += 1
                     logger.info(f"[{cat}] saved {cat_saved}: {paper['title'][:80]}")
+            except llm_usage.LLMUnavailable as e:
+                logger.warning(
+                    f"Stopping: {e}. Gemini looks overloaded or down (e.g. 503 errors), not out of quota. "
+                    f"Saved {saved} paper(s) so far; they're kept, and the papers that failed were NOT saved "
+                    f"(so they get summarized properly next time). Try again in a few minutes."
+                )
+                break
             except llm_usage.LLMQuotaExhausted as e:
                 logger.warning(
                     f"Stopping: {e}. Saved {saved} paper(s) so far; they're kept. "
@@ -65,7 +72,8 @@ async def fetch_latest_command(
                 break
             logger.info(
                 f"'{cat}': {stats.get('candidates', 0)} candidates, saved {cat_saved}, "
-                f"skipped {stats.get('skipped_existing', 0)} already stored, dropped {stats.get('dropped', 0)}"
+                f"skipped {stats.get('skipped_existing', 0)} already stored, dropped {stats.get('dropped', 0)}, "
+                f"{stats.get('llm_failed', 0)} not saved because Gemini failed"
             )
     finally:
         usage = llm_usage.tracker.format_report()

@@ -57,6 +57,10 @@ def _time_now() -> float:
     return time.time()
 
 
+class LLMUnavailable(Exception):
+    """Gemini keeps failing (outage, overload) even though quota remains."""
+
+
 def estimate_tokens(text: str) -> int:
     """~4 characters per token, plus room for the reply. An estimate used only to pace calls;
     the real count from the response replaces it once known."""

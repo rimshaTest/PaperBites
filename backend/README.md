@@ -65,6 +65,11 @@ stops once the limit is reached. A source that stays rate-limited (e.g. Semantic
 key) is skipped for 10 minutes instead of being waited on for every category. When every Gemini model's
 daily budget is spent the run stops with a message (rather than storing papers whose description
 is just the raw abstract); `--continue-without-llm` overrides that.
+If Gemini is up but failing (e.g. a 503 "high demand" on every model), a paper that can't be summarized
+is *not saved* - so it isn't stuck with a raw-abstract description - and after 3 such papers in a row
+the run stops with a message; just re-run in a few minutes. Papers saved without a real summary
+(`--continue-without-llm`, or no API key) carry `description_source: "abstract"` so they can be
+found and redone later.
 
 **Gemini usage tracking** (`llm_usage.py`). Every Gemini call is counted against per-model limits
 - requests per minute, tokens per minute, requests per day - and a per-minute limit is waited
