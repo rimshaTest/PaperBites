@@ -1075,7 +1075,9 @@ class SummaryUnavailable(Exception):
     """The LLM was expected to summarize this paper but every model failed (not a quota stop)."""
 
 
-async def process_candidate(paper: Dict, category: str, require_summary: bool = False) -> Optional[Dict]:
+async def process_candidate(
+    paper: Dict, category: str, require_summary: bool = False, use_llm: bool = True
+) -> Optional[Dict]:
     """Take one candidate through every enrichment step and return it ready to store, or None
     if it should be dropped (not open access, no usable description, failed validation). Each
     step runs on just this paper, so the LLM quota is spent paper by paper and a failure here
@@ -1084,7 +1086,12 @@ async def process_candidate(paper: Dict, category: str, require_summary: bool = 
     require_summary: raise SummaryUnavailable instead of settling for the raw abstract when the
     LLM was available to use but failed (e.g. a 503 on every model). Otherwise the paper would be
     stored with an abstract-only description, and re-runs skip stored papers - so it would never
-    get a real summary."""
+    get a real summary.
+
+    use_llm=False: don't call Gemini at all. The description is the paper's (translated) abstract,
+    labeled description_source="abstract", and no embedding is made - both can be filled in later
+    (`cli.py resummarize`, `cli.py backfill-embeddings`) once Gemini is available. Everything else
+    - sources, open-access check, translation, image, validation - is identical."""
     # Crossref's own open-access flag isn't reliable, so confirm (or rule out) a real
     # open-access link via Unpaywall; Semantic Scholar and OpenAlex are already filtered.
     await _fill_open_access_links([paper])
@@ -1095,8 +1102,12 @@ async def process_candidate(paper: Dict, category: str, require_summary: bool = 
     filled = await _fill_missing_abstracts([paper])
     paper = filled[0]
     await _apply_language_and_translation([paper])
-    await _apply_summaries([paper])  # description = LLM summary, else the raw abstract
-    if require_summary and paper.get("description_source") == "abstract" and (paper.get("abstract") or "").strip():
+    if use_llm:
+        await _apply_summaries([paper])  # description = LLM summary, else the raw abstract
+    else:
+        paper["description"] = paper.get("abstract") or ""
+        paper["description_source"] = "abstract"
+    if use_llm and require_summary and paper.get("description_source") == "abstract" and (paper.get("abstract") or "").strip():
         raise SummaryUnavailable(paper.get("title", "")[:60])
 
     problem = validate_paper(paper)
@@ -1104,7 +1115,8 @@ async def process_candidate(paper: Dict, category: str, require_summary: bool = 
         logger.info(f"Dropped '{paper.get('title', '')[:60]}': {problem}")
         return None
 
-    await _apply_embeddings([paper])
+    if use_llm:
+        await _apply_embeddings([paper])
     await _attach_images([paper], category)
     return paper
 
@@ -1125,6 +1137,7 @@ async def iter_latest_papers(
     stop_when_llm_exhausted: bool = True,
     stats: Optional[Dict[str, int]] = None,
     pool_factor: int = DEFAULT_POOL_FACTOR,
+    use_llm: bool = True,
 ):
     """Yield this category's papers one at a time, each fully enriched and validated, so the
     caller can store each the moment it's ready - an interrupted run keeps everything finished
@@ -1153,7 +1166,8 @@ async def iter_latest_papers(
 
     candidates = await find_candidate_papers(category, days_back, limit * max(1, pool_factor), sort_by)
     stats["candidates"] += len(candidates)
-    uses_llm = bool(config_instance.get("api.gemini_key"))
+    # With use_llm=False Gemini is never called, so its quota and failures are irrelevant here
+    uses_llm = use_llm and bool(config_instance.get("api.gemini_key"))
 
     for paper in candidates:
         if stats["produced"] >= limit:
@@ -1169,7 +1183,7 @@ async def iter_latest_papers(
 
         try:
             processed = await process_candidate(
-                paper, category, require_summary=uses_llm and stop_when_llm_exhausted
+                paper, category, require_summary=uses_llm and stop_when_llm_exhausted, use_llm=use_llm
             )
             consecutive_llm_failures = 0
         except llm_usage.LLMQuotaExhausted:

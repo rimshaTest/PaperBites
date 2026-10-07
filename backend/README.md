@@ -36,7 +36,11 @@ build isolation.
 python api_server.py
 
 # Fetch/refresh papers into MongoDB - run this at least once before the app has anything to show
-python cli.py fetch-latest [--category "Physics"] [--days 7] [--limit 20] [--search-pool 5] [--sort-by date|citations] [--refresh] [--continue-without-llm]
+python cli.py fetch-latest [--category "Physics"] [--days 7] [--limit 20] [--search-pool 5] [--sort-by date|citations] [--refresh] [--continue-without-llm] [--no-llm]
+
+# No Gemini at all (e.g. while it's having problems): same pipeline and stored format, but the
+# description is the paper's own abstract and no embedding is made. Then, once Gemini is back:
+python cli.py resummarize [--limit 20]      # real summaries + embeddings for those papers, one at a time
 
 # Show today's Gemini usage per model against its limits (RPM / TPM / RPD)
 python cli.py llm-usage
@@ -78,7 +82,9 @@ If a paper still can't be summarized (every model failed for a non-overload reas
 max wait was reached), it is *not saved* - so it isn't stuck with a raw-abstract description - and
 after 3 such papers in a row the run stops with a message. Papers saved without a real summary
 (`--continue-without-llm`, or no API key) carry `description_source: "abstract"` so they can be
-found and redone later.
+found and redone later with `python cli.py resummarize`. `fetch-latest --no-llm` skips Gemini
+entirely (no key or quota needed) and stores every paper this way; papers with no abstract are
+dropped, since there's nothing to describe them with.
 
 **Embeddings.** Each paper's *title and description together* are embedded once at ingestion
 (`paper/embeddings.py`), through the same usage tracker and the same cycling/503 handling as the
