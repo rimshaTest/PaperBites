@@ -298,7 +298,7 @@ def test_papers_gemini_failed_to_summarize_are_not_stored_with_a_raw_abstract(mo
     async def fake_find(category, days_back, limit, sort_by):
         return list(cand)
 
-    async def fake_process(paper, category, require_summary=False, **kw):
+    async def fake_process(paper, category, require_summary=False):
         seen.append(require_summary)
         if paper["source_id"] == "id1":
             raise L.SummaryUnavailable(paper["title"])  # every model 503'd for this one
@@ -320,7 +320,7 @@ def test_run_stops_when_gemini_fails_several_papers_in_a_row(monkeypatch, databa
     async def fake_find(category, days_back, limit, sort_by):
         return list(cand)
 
-    async def always_fails(paper, category, require_summary=False, **kw):
+    async def always_fails(paper, category, require_summary=False):
         raise L.SummaryUnavailable(paper["title"])
 
     monkeypatch.setattr(L, "find_candidate_papers", fake_find)

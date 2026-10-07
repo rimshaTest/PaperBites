@@ -25,7 +25,6 @@ from db import upsert_paper
 async def fetch_latest_command(
     category: Optional[str], days: int, limit: int, sort_by: str = "date",
     refresh: bool = False, continue_without_llm: bool = False, pool_factor: int = DEFAULT_POOL_FACTOR,
-    no_llm: bool = False,
 ) -> int:
     """Fetch papers for one or all known categories, storing each paper the moment it's ready.
 
@@ -35,10 +34,6 @@ async def fetch_latest_command(
     (unless `refresh`), so re-running resumes instead of redoing work and burning LLM quota.
     When every Gemini model's daily budget is spent the run stops with a clear message (rather
     than storing papers with raw-abstract descriptions) unless `continue_without_llm`.
-
-    `no_llm`: never call Gemini. Papers are stored with their abstract as the description and no
-    embedding (labeled description_source="abstract"); `resummarize` / `backfill-embeddings`
-    upgrade them later.
     """
     logger = logging.getLogger("paperbites.cli")
     categories = [category] if category else CATEGORIES
@@ -52,7 +47,7 @@ async def fetch_latest_command(
                 async for paper in iter_latest_papers(
                     cat, days_back=days, limit=limit, sort_by=sort_by,
                     skip_existing=not refresh, stop_when_llm_exhausted=not continue_without_llm,
-                    stats=stats, pool_factor=pool_factor, use_llm=not no_llm,
+                    stats=stats, pool_factor=pool_factor,
                 ):
                     try:
                         upsert_paper(paper)
@@ -111,11 +106,6 @@ def main():
         choices=["date", "citations"], default="date",
     )
     fetch_parser.add_argument(
-        "--no-llm", action="store_true",
-        help="Don't call Gemini at all: store papers with their abstract as the description and no "
-             "embedding. Run `resummarize` and `backfill-embeddings` later to upgrade them",
-    )
-    fetch_parser.add_argument(
         "--refresh", action="store_true",
         help="Re-process papers that are already stored (default: skip them, which saves LLM quota)",
     )
@@ -125,17 +115,6 @@ def main():
              "abstract as the description (default: stop, so they can be summarized after the reset)",
     )
     fetch_parser.add_argument("--config", "-c", help="Path to config file", default="config.json")
-
-    resummarize_parser = subparsers.add_parser(
-        "resummarize",
-        help="Give papers stored without a real summary (fetch-latest --no-llm, or Gemini being "
-             "unavailable) their Gemini summary and an embedding - one at a time, safe to re-run",
-    )
-    resummarize_parser.add_argument("--limit", type=int, default=20, help="Max papers to upgrade this run (0 = all)")
-    resummarize_parser.add_argument(
-        "--no-embeddings", action="store_true", help="Only write summaries; skip embedding the upgraded papers",
-    )
-    resummarize_parser.add_argument("--config", "-c", help="Path to config file", default="config.json")
 
     usage_parser = subparsers.add_parser(
         "llm-usage", help="Show today's Gemini usage per model against its RPM / TPM / RPD limits"
@@ -197,16 +176,9 @@ def main():
             total = await fetch_latest_command(
                 args.category, args.days, args.limit, sort_by=args.sort_by,
                 refresh=args.refresh, continue_without_llm=args.continue_without_llm,
-                pool_factor=args.search_pool, no_llm=args.no_llm,
+                pool_factor=args.search_pool,
             )
             logger.info(f"Saved {total} papers total")
-        elif args.command == "resummarize":
-            from paper.resummarize import resummarize_papers
-            result = await resummarize_papers(limit=args.limit, embed=not args.no_embeddings)
-            logger.info(f"Resummarize complete: {result}")
-            usage = llm_usage.tracker.format_report()
-            if usage:
-                logger.info("Gemini usage:\n" + usage)
         elif args.command == "llm-usage":
             from paper.summarize import _configured_model_names
             if args.set_used:
