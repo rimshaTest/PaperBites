@@ -665,9 +665,11 @@ _MAX_SCAN_IMAGE_BYTES = 15 * 1024 * 1024
 
 
 async def scan_paper_photo(request):
-    """Experimental: extract a citation from a photo of a paper's title page or a poster (via
-    Gemini vision), then resolve it the same way a pasted citation is. No QR-code decoding - see
-    paper.summarize.extract_citation_text_from_image's docstring for why."""
+    """Add a paper from a picture of it (title page, printed page, screenshot, poster): read as
+    much as possible off the image (Gemini vision, with local OCR as a fallback), then look the
+    paper up by DOI, by embedding similarity against papers already in the library, and by a
+    Crossref search. See paper/photo_scan.py. No QR-code decoding - it needs a system library
+    this deployment doesn't assume."""
     user_id = get_authenticated_user_id(request)
     if not user_id:
         return JSONResponse({"detail": "Authentication required"}, status_code=401)
@@ -688,18 +690,27 @@ async def scan_paper_photo(request):
         return JSONResponse({"detail": "image is too large"}, status_code=413)
 
     try:
-        from paper.summarize import extract_citation_text_from_image
-        from paper.citation import search_citation
+        from paper.photo_scan import scan_image
     except ImportError as e:
         print(f"Photo scan unavailable, imports failed: {e}")
         return JSONResponse({"detail": "Scanning is temporarily unavailable"}, status_code=503)
 
-    extracted = await extract_citation_text_from_image(image_bytes, image.content_type or "image/jpeg")
-    if not extracted:
-        return JSONResponse({"candidates": [], "extracted": None})
+    result = await scan_image(image_bytes, image.content_type or "image/jpeg")
+    return JSONResponse({"candidates": result["candidates"], "extracted": result["extracted"]})
 
-    candidates = await search_citation(extracted)
-    return JSONResponse({"candidates": candidates, "extracted": extracted})
+
+def _find_stored_paper_by_doi(doi):
+    """The stored paper with this DOI (case-insensitive, any source), or None."""
+    import re
+    import db
+    doi = (doi or "").strip()
+    if not doi:
+        return None
+    try:
+        return db.get_db().papers.find_one({"doi": {"$regex": f"^{re.escape(doi)}$", "$options": "i"}})
+    except Exception as e:
+        print(f"Stored-paper DOI lookup failed: {e}")
+        return None
 
 
 async def add_paper_by_citation(request):
@@ -726,6 +737,15 @@ async def add_paper_by_citation(request):
         "language": body.get("language"),
     }
 
+    # A paper already stored (from any source, e.g. found by the feed under OpenAlex) is just
+    # bookmarked - re-running the pipeline would add a duplicate under a different source id.
+    import db
+    existing = _find_stored_paper_by_doi(candidate["doi"])
+    if existing:
+        saved = _serialize_paper(existing)
+        bookmarks_store.add_bookmark(user_id, saved["id"])
+        return JSONResponse(saved, status_code=200)
+
     try:
         from paper.citation import add_paper_from_citation
     except ImportError as e:
@@ -737,7 +757,6 @@ async def add_paper_by_citation(request):
     except ValueError as e:
         return JSONResponse({"detail": str(e)}, status_code=400)
 
-    import db
     db.upsert_papers([paper])
     doc = db.get_db().papers.find_one({"source": paper["source"], "source_id": paper["source_id"]})
     saved = _serialize_paper(doc)

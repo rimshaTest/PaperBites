@@ -299,34 +299,35 @@ def _configured_image_model_names() -> List[str]:
     return list(configured)
 
 
-_IMAGE_CITATION_PROMPT = (
-    "This image shows a research paper - its title page, a printed page, or a conference "
-    "poster. Read whatever you can make out: the title, author names, and journal/venue/year if "
-    "visible. Respond with ONLY a single-line plain-text citation-like string combining what you "
-    "read (e.g. 'Author Name. Title of the paper. Journal Name, Year.') - no JSON, no markdown, "
-    "no extra commentary, no preamble. If you cannot confidently read a title anywhere in the "
-    "image, respond with exactly: NONE"
+_IMAGE_DETAILS_PROMPT = (
+    "This image shows part of a research paper - a title page, a printed page, a screenshot, or "
+    "a conference poster. Read as much as you can and respond with ONLY a JSON object (no "
+    "markdown fences, no commentary) with these keys, using null for anything you cannot read: "
+    '"title" (string), "authors" (list of strings), "venue" (journal/conference name), "year" '
+    '(string), "doi" (string, exactly as printed - also look in footers, headers and links), '
+    '"abstract" (string, the abstract text if visible), "text" (string, any other readable text '
+    "that could help identify the paper, such as keywords or a few sentences of body text). "
+    "Do not guess: only include what is actually visible. If nothing readable relates to a "
+    'research paper, respond with exactly: NONE'
 )
 # Hard cap on how large an uploaded photo can be before we even try sending it to Gemini - a
 # phone camera photo is typically 1-5MB; this just guards against something pathological.
 _MAX_IMAGE_BYTES = 15 * 1024 * 1024
 
 
-async def extract_citation_text_from_image(image_bytes: bytes, mime_type: str) -> Optional[str]:
-    """Experimental vision-extraction fallback for the add-paper-by-photo flow: asks Gemini to
-    read a title/authors/venue off a photographed paper page or poster and return them as a
-    single citation-like string. The caller then resolves that string the same way a pasted
-    citation is (paper/citation.py's search_citation()) - this function only replaces the "type
-    or paste the citation" step, not the bibliographic matching after it.
+async def extract_image_details(image_bytes: bytes, mime_type: str) -> Optional[str]:
+    """Vision-extraction step of the add-paper-by-photo flow: asks Gemini to read everything it
+    can off a photographed paper page or poster (title, authors, venue, year, DOI, abstract,
+    other text) and returns its raw reply - a JSON object as text, which
+    paper/photo_scan.py parses. Returns None if there's no key, the image is unusable, Gemini
+    says it can't read anything, or every model failed (the caller then falls back to local OCR).
 
-    Deliberately skips QR-code decoding (unlike the ideal pipeline described in
-    docs/TECHNICAL_SPEC.md) - reliable QR decoding needs a system zbar library this deployment
-    doesn't assume is installed, so this only helps when Gemini can read the title/authors
-    directly off the page, not when a poster's QR code is the only readable thing on it.
+    Deliberately skips QR-code decoding - reliable QR decoding needs a system zbar library this
+    deployment doesn't assume is installed.
 
     Tries models in a fixed best-to-worst priority order (_IMAGE_MODEL_NAMES) rather than the
-    round-robin used elsewhere in this module - see that list's own comment for why. A model
-    that errors (including one that simply can't handle images) is skipped in favor of the next.
+    round-robin used elsewhere in this module. A model that errors (including one that simply
+    can't handle images) is skipped in favor of the next.
     """
     if not config_instance.get("api.gemini_key") or not image_bytes:
         return None
@@ -340,19 +341,19 @@ async def extract_citation_text_from_image(image_bytes: bytes, mime_type: str) -
 
     b64_image = base64.b64encode(image_bytes).decode("ascii")
     message = HumanMessage(content=[
-        {"type": "text", "text": _IMAGE_CITATION_PROMPT},
+        {"type": "text", "text": _IMAGE_DETAILS_PROMPT},
         {"type": "image_url", "image_url": f"data:{mime_type};base64,{b64_image}"},
     ])
 
     def accept(reply: str) -> Optional[str]:
-        return reply if reply and reply.upper() != "NONE" else None
+        return reply if reply and reply.strip().upper() != "NONE" else None
 
     # Fixed best-to-worst order (rotate=False), but still budget-aware: a model whose daily
     # quota is spent is skipped in favor of the next.
     return await _generate(
-        _configured_image_model_names(), [message], _IMAGE_CITATION_PROMPT,
-        accept=accept, label="image citation extraction", rotate=False,
-        estimated_tokens=2000,  # a photo costs far more than its (short) text prompt
+        _configured_image_model_names(), [message], _IMAGE_DETAILS_PROMPT,
+        accept=accept, label="image reading", rotate=False,
+        estimated_tokens=2500,  # a photo costs far more than its (short) text prompt
     )
 
 

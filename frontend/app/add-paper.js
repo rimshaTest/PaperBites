@@ -106,7 +106,7 @@ export default function AddPaperScreen() {
       if (!result.extracted) {
         Alert.alert(
           "Couldn't read that photo",
-          "We couldn't make out a title in that photo. Try a clearer, well-lit shot, or type/paste the citation instead."
+          "We couldn't read a title or DOI in that photo. Try a closer, well-lit, in-focus shot of the title page, or type/paste the citation instead."
         );
       }
     } catch (err) {
@@ -320,7 +320,7 @@ export default function AddPaperScreen() {
                     <Text style={styles.candidateMeta}>{candidate.authors.join(', ')}</Text>
                   )}
                   <Text style={styles.candidateMeta}>
-                    {[candidate.journal, candidate.published_date?.slice(0, 4)]
+                    {[candidate.in_library ? 'Already in PaperBites' : null, candidate.journal, candidate.published_date?.slice(0, 4)]
                       .filter(Boolean)
                       .join(' · ')}
                   </Text>

@@ -152,17 +152,20 @@ All routes are under `/api`. Auth-required routes take `Authorization: Bearer <t
   `paper_reviews` collection), per the spec's fallback for when automated matching fails
   outright. No admin UI reads this queue yet - it's queried directly for now.
 - `POST /papers/citation/scan` (auth required, multipart form with an `image` file) -
-  **experimental**: extracts a citation from a photo of a paper's title page or a poster via
-  Gemini vision (`paper/summarize.py`'s `extract_citation_text_from_image`), then resolves it
-  exactly like the `/citation/search` above (so it also gets URL-embedded-DOI/meta-tag handling
-  for free if the extracted text happens to be a URL). Tries a fixed, accuracy-first model order
-  (`gemini-2.5-pro` → `gemini-2.5-flash` → `gemini-2.5-flash-lite`, overridable via
-  `PAPERBITES_GEMINI_IMAGE_MODELS`) rather than the round-robin `fetch-latest` uses - this is one
-  interactive photo per request, not bulk throughput, so read accuracy matters more than spreading
-  load. No QR-code decoding - that would need a system `zbar` library this deployment doesn't
-  assume is installed - so this only helps when Gemini can read the title/authors directly off
-  the image. → `{candidates: [...], extracted:
-  "<citation-like string>" | null}`
+  **experimental**: add a paper from a picture of it (title page, printed page, screenshot,
+  poster). `paper/photo_scan.py` reads as much as it can off the image - title, authors, venue,
+  year, DOI, abstract and other text - with Gemini vision (`paper/summarize.py`'s
+  `extract_image_details`; accuracy-first model order `gemini-2.5-pro` → `gemini-2.5-flash` →
+  `gemini-2.5-flash-lite`, overridable via `PAPERBITES_GEMINI_IMAGE_MODELS`), falling back to
+  local Tesseract OCR if Gemini is unavailable or reads nothing (needs the `tesseract` binary;
+  without it the fallback is simply skipped). It then finds the paper three ways and merges the
+  results, best first: an exact **DOI** lookup if a DOI was legible; papers **already in the
+  library**, ranked by **embedding** similarity to what was read (marked `in_library: true`;
+  vectors from different embedding models are never compared); and a Crossref bibliographic
+  search on the title/authors/venue (or the start of the OCR text). No QR-code decoding - that
+  would need a system `zbar` library. → `{candidates: [...], extracted: "<search string>" | null}`.
+  Confirming a candidate whose DOI is already stored (`POST /papers/citation/confirm`) just
+  bookmarks the stored paper instead of adding a duplicate.
 
 **Authors & journals**
 - `GET /authors/{author_id}` - an author's name and every paper of theirs.
